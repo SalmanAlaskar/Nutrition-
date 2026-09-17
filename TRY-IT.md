@@ -1,5 +1,29 @@
 # Trying Nutrition on a phone
 
+## The short version
+
+The app is live on the public web, so any phone anywhere can open it:
+
+**https://salmanalaskar.github.io/Nutrition-/**
+
+No install, no account, no Wi-Fi requirement. Everything you enter is stored in that browser on
+that phone. Add it to the home screen and it behaves like an app.
+
+The one thing the web build cannot do is open the camera for a live shot. Photo logging falls
+back to picking an image from the photo library. For the live camera you need option A or C
+below.
+
+To publish a new version after changing the code:
+
+```bash
+npm run deploy:web
+```
+
+---
+
+## The longer version
+
+
 Three ways to get the app onto a device, from fastest to most permanent. Start with option A.
 
 All commands run from the repo root:

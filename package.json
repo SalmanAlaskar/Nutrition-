@@ -12,7 +12,8 @@
     "share": "expo start --tunnel",
     "build:android": "npx eas-cli@latest build --platform android --profile preview",
     "build:ios": "npx eas-cli@latest build --platform ios --profile preview",
-    "build:all": "npx eas-cli@latest build --platform all --profile preview"
+    "build:all": "npx eas-cli@latest build --platform all --profile preview",
+    "deploy:web": "expo export --platform web --output-dir dist && touch dist/.nojekyll && cp dist/index.html dist/404.html && npx --yes gh-pages -d dist -b gh-pages -t"
   },
   "dependencies": {
     "@expo/metro-runtime": "~57.0.15",
