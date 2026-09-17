@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Alert,
   Modal,
@@ -30,6 +31,7 @@ import {
   Txt,
   type SegmentedOption,
 } from '@/components/ui';
+import { formatCount } from '@/domain/format';
 import {
   LANGUAGES,
   changeLanguage,
@@ -43,8 +45,6 @@ import { clearApiKey, hasApiKey, setApiKey } from '@/storage/secrets';
 import { radius, spacing, useTheme } from '@/theme';
 import type { FoodItem, PhotoAnalysisMode, UnitSystem } from '@/types';
 
-import { formatCount } from './onboarding/_layout';
-
 /**
  * Decorative nodes are hidden from assistive tech with the prop the platform
  * understands: the native pair is not valid on a DOM element.
@@ -57,16 +57,6 @@ const DECORATIVE: Pick<
     ? { 'aria-hidden': true }
     : { accessibilityElementsHidden: true, importantForAccessibility: 'no-hide-descendants' };
 
-const MODE_OPTIONS: SegmentedOption<PhotoAnalysisMode>[] = [
-  { value: 'manual', label: 'Manual', icon: 'create-outline' },
-  { value: 'ai', label: 'AI scan', icon: 'sparkles-outline' },
-];
-
-const UNIT_OPTIONS: SegmentedOption<UnitSystem>[] = [
-  { value: 'metric', label: 'Metric · cm / kg' },
-  { value: 'imperial', label: 'Imperial · ft / lb' },
-];
-
 /** Shown in place of a stored key. The real value is never rendered back. */
 const KEY_MASK = '••••••••••••••••••••••••';
 
@@ -76,18 +66,25 @@ interface ConfirmOptions {
   title: string;
   message: string;
   confirmLabel: string;
+  cancelLabel: string;
   onConfirm: () => void;
 }
 
 /** Alert is a no-op on react-native-web, so the browser gets its own dialog. */
-function confirmAction({ title, message, confirmLabel, onConfirm }: ConfirmOptions): void {
+function confirmAction({
+  title,
+  message,
+  confirmLabel,
+  cancelLabel,
+  onConfirm,
+}: ConfirmOptions): void {
   if (Platform.OS === 'web') {
     const canAsk = typeof window !== 'undefined' && typeof window.confirm === 'function';
     if (!canAsk || window.confirm(`${title}\n\n${message}`)) onConfirm();
     return;
   }
   Alert.alert(title, message, [
-    { text: 'Cancel', style: 'cancel' },
+    { text: cancelLabel, style: 'cancel' },
     { text: confirmLabel, style: 'destructive', onPress: onConfirm },
   ]);
 }
@@ -118,12 +115,6 @@ function readAppIdentity(): AppIdentity {
   } catch {
     return { name: 'Nutrition', version: null };
   }
-}
-
-function foodSubtitle(food: FoodItem): string {
-  const unit = food.liquid ? '100 ml' : '100 g';
-  const energy = `${formatCount(food.per100.calories)} kcal per ${unit}`;
-  return food.brand ? `${food.brand} · ${energy}` : energy;
 }
 
 function SectionTitle({
@@ -244,15 +235,17 @@ function SwitchRow({
   );
 }
 
+/** The language names stay in their own script, never translated. */
 const LANGUAGE_OPTIONS: SegmentedOption<LanguageCode>[] = LANGUAGES.map((entry) => ({
   value: entry.code,
   label: entry.label,
 }));
 
-/** Photo analysis, units, saved foods, export/erase and what the numbers mean. */
+/** Language, units, photo analysis, saved foods, export and erase. */
 export default function SettingsScreen() {
   const router = useRouter();
   const { colors } = useTheme();
+  const { t } = useTranslation(['settings', 'common']);
   const { profile, settings, customFoods, updateProfile, updateSettings, refresh, resetAll } =
     useApp();
 
@@ -273,6 +266,22 @@ export default function SettingsScreen() {
   const [exporting, setExporting] = useState(false);
   const [exportJson, setExportJson] = useState<string | null>(null);
   const [dataError, setDataError] = useState<string | null>(null);
+
+  const modeOptions: SegmentedOption<PhotoAnalysisMode>[] = useMemo(
+    () => [
+      { value: 'manual', label: t('modeManual'), icon: 'create-outline' },
+      { value: 'ai', label: t('modeAi'), icon: 'sparkles-outline' },
+    ],
+    [t],
+  );
+
+  const unitOptions: SegmentedOption<UnitSystem>[] = useMemo(
+    () => [
+      { value: 'metric', label: t('unitMetric') },
+      { value: 'imperial', label: t('unitImperial') },
+    ],
+    [t],
+  );
 
   // Ask the keychain once. The value itself is never held in component state.
   useEffect(() => {
@@ -298,15 +307,15 @@ export default function SettingsScreen() {
   }, [settings.aiBaseUrl, baseUrlFocused]);
 
   const trimmedModel = modelDraft.trim();
-  const modelError = trimmedModel.length === 0 ? 'Enter a model name.' : undefined;
+  const modelError = trimmedModel.length === 0 ? t('modelError') : undefined;
 
   const trimmedBaseUrl = baseUrlDraft.trim();
   const baseUrlError =
     trimmedBaseUrl.length === 0
-      ? 'Enter the address of the API.'
+      ? t('baseUrlEmpty')
       : HTTP_URL.test(trimmedBaseUrl)
         ? undefined
-        : 'Start with https:// so the app knows how to reach it.';
+        : t('baseUrlInvalid');
 
   const changeModel = (text: string) => {
     setModelDraft(text);
@@ -353,29 +362,25 @@ export default function SettingsScreen() {
       setKeyStored(stored);
       setKeyDraft('');
       setEditingKey(false);
-      setKeyNotice(
-        stored
-          ? 'Key saved on this device.'
-          : 'This device refused to store the key, so photo analysis will ask for it again.',
-      );
+      setKeyNotice(stored ? t('keySavedNotice') : t('keyRefusedNotice'));
     } finally {
       setSavingKey(false);
     }
-  }, [keyDraft]);
+  }, [keyDraft, t]);
 
   const removeKey = () => {
     confirmAction({
-      title: 'Remove API key?',
-      message:
-        'Photo analysis stops working until you enter a key again. Your meals and profile are untouched.',
-      confirmLabel: 'Remove',
+      title: t('keyRemoveTitle'),
+      message: t('keyRemoveMessage'),
+      confirmLabel: t('common:remove'),
+      cancelLabel: t('common:cancel'),
       onConfirm: () => {
         void (async () => {
           await clearApiKey();
           setKeyStored(false);
           setKeyDraft('');
           setEditingKey(false);
-          setKeyNotice('Key removed from this device.');
+          setKeyNotice(t('keyRemovedNotice'));
         })();
       },
     });
@@ -383,9 +388,10 @@ export default function SettingsScreen() {
 
   const removeFood = (food: FoodItem) => {
     confirmAction({
-      title: `Delete ${food.name}?`,
-      message: 'Meals you already logged with it keep the numbers they were saved with.',
-      confirmLabel: 'Delete',
+      title: t('foodDeleteTitle', { name: food.name }),
+      message: t('foodDeleteMessage'),
+      confirmLabel: t('common:delete'),
+      cancelLabel: t('common:cancel'),
       onConfirm: () => {
         void (async () => {
           try {
@@ -394,7 +400,7 @@ export default function SettingsScreen() {
             await refresh();
           } catch (error) {
             console.warn('[settings] could not delete custom food', error);
-            setDataError(`Could not delete ${food.name}. Try again in a moment.`);
+            setDataError(t('foodDeleteError', { name: food.name }));
           }
         })();
       },
@@ -411,14 +417,14 @@ export default function SettingsScreen() {
         setExportJson(json);
         return;
       }
-      await Share.share({ title: `${identity.name} data export`, message: json });
+      await Share.share({ title: t('exportShareTitle', { app: identity.name }), message: json });
     } catch (error) {
       console.warn('[settings] export failed', error);
-      setDataError('Could not build the export. Try again in a moment.');
+      setDataError(t('exportError'));
     } finally {
       setExporting(false);
     }
-  }, [identity.name]);
+  }, [identity.name, t]);
 
   const eraseEverything = useCallback(async () => {
     try {
@@ -431,22 +437,22 @@ export default function SettingsScreen() {
       router.replace('/');
     } catch (error) {
       console.warn('[settings] erase failed', error);
-      setDataError('Could not erase your data. Try again in a moment.');
+      setDataError(t('eraseError'));
     }
-  }, [resetAll, router]);
+  }, [resetAll, router, t]);
 
   const confirmErase = () => {
     confirmAction({
-      title: 'Erase everything?',
-      message:
-        'This deletes your profile, every logged meal and its photo reference, your weight history, your custom foods, your settings and the stored API key.',
-      confirmLabel: 'Continue',
+      title: t('eraseConfirmTitle'),
+      message: t('eraseConfirmMessage'),
+      confirmLabel: t('eraseConfirmAction'),
+      cancelLabel: t('common:cancel'),
       onConfirm: () =>
         confirmAction({
-          title: 'Last chance',
-          message:
-            'There is no undo and nothing is backed up. Export your data first if you want a copy.',
-          confirmLabel: 'Erase everything',
+          title: t('eraseLastTitle'),
+          message: t('eraseLastMessage'),
+          confirmLabel: t('eraseLastAction'),
+          cancelLabel: t('common:cancel'),
           onConfirm: () => {
             void eraseEverything();
           },
@@ -464,59 +470,93 @@ export default function SettingsScreen() {
 
   const [language, setLanguage] = useState<LanguageCode>(() => currentLanguage());
 
-  const applyLanguage = useCallback((next: LanguageCode) => {
-    setLanguage(next);
-    void (async () => {
-      await changeLanguage(next);
-      // Native layout direction only follows after a restart; say so rather
-      // than leaving a half-mirrored screen behind.
-      if (setNativeDirection(next)) {
-        Alert.alert(
-          'Restart to finish',
-          'Close and reopen the app to lay it out in the new direction.',
-        );
-      }
-    })();
-  }, []);
+  const applyLanguage = useCallback(
+    (next: LanguageCode) => {
+      setLanguage(next);
+      void (async () => {
+        await changeLanguage(next);
+        // Native layout direction only follows after a restart; say so rather
+        // than leaving a half-mirrored screen behind. On the web the direction
+        // is applied live, and setNativeDirection reports no restart is needed.
+        if (setNativeDirection(next)) {
+          Alert.alert(t('restartTitle'), t('restartMessage'));
+        }
+      })();
+    },
+    [t],
+  );
 
   const units: UnitSystem = profile?.units ?? 'metric';
   const aiOn = settings.photoAnalysis === 'ai';
   const showKeyField = !keyStored || editingKey;
   const foodCount = customFoods.length;
 
+  const foodSubtitle = (food: FoodItem): string => {
+    const energy = t(food.liquid ? 'foodEnergyPer100ml' : 'foodEnergyPer100g', {
+      value: formatCount(food.per100.calories),
+    });
+    return food.brand ? `${food.brand} · ${energy}` : energy;
+  };
+
   return (
     <>
       <Screen scroll keyboardAvoiding edges={['top', 'bottom']}>
-        <AppHeader
-          title="Settings"
-          subtitle="Photo analysis, units, your data"
-          onBack={goBack}
-        />
+        <AppHeader title={t('title')} subtitle={t('subtitle')} onBack={goBack} />
+
+        {/* ---------------------------------------------------- language -- */}
+        <SectionTitle first title={t('languageTitle')} hint={t('languageHint')} />
+        <Card style={styles.firstCard}>
+          <SegmentedControl<LanguageCode>
+            options={LANGUAGE_OPTIONS}
+            value={language}
+            onChange={applyLanguage}
+          />
+          <Txt variant="label" color="muted" style={styles.paragraph}>
+            {Platform.OS === 'web' ? t('languageNoteWeb') : t('languageNoteNative')}
+          </Txt>
+        </Card>
+
+        {/* ------------------------------------------------------- units -- */}
+        <SectionTitle title={t('unitsTitle')} hint={t('unitsHint')} />
+        <Card style={styles.firstCard}>
+          <View
+            pointerEvents={profile ? 'auto' : 'none'}
+            style={profile ? undefined : styles.disabled}
+          >
+            <SegmentedControl<UnitSystem>
+              options={unitOptions}
+              value={units}
+              onChange={(next) => void updateProfile({ units: next })}
+            />
+          </View>
+          {profile ? null : (
+            <>
+              <Txt variant="label" color="muted" style={styles.paragraph}>
+                {t('unitsLocked')}
+              </Txt>
+              <Button
+                label={t('setupProfile')}
+                onPress={() => router.push('/onboarding')}
+                variant="secondary"
+                icon="person-add-outline"
+                style={styles.resetButton}
+              />
+            </>
+          )}
+        </Card>
 
         {/* -------------------------------------------------- photo mode -- */}
-        <SectionTitle
-          first
-          title="Photo analysis"
-          hint="What happens to a meal photo after you take it."
-        />
+        <SectionTitle title={t('photoTitle')} hint={t('photoHint')} />
         <Card style={styles.firstCard}>
           <SegmentedControl<PhotoAnalysisMode>
-            options={MODE_OPTIONS}
+            options={modeOptions}
             value={settings.photoAnalysis}
             onChange={(next) => void updateSettings({ photoAnalysis: next })}
           />
 
           <View style={styles.modeList}>
-            <ModeLine
-              label="Manual"
-              description="The photo is only attached to the meal, and you type what you ate."
-              active={!aiOn}
-            />
-            <ModeLine
-              label="AI scan"
-              description="The photo is uploaded to the API below, which names the foods and estimates portions for you."
-              active={aiOn}
-            />
+            <ModeLine label={t('modeManual')} description={t('modeManualDesc')} active={!aiOn} />
+            <ModeLine label={t('modeAi')} description={t('modeAiDesc')} active={aiOn} />
           </View>
         </Card>
 
@@ -531,27 +571,20 @@ export default function SettingsScreen() {
                   color={colors.warning}
                   {...DECORATIVE}
                 />
-                <Txt weight="semibold" color="warning">
-                  What AI scanning costs you
+                <Txt weight="semibold" color="warning" style={styles.warningTitle}>
+                  {t('warningTitle')}
                 </Txt>
               </View>
-              <Txt style={styles.warningBody}>
-                Every photo you scan is uploaded to the API at the base URL below, together with
-                your key, and is billed to your account.
-              </Txt>
-              <Txt style={styles.warningBody}>
-                The key is held in this device&apos;s keychain; on the web build there is no
-                keychain, so it sits in ordinary, unencrypted browser storage. Anyone who can unlock
-                this device can open the app and spend against your key.
-              </Txt>
+              <Txt style={styles.warningBody}>{t('warningUpload')}</Txt>
+              <Txt style={styles.warningBody}>{t('warningKey')}</Txt>
             </Card>
 
             <Card style={styles.card}>
-              <CardTitle title="API key" hint="Kept on this device and sent with every scan." />
+              <CardTitle title={t('keyTitle')} hint={t('keyHint')} />
 
               {keyChecked ? null : (
                 <Txt variant="label" color="muted">
-                  Checking this device for a saved key...
+                  {t('keyChecking')}
                 </Txt>
               )}
 
@@ -559,9 +592,9 @@ export default function SettingsScreen() {
                 <View style={styles.keyStored}>
                   <View style={styles.keyHead}>
                     <Txt variant="label" color="muted" weight="medium">
-                      Stored key
+                      {t('keyStored')}
                     </Txt>
-                    <Badge label="Saved" tone="accent" />
+                    <Badge label={t('keySavedBadge')} tone="accent" />
                   </View>
                   <View
                     style={[
@@ -569,27 +602,23 @@ export default function SettingsScreen() {
                       { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
                     ]}
                   >
-                    <Txt
-                      color="muted"
-                      numberOfLines={1}
-                      accessibilityLabel="A key is saved on this device. It is hidden and is never shown again."
-                    >
+                    <Txt color="muted" numberOfLines={1} accessibilityLabel={t('keyMaskSpoken')}>
                       {KEY_MASK}
                     </Txt>
                   </View>
                   <View style={styles.actionRow}>
                     <Button
-                      label="Replace"
+                      label={t('keyReplace')}
                       onPress={startReplacingKey}
                       variant="secondary"
                       icon="key-outline"
                     />
                     <Button
-                      label="Remove"
+                      label={t('keyRemove')}
                       onPress={removeKey}
                       variant="danger"
                       icon="trash-outline"
-                      accessibilityHint="Asks you to confirm before the key is deleted"
+                      accessibilityHint={t('keyRemoveHint')}
                     />
                   </View>
                 </View>
@@ -598,7 +627,7 @@ export default function SettingsScreen() {
               {keyChecked && showKeyField ? (
                 <View style={keyStored ? styles.keyEditor : undefined}>
                   <TextField
-                    label={keyStored ? 'New API key' : 'API key'}
+                    label={keyStored ? t('keyLabelNew') : t('keyLabel')}
                     value={keyDraft}
                     onChangeText={(text) => {
                       setKeyDraft(text);
@@ -608,20 +637,20 @@ export default function SettingsScreen() {
                     secureTextEntry
                     autoCapitalize="none"
                     icon="key-outline"
-                    hint="Saved on this device only, and never shown again once it is stored."
+                    hint={t('keyFieldHint')}
                     returnKeyType="done"
                     onSubmitEditing={() => void saveKey()}
                   />
                   <View style={styles.actionRow}>
                     <Button
-                      label="Save key"
+                      label={t('keySave')}
                       onPress={() => void saveKey()}
                       disabled={keyDraft.trim().length === 0}
                       loading={savingKey}
                       icon="checkmark-outline"
                     />
                     {keyStored ? (
-                      <Button label="Cancel" onPress={cancelKeyEdit} variant="ghost" />
+                      <Button label={t('common:cancel')} onPress={cancelKeyEdit} variant="ghost" />
                     ) : null}
                   </View>
                 </View>
@@ -636,21 +665,18 @@ export default function SettingsScreen() {
 
             <Card padded={false} style={styles.card}>
               <SwitchRow
-                title="Ask before each upload"
-                subtitle="Show a confirmation naming the API before a photo leaves the device."
+                title={t('askTitle')}
+                subtitle={t('askSubtitle')}
                 value={settings.confirmBeforeUpload}
                 onValueChange={(next) => void updateSettings({ confirmBeforeUpload: next })}
               />
             </Card>
 
             <Card style={styles.card}>
-              <CardTitle
-                title="Endpoint"
-                hint="The defaults work. Change these only if you know you need to."
-              />
+              <CardTitle title={t('endpointTitle')} hint={t('endpointHint')} />
 
               <TextField
-                label="Model"
+                label={t('model')}
                 value={modelDraft}
                 onChangeText={changeModel}
                 onFocus={() => setModelFocused(true)}
@@ -658,12 +684,12 @@ export default function SettingsScreen() {
                 autoCapitalize="none"
                 placeholder={DEFAULT_SETTINGS.aiModel}
                 error={modelError}
-                hint="The vision model asked to read your plate."
+                hint={t('modelHint')}
                 icon="cube-outline"
               />
               {settings.aiModel === DEFAULT_SETTINGS.aiModel ? null : (
                 <Button
-                  label="Reset model"
+                  label={t('modelReset')}
                   onPress={resetModel}
                   variant="secondary"
                   size="sm"
@@ -673,7 +699,7 @@ export default function SettingsScreen() {
               )}
 
               <TextField
-                label="Base URL"
+                label={t('baseUrl')}
                 value={baseUrlDraft}
                 onChangeText={changeBaseUrl}
                 onFocus={() => setBaseUrlFocused(true)}
@@ -682,13 +708,13 @@ export default function SettingsScreen() {
                 keyboardType="url"
                 placeholder={DEFAULT_SETTINGS.aiBaseUrl}
                 error={baseUrlError}
-                hint="Change this only if you route requests through your own proxy."
+                hint={t('baseUrlHint')}
                 icon="globe-outline"
                 style={styles.field}
               />
               {settings.aiBaseUrl === DEFAULT_SETTINGS.aiBaseUrl ? null : (
                 <Button
-                  label="Reset base URL"
+                  label={t('baseUrlReset')}
                   onPress={resetBaseUrl}
                   variant="secondary"
                   size="sm"
@@ -700,68 +726,21 @@ export default function SettingsScreen() {
           </>
         ) : null}
 
-        {/* ---------------------------------------------------- language -- */}
-        <SectionTitle
-          title="Language"
-          hint="Changes the whole app, including the direction it reads in."
-        />
-        <Card style={styles.firstCard}>
-          <SegmentedControl<LanguageCode>
-            options={LANGUAGE_OPTIONS}
-            value={language}
-            onChange={applyLanguage}
-          />
-          <Txt variant="label" color="muted" style={styles.paragraph}>
-            Arabic lays the app out right to left. On a phone that takes effect the next time
-            the app opens; in the browser it happens straight away.
-          </Txt>
-        </Card>
-
-        {/* ------------------------------------------------------- units -- */}
-        <SectionTitle title="Units" hint="How heights and weights are shown throughout the app." />
-        <Card style={styles.firstCard}>
-          <View
-            pointerEvents={profile ? 'auto' : 'none'}
-            style={profile ? undefined : styles.disabled}
-          >
-            <SegmentedControl<UnitSystem>
-              options={UNIT_OPTIONS}
-              value={units}
-              onChange={(next) => void updateProfile({ units: next })}
-            />
-          </View>
-          {profile ? null : (
-            <>
-              <Txt variant="label" color="muted" style={styles.paragraph}>
-                Units belong to your profile, and you do not have one yet. Set up your body and
-                goal first and this choice will unlock.
-              </Txt>
-              <Button
-                label="Set up my profile"
-                onPress={() => router.push('/onboarding')}
-                variant="secondary"
-                icon="person-add-outline"
-                style={styles.resetButton}
-              />
-            </>
-          )}
-        </Card>
-
         {/* ------------------------------------------------------- foods -- */}
         <SectionTitle
-          title="Your foods"
+          title={t('foodsTitle')}
           hint={
             foodCount === 1
-              ? '1 food you entered by hand.'
-              : `${formatCount(foodCount)} foods you entered by hand.`
+              ? t('foodsCountOne')
+              : t('foodsCount', { value: formatCount(foodCount) })
           }
         />
         {foodCount === 0 ? (
           <Card padded={false} style={styles.firstCard}>
             <EmptyState
               icon="nutrition-outline"
-              title="No foods of your own"
-              message="Anything you type in by hand while logging a meal is saved here, so the next plate takes one tap."
+              title={t('foodsEmptyTitle')}
+              message={t('foodsEmptyMessage')}
             />
           </Card>
         ) : (
@@ -782,7 +761,7 @@ export default function SettingsScreen() {
                     variant="danger"
                     size={18}
                     onPress={() => removeFood(food)}
-                    accessibilityLabel={`Delete ${food.name}`}
+                    accessibilityLabel={t('foodDelete', { name: food.name })}
                   />
                 </View>
               </View>
@@ -791,18 +770,14 @@ export default function SettingsScreen() {
         )}
 
         {/* -------------------------------------------------------- data -- */}
-        <SectionTitle title="Data" hint="Everything lives on this device and nowhere else." />
+        <SectionTitle title={t('dataTitle')} hint={t('dataHint')} />
         <Card style={styles.firstCard}>
           <CardTitle
-            title="Export my data"
-            hint={
-              Platform.OS === 'web'
-                ? 'One JSON file holding your profile, settings, meals, weight logs and custom foods. Browsers have no system share sheet, so it opens in a window you can copy from.'
-                : 'One JSON file holding your profile, settings, meals, weight logs and custom foods, handed to the share sheet.'
-            }
+            title={t('exportTitle')}
+            hint={Platform.OS === 'web' ? t('exportHintWeb') : t('exportHintNative')}
           />
           <Button
-            label="Export my data"
+            label={t('exportTitle')}
             onPress={() => void handleExport()}
             loading={exporting}
             variant="secondary"
@@ -812,19 +787,17 @@ export default function SettingsScreen() {
 
         <Card style={[styles.card, styles.warningCard, { borderColor: colors.danger }]}>
           <Txt weight="semibold" color="danger">
-            Erase everything
+            {t('eraseTitle')}
           </Txt>
           <Txt variant="label" color="muted" style={styles.paragraph}>
-            Deletes your profile, every logged meal and the photo reference on it, your weight
-            history, your custom foods, your settings and the stored API key. Photos already in
-            your camera roll are left alone.
+            {t('eraseBody')}
           </Txt>
           <Button
-            label="Erase everything"
+            label={t('eraseTitle')}
             onPress={confirmErase}
             variant="danger"
             icon="trash-outline"
-            accessibilityHint="Asks you to confirm twice before anything is deleted"
+            accessibilityHint={t('eraseHint')}
             style={styles.resetButton}
           />
         </Card>
@@ -836,20 +809,21 @@ export default function SettingsScreen() {
         ) : null}
 
         {/* ------------------------------------------------------- about -- */}
-        <SectionTitle title="About" />
+        <SectionTitle title={t('aboutTitle')} />
         <Card style={[styles.firstCard, styles.lastCard]}>
           <View style={styles.aboutHead}>
             <Txt weight="semibold">{identity.name}</Txt>
             <Badge
-              label={identity.version === null ? 'Dev build' : `v${identity.version}`}
+              label={
+                identity.version === null
+                  ? t('devBuild')
+                  : t('version', { version: identity.version })
+              }
               tone="default"
             />
           </View>
           <Txt variant="label" color="muted" style={styles.paragraph}>
-            Calories, macros, BMI and your daily targets are estimates. They come from standard
-            equations and public food composition data, so a real plate and a real body will always
-            differ from the numbers here. This app is not medical advice: talk to a doctor or a
-            registered dietitian before making a big change to how you eat.
+            {t('aboutBody')}
           </Txt>
         </Card>
       </Screen>
@@ -866,30 +840,35 @@ export default function SettingsScreen() {
             style={[StyleSheet.absoluteFill, { backgroundColor: colors.overlay }]}
             onPress={() => setExportJson(null)}
             accessibilityRole="button"
-            accessibilityLabel="Close the export window"
+            accessibilityLabel={t('exportSheetClose')}
           />
           <View style={styles.modalCenter} pointerEvents="box-none">
             <View
               style={[styles.sheet, { backgroundColor: colors.surface, borderColor: colors.border }]}
             >
-              <Txt variant="heading">Your data</Txt>
+              <Txt variant="heading">{t('exportSheetTitle')}</Txt>
               <Txt variant="label" color="muted" style={styles.sheetHint}>
-                The browser build cannot open a share sheet, so the export is printed here. Click
-                inside the box, select all with Ctrl+A (Cmd+A on a Mac), copy it, and paste it into
-                a file named nutrition-export.json.
+                {t('exportSheetHint')}
               </Txt>
 
               <ScrollView
                 style={[styles.exportBox, { backgroundColor: colors.bg, borderColor: colors.border }]}
                 contentContainerStyle={styles.exportContent}
               >
-                <Txt variant="caption" color="muted" selectable style={styles.exportText}>
+                {/* JSON is machine text: it stays left to right in both languages. */}
+                <Txt
+                  variant="caption"
+                  color="muted"
+                  align="left"
+                  selectable
+                  style={styles.exportText}
+                >
                   {exportJson ?? ''}
                 </Txt>
               </ScrollView>
 
               <View style={styles.sheetActions}>
-                <Button label="Done" onPress={() => setExportJson(null)} />
+                <Button label={t('common:done')} onPress={() => setExportJson(null)} />
               </View>
             </View>
           </View>
@@ -995,6 +974,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     marginBottom: spacing.xs,
   },
+  warningTitle: {
+    flexShrink: 1,
+  },
   warningBody: {
     marginTop: spacing.sm,
   },
@@ -1015,11 +997,11 @@ const styles = StyleSheet.create({
   foodRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    paddingRight: spacing.sm,
+    paddingEnd: spacing.sm,
   },
   foodRowMain: {
     flex: 1,
-    paddingRight: spacing.sm,
+    paddingEnd: spacing.sm,
   },
   disabled: {
     opacity: 0.45,
@@ -1062,6 +1044,7 @@ const styles = StyleSheet.create({
     fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }),
     letterSpacing: 0,
     lineHeight: 17,
+    writingDirection: 'ltr',
   },
   sheetActions: {
     flexDirection: 'row',

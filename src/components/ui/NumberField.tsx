@@ -1,5 +1,8 @@
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { type StyleProp, type ViewStyle } from 'react-native';
+
+import { formatAmount } from '@/domain/format';
 
 import { TextField } from './TextField';
 
@@ -12,6 +15,8 @@ export interface NumberFieldProps {
   placeholder?: string;
   hint?: string;
   error?: string;
+  /** Spoken guidance. Defaults to the range built from `min` and `max`. */
+  accessibilityHint?: string;
   min?: number;
   max?: number;
   autoFocus?: boolean;
@@ -39,14 +44,27 @@ export function NumberField({
   placeholder,
   hint,
   error,
+  accessibilityHint,
   min,
   max,
   autoFocus,
   onSubmitEditing,
   style,
 }: NumberFieldProps) {
+  const { t } = useTranslation('common');
   const [text, setText] = useState(() => toDisplay(value));
   const [editing, setEditing] = useState(false);
+
+  // The field clamps silently on blur, so the bounds are announced rather than
+  // printed: a caption under every number field would bury the labels.
+  const bounds =
+    min !== undefined && max !== undefined
+      ? t('rangeBetween', { min: formatAmount(min), max: formatAmount(max) })
+      : min !== undefined
+        ? t('rangeMin', { min: formatAmount(min) })
+        : max !== undefined
+          ? t('rangeMax', { max: formatAmount(max) })
+          : undefined;
 
   // While the field is untouched it mirrors the value owned by the screen.
   useEffect(() => {
@@ -103,6 +121,7 @@ export function NumberField({
       suffix={suffix}
       hint={hint}
       error={error}
+      accessibilityHint={accessibilityHint ?? bounds}
       autoCapitalize="none"
       autoFocus={autoFocus}
       tabularValue

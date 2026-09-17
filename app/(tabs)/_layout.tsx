@@ -1,6 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Tabs } from 'expo-router';
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Platform, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -9,6 +10,7 @@ import { useTheme } from '@/theme';
 const BAR_CONTENT_HEIGHT = 62;
 
 export default function TabsLayout() {
+  const { t } = useTranslation('nav');
   const { colors, spacing } = useTheme();
   const insets = useSafeAreaInsets();
 
@@ -48,7 +50,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Today',
+          title: t('today'),
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'today' : 'today-outline'} color={color} size={20} />
           ),
@@ -57,16 +59,29 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="training"
         options={{
-          title: 'Training',
+          title: t('training'),
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'barbell' : 'barbell-outline'} color={color} size={20} />
           ),
         }}
       />
       <Tabs.Screen
+        name="dashboard"
+        options={{
+          title: t('dashboard'),
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? 'speedometer' : 'speedometer-outline'}
+              color={color}
+              size={20}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="history"
         options={{
-          title: 'History',
+          title: t('history'),
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? 'stats-chart' : 'stats-chart-outline'}
@@ -79,7 +94,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profile',
+          title: t('profile'),
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'person' : 'person-outline'} color={color} size={20} />
           ),

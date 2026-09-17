@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Alert,
   Platform,
@@ -10,6 +11,7 @@ import {
   type AccessibilityProps,
 } from 'react-native';
 
+import { useScanDate } from '@/components/body/useScanDate';
 import {
   AppHeader,
   Button,
@@ -21,9 +23,18 @@ import {
   TextField,
   Txt,
 } from '@/components/ui';
-import { deriveMissing, validateScan } from '@/domain/bodyScan';
-import { addDays, formatDayLabel, formatShortDay, parseDateKey, todayKey } from '@/domain/date';
+import {
+  SEGMENT_LABEL_KEYS,
+  deriveMissing,
+  validateScan,
+  type ScanMetricLabelKey,
+  type ScanProblem,
+  type ScanUnitKey,
+} from '@/domain/bodyScan';
+import { addDays, parseDateKey, todayKey } from '@/domain/date';
+import { formatAmount } from '@/domain/format';
 import { makeId } from '@/domain/id';
+import { mirrorIcon, useDirection } from '@/i18n';
 import { parseScanDraft, type ScanDraft } from '@/services/bodyScan';
 import { useApp } from '@/state/AppStore';
 import { radius, spacing, useTheme } from '@/theme';
@@ -88,64 +99,64 @@ const EMPTY_SEGMENTS: Segments = {
   leftLeg: null,
 };
 
-const SEGMENT_LABELS: Record<SegmentKey, string> = {
-  rightArm: 'Right arm',
-  leftArm: 'Left arm',
-  trunk: 'Trunk',
-  rightLeg: 'Right leg',
-  leftLeg: 'Left leg',
-};
-
 interface FieldDef {
   key: NumberKey;
-  label: string;
-  suffix?: string;
+  /** Wording taken from the sheet itself, so the form reads like the printout. */
+  labelKey: ScanMetricLabelKey;
+  unitKey?: ScanUnitKey;
   max: number;
-  placeholder?: string;
+  placeholderKey?: 'weightPlaceholder';
 }
 
-/** The four every sheet prints, and the four people actually track. */
+/** The four every sheet prints, and the four he actually tracks. */
 const MAIN_FIELDS: FieldDef[] = [
-  { key: 'weightKg', label: 'Weight', suffix: 'kg', max: 400, placeholder: '77.1' },
-  { key: 'skeletalMuscleKg', label: 'Skeletal muscle mass', suffix: 'kg', max: 150 },
-  { key: 'bodyFatKg', label: 'Body fat mass', suffix: 'kg', max: 250 },
-  { key: 'bodyFatPercent', label: 'Percent body fat', suffix: '%', max: 100 },
+  {
+    key: 'weightKg',
+    labelKey: 'body:fieldWeight',
+    unitKey: 'units:kg',
+    max: 400,
+    placeholderKey: 'weightPlaceholder',
+  },
+  { key: 'skeletalMuscleKg', labelKey: 'body:fieldMuscle', unitKey: 'units:kg', max: 150 },
+  { key: 'bodyFatKg', labelKey: 'body:fieldFatMass', unitKey: 'units:kg', max: 250 },
+  { key: 'bodyFatPercent', labelKey: 'body:fieldFatPercent', unitKey: 'units:percent', max: 100 },
 ];
 
 const MORE_FIELDS: FieldDef[] = [
-  { key: 'fatFreeMassKg', label: 'Fat free mass', suffix: 'kg', max: 300 },
-  { key: 'totalBodyWaterL', label: 'Total body water', suffix: 'L', max: 200 },
-  { key: 'proteinKg', label: 'Protein', suffix: 'kg', max: 60 },
-  { key: 'mineralsKg', label: 'Minerals', suffix: 'kg', max: 20 },
-  { key: 'bmi', label: 'BMI', max: 100 },
-  { key: 'bmrKcal', label: 'BMR', suffix: 'kcal', max: 8000 },
-  { key: 'visceralFatLevel', label: 'Visceral fat level', max: 60 },
-  { key: 'visceralFatAreaCm2', label: 'Visceral fat area', suffix: 'cm²', max: 500 },
-  { key: 'waistHipRatio', label: 'Waist-hip ratio', max: 3 },
-  { key: 'inBodyScore', label: 'InBody score', max: 100 },
-  { key: 'targetWeightKg', label: 'Target weight', suffix: 'kg', max: 400 },
+  { key: 'fatFreeMassKg', labelKey: 'body:fieldLeanMass', unitKey: 'units:kg', max: 300 },
+  { key: 'totalBodyWaterL', labelKey: 'body:fieldWater', unitKey: 'units:litre', max: 200 },
+  { key: 'proteinKg', labelKey: 'body:fieldProtein', unitKey: 'units:kg', max: 60 },
+  { key: 'mineralsKg', labelKey: 'body:fieldMinerals', unitKey: 'units:kg', max: 20 },
+  { key: 'bmi', labelKey: 'body:fieldBmi', max: 100 },
+  { key: 'bmrKcal', labelKey: 'body:fieldBmr', unitKey: 'units:kcal', max: 8000 },
+  { key: 'visceralFatLevel', labelKey: 'body:fieldVisceralLevel', max: 60 },
+  { key: 'visceralFatAreaCm2', labelKey: 'body:fieldVisceralArea', unitKey: 'body:unitCm2', max: 500 },
+  { key: 'waistHipRatio', labelKey: 'body:fieldWaistHip', max: 3 },
+  { key: 'inBodyScore', labelKey: 'body:fieldScore', max: 100 },
+  { key: 'targetWeightKg', labelKey: 'body:fieldTargetWeight', unitKey: 'units:kg', max: 400 },
 ];
 
 /** Why a field filled itself in, said plainly so nobody mistakes it for the sheet. */
-const CALCULATED_HINTS: Partial<Record<NumberKey, string>> = {
-  bodyFatKg: 'Calculated from weight and percent body fat. Type over it to use the sheet.',
-  bodyFatPercent: 'Calculated from weight and body fat mass. Type over it to use the sheet.',
-  fatFreeMassKg: 'Calculated from weight and body fat mass. Type over it to use the sheet.',
-  bmi: 'Calculated from your profile height and this weight. Type over it to use the sheet.',
-};
+const CALCULATED_HINT_KEYS = {
+  bodyFatKg: 'calcFromPercent',
+  bodyFatPercent: 'calcFromFatMass',
+  fatFreeMassKg: 'calcFromFatMass',
+  bmi: 'calcBmi',
+} as const satisfies Partial<Record<NumberKey, string>>;
 
-const SOURCE_NOTES: Record<ScanSource, string> = {
-  manual: '',
-  qr: 'Read from the InBody page. Check every number against the printout before you save.',
-  photo: 'Read from your photo by the model. Check every number against the sheet before you save.',
-  document: 'Read from your PDF by the model. Check every number against the sheet before you save.',
-};
+const SOURCE_NOTE_KEYS = {
+  manual: null,
+  qr: 'sourceNoteQr',
+  photo: 'sourceNotePhoto',
+  document: 'sourceNoteDocument',
+} as const satisfies Record<ScanSource, string | null>;
 
 /** Alert is a no-op on react-native-web, so the browser gets its own confirm. */
 function confirmAction(options: {
   title: string;
   message: string;
   confirmLabel: string;
+  cancelLabel: string;
   onConfirm: () => void;
 }): void {
   if (Platform.OS === 'web') {
@@ -156,7 +167,7 @@ function confirmAction(options: {
     return;
   }
   Alert.alert(options.title, options.message, [
-    { text: 'Cancel', style: 'cancel' },
+    { text: options.cancelLabel, style: 'cancel' },
     { text: options.confirmLabel, style: 'destructive', onPress: options.onConfirm },
   ]);
 }
@@ -222,7 +233,10 @@ export default function AddBodyScanScreen() {
     source?: string;
     sourceUri?: string;
   }>();
+  const { t } = useTranslation(['body', 'common', 'units']);
   const { colors } = useTheme();
+  const { isRTL } = useDirection();
+  const { dayLabel, shortDay } = useScanDate();
   const { ready, profile, bodyScans, saveBodyScan } = useApp();
 
   const editingId = firstParam(params.id) ?? '';
@@ -353,12 +367,13 @@ export default function AddBodyScanScreen() {
       return;
     }
     confirmAction({
-      title: 'Discard this reading?',
-      message: 'The numbers you entered have not been saved yet.',
-      confirmLabel: 'Discard',
+      title: t('discardTitle'),
+      message: t('discardMessage'),
+      confirmLabel: t('discard'),
+      cancelLabel: t('common:cancel'),
       onConfirm: goBack,
     });
-  }, [touched, goBack]);
+  }, [touched, goBack, t]);
 
   const handleSave = useCallback(() => {
     if (saving || derived.weightKg <= 0) return;
@@ -371,38 +386,80 @@ export default function AddBodyScanScreen() {
       })
       .catch(() => {
         setSaving(false);
-        setError('That reading could not be saved. Try again.');
+        setError(t('saveFailed'));
       });
-  }, [saving, derived, saveBodyScan, router]);
+  }, [saving, derived, saveBodyScan, router, t]);
+
+  /**
+   * One problem, in the reader's language. Each key is named on its own line
+   * because i18next checks the interpolations of a key it can see.
+   */
+  const problemText = (problem: ScanProblem): string => {
+    const label = (name: string): string => {
+      const key = problem.labels?.[name];
+      return key ? t(key) : '';
+    };
+    const num = (name: string): string => {
+      const value = problem.values?.[name];
+      return value === undefined ? '' : formatAmount(value, 2);
+    };
+
+    switch (problem.key) {
+      case 'body:problemWeightRequired':
+        return t('body:problemWeightRequired');
+      case 'body:problemNotNumber':
+        return t('body:problemNotNumber', { label: label('label') });
+      case 'body:problemNegative':
+        return t('body:problemNegative', { label: label('label') });
+      case 'body:problemSegmentNegative':
+        return t('body:problemSegmentNegative', { kind: label('kind'), part: label('part') });
+      case 'body:problemFatRange':
+        return t('body:problemFatRange', {
+          value: num('value'),
+          min: num('min'),
+          max: num('max'),
+        });
+      case 'body:problemMuscleOverLean':
+        return t('body:problemMuscleOverLean', { muscle: num('muscle'), lean: num('lean') });
+      case 'body:problemLeanOverWeight':
+        return t('body:problemLeanOverWeight', { lean: num('lean'), weight: num('weight') });
+      case 'body:problemFatMismatch':
+        return t('body:problemFatMismatch', {
+          fat: num('fat'),
+          percent: num('percent'),
+          weight: num('weight'),
+          expected: num('expected'),
+        });
+    }
+  };
 
   const renderField = (def: FieldDef) => {
     const typed = values[def.key];
     // Only the four fields an identity can fill show a number nobody typed.
-    const calculatedHint = CALCULATED_HINTS[def.key];
-    const calculated = typed === null && calculatedHint ? (derived[def.key] ?? null) : null;
+    const hintKey = def.key in CALCULATED_HINT_KEYS
+      ? CALCULATED_HINT_KEYS[def.key as keyof typeof CALCULATED_HINT_KEYS]
+      : undefined;
+    const calculated = typed === null && hintKey ? (derived[def.key] ?? null) : null;
     return (
       <NumberField
         key={def.key}
-        label={def.label}
+        label={t(def.labelKey)}
         value={typed ?? calculated}
         onChange={(next) => setValue(def.key, next)}
-        suffix={def.suffix}
-        placeholder={def.placeholder}
-        hint={calculated === null ? undefined : calculatedHint}
+        suffix={def.unitKey ? t(def.unitKey) : undefined}
+        placeholder={def.placeholderKey ? t(def.placeholderKey) : undefined}
+        hint={calculated === null || !hintKey ? undefined : t(hintKey)}
         min={0}
         max={def.max}
-        error={def.key === 'weightKg' && touched && typed === null ? 'Weight is needed to save.' : undefined}
+        error={
+          def.key === 'weightKg' && touched && typed === null ? t('weightNeeded') : undefined
+        }
         style={styles.field}
       />
     );
   };
 
-  const disclosure = (
-    title: string,
-    caption: string,
-    open: boolean,
-    onToggle: () => void,
-  ) => (
+  const disclosure = (title: string, caption: string, open: boolean, onToggle: () => void) => (
     <Pressable
       onPress={onToggle}
       accessibilityRole="button"
@@ -435,8 +492,8 @@ export default function AddBodyScanScreen() {
   if (editingId !== '' && !ready) {
     return (
       <Screen edges={['top', 'bottom']}>
-        <AppHeader title="Edit reading" onBack={goBack} />
-        <LoadingView message="Loading this reading" />
+        <AppHeader title={t('editTitle')} onBack={goBack} />
+        <LoadingView message={t('loadingOne')} />
       </Screen>
     );
   }
@@ -444,91 +501,91 @@ export default function AddBodyScanScreen() {
   if (missing) {
     return (
       <Screen scroll edges={['top', 'bottom']}>
-        <AppHeader title="Reading not found" onBack={goBack} />
+        <AppHeader title={t('notFoundTitle')} onBack={goBack} />
         <Card>
-          <Txt color="muted">
-            That reading is no longer in your history. It may have been deleted on this device.
-          </Txt>
-          <Button label="Back to body scans" onPress={goBack} variant="secondary" style={styles.notFoundAction} />
+          <Txt color="muted">{t('notFoundBody')}</Txt>
+          <Button
+            label={t('backToList')}
+            onPress={goBack}
+            variant="secondary"
+            style={styles.notFoundAction}
+          />
         </Card>
       </Screen>
     );
   }
 
-  const sourceNote = SOURCE_NOTES[source];
+  const sourceNoteKey = SOURCE_NOTE_KEYS[source];
 
   return (
     <Screen scroll edges={['top', 'bottom']} keyboardAvoiding>
       <AppHeader
-        title={existing ? 'Edit reading' : 'Add a reading'}
-        subtitle={formatDayLabel(date, today)}
+        title={existing ? t('editTitle') : t('addTitle')}
+        subtitle={dayLabel(date)}
         onBack={handleBack}
       />
 
-      {sourceNote ? (
+      {sourceNoteKey ? (
         <Card style={[styles.block, { backgroundColor: colors.accentSoft }]}>
           <Txt variant="label" color="muted">
-            {sourceNote}
+            {t(sourceNoteKey)}
           </Txt>
         </Card>
       ) : null}
 
       <Card style={styles.block}>
         <Txt variant="label" color="muted" weight="semibold" style={styles.fieldLabel}>
-          Day of the scan
+          {t('dayOfScan')}
         </Txt>
         <View style={[styles.dateRow, { borderColor: colors.border }]}>
           <IconButton
-            icon="chevron-back"
+            icon={mirrorIcon('chevron-back', isRTL)}
             variant="surface"
             size={18}
             onPress={() => shiftDate(-1)}
-            accessibilityLabel="Move this reading to the previous day"
+            accessibilityLabel={t('prevDay')}
           />
           <View style={styles.dateLabel}>
             <Txt weight="semibold" align="center" numberOfLines={1}>
-              {formatDayLabel(date, today)}
+              {dayLabel(date)}
             </Txt>
             <Txt variant="caption" color="faint" align="center">
-              {formatShortDay(date)}
+              {shortDay(date)}
             </Txt>
           </View>
           <IconButton
-            icon="chevron-forward"
+            icon={mirrorIcon('chevron-forward', isRTL)}
             variant="surface"
             size={18}
             disabled={date >= today}
             onPress={() => shiftDate(1)}
-            accessibilityLabel="Move this reading to the next day"
+            accessibilityLabel={t('nextDay')}
           />
         </View>
       </Card>
 
       <Card style={styles.block}>
         <Txt variant="caption" color="faint" weight="bold" style={styles.sectionTitle}>
-          FROM THE TOP OF THE SHEET
+          {t('sectionMain').toUpperCase()}
         </Txt>
         {MAIN_FIELDS.map(renderField)}
       </Card>
 
       <Card padded={false} style={styles.block}>
-        {disclosure(
-          'More from the sheet',
-          'Water, protein, minerals, BMI, BMR, visceral fat, waist-hip ratio, score and target weight.',
-          showMore,
-          () => setShowMore((open) => !open),
+        {disclosure(t('moreFields'), t('moreFieldsHint'), showMore, () =>
+          setShowMore((open) => !open),
         )}
         {showMore ? (
           <View style={styles.disclosureBody}>
             {MORE_FIELDS.map(renderField)}
             <TextField
-              label="Machine"
+              label={t('machine')}
               value={device}
               onChangeText={(next) => {
                 setTouched(true);
                 setDevice(next);
               }}
-              placeholder="InBody 270"
+              placeholder={t('machinePlaceholder')}
               maxLength={60}
               autoCapitalize="words"
               style={styles.field}
@@ -538,24 +595,21 @@ export default function AddBodyScanScreen() {
       </Card>
 
       <Card padded={false} style={styles.block}>
-        {disclosure(
-          'Segmental analysis',
-          'Lean and fat mass for each arm, the trunk and each leg.',
-          showSegments,
-          () => setShowSegments((open) => !open),
+        {disclosure(t('segmental'), t('segmentalHint'), showSegments, () =>
+          setShowSegments((open) => !open),
         )}
         {showSegments ? (
           <View style={styles.disclosureBody}>
             <Txt variant="caption" color="faint" weight="bold" style={styles.sectionTitle}>
-              LEAN MASS, KG
+              {`${t('segmentalLean')} · ${t('units:kg')}`.toUpperCase()}
             </Txt>
             {SEGMENT_KEYS.map((key) => (
               <NumberField
                 key={`lean-${key}`}
-                label={SEGMENT_LABELS[key]}
+                label={t(SEGMENT_LABEL_KEYS[key])}
                 value={lean[key]}
                 onChange={(next) => setSegment('lean', key, next)}
-                suffix="kg"
+                suffix={t('units:kg')}
                 min={0}
                 max={80}
                 style={styles.field}
@@ -563,15 +617,15 @@ export default function AddBodyScanScreen() {
             ))}
 
             <Txt variant="caption" color="faint" weight="bold" style={styles.sectionTitleSpaced}>
-              FAT MASS, KG
+              {`${t('segmentalFat')} · ${t('units:kg')}`.toUpperCase()}
             </Txt>
             {SEGMENT_KEYS.map((key) => (
               <NumberField
                 key={`fat-${key}`}
-                label={SEGMENT_LABELS[key]}
+                label={t(SEGMENT_LABEL_KEYS[key])}
                 value={fat[key]}
                 onChange={(next) => setSegment('fat', key, next)}
-                suffix="kg"
+                suffix={t('units:kg')}
                 min={0}
                 max={80}
                 style={styles.field}
@@ -583,13 +637,13 @@ export default function AddBodyScanScreen() {
 
       <Card style={styles.block}>
         <TextField
-          label="Note"
+          label={t('note')}
           value={note}
           onChangeText={(next) => {
             setTouched(true);
             setNote(next);
           }}
-          placeholder="Morning, before breakfast"
+          placeholder={t('notePlaceholder')}
           maxLength={300}
           multiline
         />
@@ -601,15 +655,20 @@ export default function AddBodyScanScreen() {
             <View {...DECORATIVE}>
               <Ionicons name="alert-circle-outline" size={18} color={colors.warning} />
             </View>
-            <Txt weight="semibold">Worth a second look</Txt>
+            <Txt weight="semibold">{t('checkTitle')}</Txt>
           </View>
-          {problems.map((problem) => (
-            <Txt key={problem} variant="label" color="muted" style={styles.warning}>
-              {problem}
+          {problems.map((problem, index) => (
+            <Txt
+              key={`${problem.key}-${index}`}
+              variant="label"
+              color="muted"
+              style={styles.warning}
+            >
+              {problemText(problem)}
             </Txt>
           ))}
           <Txt variant="caption" color="faint" style={styles.warningFoot}>
-            You can still save. These are checks on the numbers, not on you.
+            {t('checkFoot')}
           </Txt>
         </Card>
       ) : null}
@@ -621,19 +680,17 @@ export default function AddBodyScanScreen() {
       ) : null}
 
       <Button
-        label={existing ? 'Save changes' : 'Save reading'}
+        label={existing ? t('saveEdit') : t('saveNew')}
         onPress={handleSave}
         disabled={derived.weightKg <= 0}
         loading={saving}
-        accessibilityHint={
-          derived.weightKg <= 0 ? 'Enter a weight first' : 'Adds this reading to your history'
-        }
+        accessibilityHint={derived.weightKg <= 0 ? t('saveHintBlocked') : t('saveHintReady')}
         fullWidth
         style={styles.save}
       />
 
       <Txt variant="caption" color="faint" align="center" style={styles.foot}>
-        Everything except weight is optional. Fill in what your sheet shows.
+        {t('addFoot')}
       </Txt>
     </Screen>
   );

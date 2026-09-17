@@ -1,12 +1,14 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { StyleSheet, View } from 'react-native';
 
 import { DayCard, type DayCardExercise, type DayCardStatus } from '@/components/training/DayCard';
-import { plannedLabel } from '@/components/training/ExerciseRow';
 import { WeekStrip, type WeekStripDay } from '@/components/training/WeekStrip';
+import { useTrainingText } from '@/components/training/useTrainingText';
 import {
   AppHeader,
+  Button,
   Card,
   IconButton,
   ListRow,
@@ -16,14 +18,9 @@ import {
   Txt,
 } from '@/components/ui';
 import { exerciseById } from '@/data/exercises';
-import { formatDayLabel, todayKey } from '@/domain/date';
-import {
-  SESSION_LABELS,
-  dayForDate,
-  trainingStreak,
-  weekDates,
-  weeklyVolume,
-} from '@/domain/training';
+import { todayKey } from '@/domain/date';
+import { formatCount } from '@/domain/format';
+import { dayForDate, trainingStreak, weekDates, weeklyVolume } from '@/domain/training';
 import { useApp } from '@/state/AppStore';
 import * as repo from '@/storage/repository';
 import { radius, spacing, useTheme } from '@/theme';
@@ -39,19 +36,28 @@ interface VolumeRow {
 /** Bar lengths are relative to the busiest day type, never to a fixed ceiling. */
 function VolumeBar({ row, max }: { row: VolumeRow; max: number }) {
   const { colors } = useTheme();
+  const { t } = useTranslation('training');
+  const text = useTrainingText();
+
   const share = max > 0 ? row.sets / max : 0;
   const empty = row.sets === 0;
+  const label = text.type(row.type);
+
+  const spoken = empty
+    ? t('volumeSpokenNone', { type: label })
+    : row.sets === 1
+      ? t('volumeSpokenOne', { type: label })
+      : t('volumeSpoken', { type: label, sets: formatCount(row.sets) });
 
   return (
-    <View
-      style={styles.volumeRow}
-      accessible
-      accessibilityLabel={`${SESSION_LABELS[row.type]}, ${row.sets} ${
-        row.sets === 1 ? 'set' : 'sets'
-      } this week`}
-    >
-      <Txt variant="label" color={empty ? 'faint' : 'text'} style={styles.volumeLabel} numberOfLines={1}>
-        {SESSION_LABELS[row.type]}
+    <View style={styles.volumeRow} accessible accessibilityLabel={spoken}>
+      <Txt
+        variant="label"
+        color={empty ? 'faint' : 'text'}
+        style={styles.volumeLabel}
+        numberOfLines={1}
+      >
+        {label}
       </Txt>
       <View style={[styles.volumeTrack, { backgroundColor: colors.track }]}>
         <View
@@ -64,8 +70,14 @@ function VolumeBar({ row, max }: { row: VolumeRow; max: number }) {
           ]}
         />
       </View>
-      <Txt variant="label" color={empty ? 'faint' : 'muted'} tabular style={styles.volumeValue}>
-        {row.sets}
+      <Txt
+        variant="label"
+        color={empty ? 'faint' : 'muted'}
+        align="end"
+        tabular
+        style={styles.volumeValue}
+      >
+        {formatCount(row.sets)}
       </Txt>
     </View>
   );
@@ -74,6 +86,8 @@ function VolumeBar({ row, max }: { row: VolumeRow; max: number }) {
 /** The training week: what today holds, what is done, and where the volume went. */
 export default function TrainingScreen() {
   const router = useRouter();
+  const { t } = useTranslation('training');
+  const text = useTrainingText();
   const { ready, program, workoutDates, customExercises, refresh } = useApp();
 
   const today = todayKey();
@@ -146,13 +160,13 @@ export default function TrainingScreen() {
     if (daySession) {
       return daySession.exercises.map((exercise, index) => {
         const planned = plannedById[exercise.exerciseId];
+        const catalogue = resolve(exercise.exerciseId);
         return {
           id: `${exercise.exerciseId}-${index}`,
-          name: exercise.name,
-          nameAr: resolve(exercise.exerciseId)?.nameAr,
-          detail: planned
-            ? plannedLabel(planned)
-            : `${exercise.sets.length} ${exercise.sets.length === 1 ? 'set' : 'sets'}`,
+          name: catalogue ? text.name(catalogue) : exercise.name,
+          altName: catalogue ? text.altName(catalogue) : undefined,
+          detail: planned ? text.plannedShort(planned) : text.sets(exercise.sets.length),
+          detailSpoken: planned ? text.planned(planned) : text.sets(exercise.sets.length),
           done: exercise.done,
         };
       });
@@ -160,15 +174,16 @@ export default function TrainingScreen() {
 
     if (!day) return [];
     return day.exercises.map((planned, index) => {
-      const exercise = resolve(planned.exerciseId);
+      const catalogue = resolve(planned.exerciseId);
       return {
         id: `${planned.exerciseId}-${index}`,
-        name: exercise?.name ?? planned.exerciseId,
-        nameAr: exercise?.nameAr,
-        detail: plannedLabel(planned),
+        name: catalogue ? text.name(catalogue) : planned.exerciseId,
+        altName: catalogue ? text.altName(catalogue) : undefined,
+        detail: text.plannedShort(planned),
+        detailSpoken: text.planned(planned),
       };
     });
-  }, [daySession, day, plannedById, customExercises]);
+  }, [daySession, day, plannedById, customExercises, text]);
 
   const status: DayCardStatus = daySession
     ? daySession.completedAt
@@ -178,11 +193,11 @@ export default function TrainingScreen() {
 
   const primaryLabel = daySession
     ? daySession.completedAt
-      ? 'Review session'
-      : 'Resume session'
+      ? t('reviewSession')
+      : t('resumeSession')
     : day
-      ? `Start ${day.label}`
-      : 'Log a session anyway';
+      ? t('startDay', { day: text.day(day) })
+      : t('logAnyway');
 
   const openSession = useCallback(() => {
     const params: Record<string, string> = { date: selectedDate };
@@ -222,13 +237,13 @@ export default function TrainingScreen() {
   }, [weekStats.sessions, program]);
 
   const maxVolume = volumeRows.reduce((max, row) => Math.max(max, row.sets), 0);
-  const untrained = volumeRows.filter((row) => row.sets === 0).map((row) => SESSION_LABELS[row.type]);
+  const untrained = volumeRows.filter((row) => row.sets === 0).map((row) => text.type(row.type));
   const streak = useMemo(() => trainingStreak(workoutDates, today), [workoutDates, today]);
 
   if (!ready || !program) {
     return (
       <Screen>
-        <LoadingView message="Loading your program" />
+        <LoadingView message={t('loading')} />
       </Screen>
     );
   }
@@ -236,14 +251,14 @@ export default function TrainingScreen() {
   return (
     <Screen scroll refreshing={refreshing} onRefresh={handleRefresh}>
       <AppHeader
-        title="Training"
-        subtitle={program.name}
+        title={t('title')}
+        subtitle={text.program(program)}
         large
         right={
           <IconButton
             icon="create-outline"
             onPress={openProgram}
-            accessibilityLabel="Edit program"
+            accessibilityLabel={t('editProgram')}
           />
         }
       />
@@ -256,9 +271,22 @@ export default function TrainingScreen() {
         style={styles.strip}
       />
 
+      {selectedDate !== today ? (
+        <View style={styles.jump}>
+          <Button
+            label={t('backToToday')}
+            icon="today-outline"
+            onPress={() => setSelectedDate(today)}
+            variant="ghost"
+            size="sm"
+            accessibilityHint={t('backToTodayHint')}
+          />
+        </View>
+      ) : null}
+
       <DayCard
         day={day}
-        dateLabel={formatDayLabel(selectedDate, today)}
+        dateLabel={text.date(selectedDate, today)}
         exercises={cardExercises}
         status={status}
         primaryLabel={primaryLabel}
@@ -268,18 +296,18 @@ export default function TrainingScreen() {
 
       <View style={styles.tiles}>
         <StatTile
-          label="This week"
-          value={`${weekStats.completed}/${weekStats.scheduled}`}
-          hint="Sessions finished"
+          label={t('weekTile')}
+          value={`${formatCount(weekStats.completed)}/${formatCount(weekStats.scheduled)}`}
+          hint={t('weekTileHint')}
           icon="checkmark-done-outline"
           tone={weekStats.completed > 0 ? 'accent' : 'default'}
           style={styles.tile}
         />
         <StatTile
-          label="Streak"
-          value={streak}
-          unit={streak === 1 ? 'day' : 'days'}
-          hint="Days in a row"
+          label={t('streakTile')}
+          value={formatCount(streak)}
+          unit={streak === 1 ? t('unitDay') : t('unitDays')}
+          hint={t('streakTileHint')}
           icon="flame-outline"
           style={styles.tile}
         />
@@ -289,10 +317,10 @@ export default function TrainingScreen() {
         <Card style={styles.volumeCard}>
           <View style={styles.volumeHeader}>
             <Txt variant="label" weight="semibold">
-              Sets by day type
+              {t('volumeTitle')}
             </Txt>
             <Txt variant="caption" color="faint">
-              THIS WEEK
+              {t('volumeCaption').toUpperCase()}
             </Txt>
           </View>
 
@@ -304,7 +332,7 @@ export default function TrainingScreen() {
 
           {untrained.length > 0 ? (
             <Txt variant="label" color="muted" style={styles.volumeNote}>
-              {`No sets logged yet for ${untrained.join(', ')}.`}
+              {t('volumeNote', { types: text.list(untrained) })}
             </Txt>
           ) : null}
         </Card>
@@ -312,8 +340,8 @@ export default function TrainingScreen() {
 
       <Card padded={false} style={styles.programCard}>
         <ListRow
-          title="Edit program"
-          subtitle="Schedule, days and exercises"
+          title={t('editProgram')}
+          subtitle={t('editProgramSubtitle')}
           icon="calendar-outline"
           onPress={openProgram}
           chevron
@@ -326,6 +354,12 @@ export default function TrainingScreen() {
 const styles = StyleSheet.create({
   strip: {
     marginBottom: spacing.lg,
+  },
+  // The jump back sits with the strip it belongs to, not with the card below it.
+  jump: {
+    alignItems: 'flex-start',
+    marginBottom: spacing.sm,
+    marginTop: -spacing.sm,
   },
   dayCard: {
     marginBottom: spacing.lg,
@@ -358,7 +392,7 @@ const styles = StyleSheet.create({
     minHeight: 24,
   },
   volumeLabel: {
-    width: 64,
+    width: 72,
   },
   volumeTrack: {
     borderRadius: radius.pill,
@@ -372,7 +406,6 @@ const styles = StyleSheet.create({
   },
   volumeValue: {
     minWidth: 22,
-    textAlign: 'right',
   },
   volumeNote: {
     marginTop: spacing.md,

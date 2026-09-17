@@ -6,14 +6,20 @@
  * between two scans. Nothing here is a diagnosis or a prescription; it is
  * arithmetic on what was logged, plus one concrete next step.
  *
+ * The engine never builds a sentence. It returns the translation KEY of the
+ * headline and of the detail, plus the values that go into them, so the same
+ * insight reads as natural English or natural Arabic depending on what the
+ * reader picked. {@link InsightCard} resolves the pair with t().
+ *
  * Windows end YESTERDAY, because a partly logged today would drag every average
  * down. Today still counts for streaks, where a partial day is still a day.
  */
 
+import type { insights as InsightCopy } from '@/i18n/locales/en/insights';
 import type {
   BodyScan,
   Goal,
-  Insight,
+  Insight as BaseInsight,
   Meal,
   Profile,
   Program,
@@ -24,9 +30,57 @@ import type {
 } from '@/types';
 
 import { scanChange, type ScanChange } from './bodyScan';
-import { addDays, daysBetween, formatShortDay, lastNDays, parseDateKey } from './date';
+import { addDays, daysBetween, lastNDays, parseDateKey } from './date';
+import { formatAmount, formatCount } from './format';
 import { loggingStreak, totalMacros } from './totals';
 import { dayForDate, weekDates } from './training';
+
+/* ------------------------------------------------------------ the shape -- */
+
+/** Every key defined in the insights namespace, checked at compile time. */
+export type InsightKey = keyof typeof InsightCopy;
+
+/** Counted nouns whose form changes with the number in Arabic. */
+export type InsightCountNoun = 'day' | 'meal' | 'session';
+
+/** One limb or region, or a left-and-right pair collapsed into one word. */
+export type InsightSegment =
+  | 'rightArm'
+  | 'leftArm'
+  | 'trunk'
+  | 'rightLeg'
+  | 'leftLeg'
+  | 'bothArms'
+  | 'bothLegs';
+
+/**
+ * A value inside a sentence. Plain strings and numbers are printed as they are;
+ * the tagged shapes need the reader's language, so the card resolves them.
+ */
+export type InsightParam =
+  | string
+  | number
+  | { readonly kind: 'count'; readonly noun: InsightCountNoun; readonly value: number }
+  | { readonly kind: 'date'; readonly value: string }
+  | { readonly kind: 'weekdays'; readonly value: readonly number[] }
+  | { readonly kind: 'segments'; readonly value: readonly InsightSegment[] }
+  /** The user's own data, which is never translated, only chosen. */
+  | { readonly kind: 'name'; readonly en: string; readonly ar?: string };
+
+export type InsightParams = Readonly<Record<string, InsightParam>>;
+
+/**
+ * The insight as the app reads it: everything {@link BaseInsight} carries, with
+ * the two sentences and the button label held as keys rather than finished
+ * prose.
+ */
+export interface Insight extends Omit<BaseInsight, 'title' | 'detail' | 'actionLabel'> {
+  titleKey: InsightKey;
+  detailKey: InsightKey;
+  params?: InsightParams;
+  /** Label for the button that opens {@link Insight.actionHref}. */
+  actionLabelKey?: InsightKey;
+}
 
 export interface InsightInput {
   profile: Profile | null;
@@ -120,57 +174,22 @@ const ROUTES = {
 
 /* ------------------------------------------------------------ formatting -- */
 
-const round1 = (value: number) => Math.round(value * 10) / 10;
+/** A counted noun the card will put in the right form for the language. */
+const count = (noun: InsightCountNoun, value: number): InsightParam => ({
+  kind: 'count',
+  noun,
+  value,
+});
 
-/** '1,842' — same grouping the dashboard uses. */
-function groupDigits(value: number): string {
-  return Math.round(value)
-    .toString()
-    .replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-}
+/** A 'YYYY-MM-DD' day the card will print with a translated month. */
+const day = (value: string): InsightParam => ({ kind: 'date', value });
 
-const kcal = (value: number) => `${groupDigits(value)} kcal`;
-const grams = (value: number) => `${Math.round(value)} g`;
-const kg = (value: number) => `${round1(value).toFixed(1)} kg`;
-const kgFine = (value: number) => `${(Math.round(value * 100) / 100).toFixed(2)} kg`;
-const percent = (value: number) => `${round1(value).toFixed(1)}%`;
-
-const plural = (count: number, one: string, many: string) =>
-  `${count} ${count === 1 ? one : many}`;
-
-function joinPhrases(parts: string[]): string {
-  if (parts.length <= 1) return parts[0] ?? '';
-  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
-  return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
-}
-
-const sentenceCase = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
-
-/** 'right leg' plus 'left leg' reads better as 'both legs' in a title. */
-function collapseSides(labels: string[]): string[] {
-  const out = [...labels];
-  for (const part of ['arm', 'leg']) {
-    const right = out.indexOf(`right ${part}`);
-    const left = out.indexOf(`left ${part}`);
-    if (right === -1 || left === -1) continue;
-    out.splice(Math.max(right, left), 1);
-    out.splice(Math.min(right, left), 1, `both ${part}s`);
-  }
-  return out;
-}
-
-const WEEKDAY_NAMES = [
-  'Sunday',
-  'Monday',
-  'Tuesday',
-  'Wednesday',
-  'Thursday',
-  'Friday',
-  'Saturday',
-];
-
-/** 0=Sunday, matching Date.getDay() and the program schedule. */
-const weekdayName = (weekday: number) => WEEKDAY_NAMES[weekday] ?? '';
+/** Whole numbers, grouped: 1842 -> '1,842'. Digits stay Western in both languages. */
+const whole = (value: number) => formatCount(value);
+/** One decimal, for kilograms on a scale that reads to 100 g. */
+const fine = (value: number) => formatAmount(value, 1);
+/** Two decimals, for per-limb lean mass, where 50 g still means something. */
+const finer = (value: number) => formatAmount(value, 2);
 
 const SEGMENT_KEYS: (keyof SegmentalValues)[] = [
   'rightArm',
@@ -180,13 +199,22 @@ const SEGMENT_KEYS: (keyof SegmentalValues)[] = [
   'leftLeg',
 ];
 
-const SEGMENT_LABELS: Record<keyof SegmentalValues, string> = {
-  rightArm: 'right arm',
-  leftArm: 'left arm',
-  trunk: 'trunk',
-  rightLeg: 'right leg',
-  leftLeg: 'left leg',
-};
+/** 'right leg' plus 'left leg' reads better as 'both legs' in a headline. */
+function collapseSides(labels: InsightSegment[]): InsightSegment[] {
+  const out = [...labels];
+  const pairs: [InsightSegment, InsightSegment, InsightSegment][] = [
+    ['rightArm', 'leftArm', 'bothArms'],
+    ['rightLeg', 'leftLeg', 'bothLegs'],
+  ];
+  for (const [right, left, both] of pairs) {
+    const r = out.indexOf(right);
+    const l = out.indexOf(left);
+    if (r === -1 || l === -1) continue;
+    out.splice(Math.max(r, l), 1);
+    out.splice(Math.min(r, l), 1, both);
+  }
+  return out;
+}
 
 /* --------------------------------------------------------------- windows -- */
 
@@ -232,19 +260,19 @@ function nutritionInsights(targets: Targets | null, summaries: DaySummary[]): In
 
   const logged = summaries.length;
   const floor = targets.calories * LOW_DAY_SHARE;
-  const lowDays = summaries.filter((day) => day.calories > 0 && day.calories < floor);
+  const lowDays = summaries.filter((entry) => entry.calories > 0 && entry.calories < floor);
   const lowest = lowDays.reduce<DaySummary | null>(
-    (min, day) => (min === null || day.calories < min.calories ? day : min),
+    (min, entry) => (min === null || entry.calories < min.calories ? entry : min),
     null,
   );
 
   if (logged >= MIN_LOGGED_DAYS) {
-    const avgProtein = mean(summaries.map((day) => day.protein));
-    const avgCalories = mean(summaries.map((day) => day.calories));
-    const span =
-      logged >= NUTRITION_WINDOW_DAYS
-        ? `over the last ${NUTRITION_WINDOW_DAYS} days`
-        : `across the ${logged} logged days of the last ${NUTRITION_WINDOW_DAYS}`;
+    const avgProtein = mean(summaries.map((entry) => entry.protein));
+    const avgCalories = mean(summaries.map((entry) => entry.calories));
+    // Between MIN_LOGGED_DAYS and the window, so the partial phrasing always
+    // names three to six days and both languages read correctly with a plain
+    // number.
+    const full = logged >= NUTRITION_WINDOW_DAYS;
 
     if (targets.protein > 0 && avgProtein < targets.protein * PROTEIN_SHORTFALL) {
       found.push({
@@ -253,12 +281,16 @@ function nutritionInsights(targets: Targets | null, summaries: DaySummary[]): In
         tone: 'warning',
         category: 'nutrition',
         icon: 'nutrition-outline',
-        title: 'Protein is landing under target',
-        detail:
-          `Protein averaged ${grams(avgProtein)} a day against a ${grams(targets.protein)} ` +
-          `target ${span}. That is ${grams(targets.protein - avgProtein)} short a day. ` +
-          'Adding one protein-led item to a day covers most of it.',
-        actionLabel: 'Log a meal',
+        titleKey: 'proteinTitle',
+        detailKey: full ? 'proteinDetailFull' : 'proteinDetailPartial',
+        params: {
+          avg: whole(avgProtein),
+          target: whole(targets.protein),
+          short: whole(targets.protein - avgProtein),
+          window: NUTRITION_WINDOW_DAYS,
+          logged,
+        },
+        actionLabelKey: 'actionLogMeal',
         actionHref: ROUTES.addMeal,
       });
     }
@@ -266,7 +298,6 @@ function nutritionInsights(targets: Targets | null, summaries: DaySummary[]): In
     const over = avgCalories > targets.calories * CALORIE_OVER;
     // A half-logged day already explains a low average; that insight says so.
     const under = !lowest && avgCalories < targets.calories * CALORIE_UNDER;
-    const diff = Math.abs(avgCalories - targets.calories);
 
     if (over || under) {
       found.push({
@@ -275,36 +306,46 @@ function nutritionInsights(targets: Targets | null, summaries: DaySummary[]): In
         tone: over ? 'warning' : 'neutral',
         category: 'nutrition',
         icon: 'flame-outline',
-        title: over ? 'Calories are running over target' : 'Calories are running under target',
-        detail:
-          `Calories averaged ${kcal(avgCalories)} a day against a ${kcal(targets.calories)} ` +
-          `target ${span}, ${kcal(diff)} a day ${over ? 'over' : 'under'}. ` +
-          (over
-            ? 'The history chart shows which days carry the difference.'
-            : 'An average this low can also mean items were logged late or not at all.'),
-        actionLabel: 'Open history',
+        titleKey: over ? 'caloriesOverTitle' : 'caloriesUnderTitle',
+        detailKey: over
+          ? full
+            ? 'caloriesOverDetailFull'
+            : 'caloriesOverDetailPartial'
+          : full
+            ? 'caloriesUnderDetailFull'
+            : 'caloriesUnderDetailPartial',
+        params: {
+          avg: whole(avgCalories),
+          target: whole(targets.calories),
+          diff: whole(Math.abs(avgCalories - targets.calories)),
+          window: NUTRITION_WINDOW_DAYS,
+          logged,
+        },
+        actionLabelKey: 'actionOpenHistory',
         actionHref: ROUTES.history,
       });
     }
   }
 
   if (lowest) {
-    const others =
-      lowDays.length > 1
-        ? ` ${plural(lowDays.length, 'day', 'days')} in the last ${NUTRITION_WINDOW_DAYS} read that low.`
-        : '';
     found.push({
       id: 'nutrition_low_day',
       priority: PRIORITY.lowDay,
       tone: 'neutral',
       category: 'nutrition',
       icon: 'alert-circle-outline',
-      title: `${formatShortDay(lowest.date)} reads unusually low`,
-      detail:
-        `That day totals ${kcal(lowest.calories)} from ` +
-        `${plural(lowest.mealCount, 'meal', 'meals')}, under the ${kcal(floor)} mark for your ` +
-        `${kcal(targets.calories)} target.${others} Filling the gaps keeps the averages honest.`,
-      actionLabel: 'Open history',
+      titleKey: 'lowDayTitle',
+      detailKey: lowDays.length > 1 ? 'lowDayDetailMore' : 'lowDayDetail',
+      params: {
+        date: day(lowest.date),
+        total: whole(lowest.calories),
+        meals: count('meal', lowest.mealCount),
+        floor: whole(floor),
+        target: whole(targets.calories),
+        days: count('day', lowDays.length),
+        window: NUTRITION_WINDOW_DAYS,
+      },
+      actionLabelKey: 'actionOpenHistory',
       actionHref: ROUTES.history,
     });
   }
@@ -317,6 +358,7 @@ function nutritionInsights(targets: Targets | null, summaries: DaySummary[]): In
 interface ScheduleCount {
   type: SessionType;
   label: string;
+  labelAr?: string;
   scheduled: number;
   completed: number;
   /** Weekday indexes the day falls on, 0=Sunday, ascending. */
@@ -332,12 +374,13 @@ function countSchedule(
   const counts = new Map<SessionType, ScheduleCount>();
 
   for (const date of dates) {
-    const day = dayForDate(program, date);
-    if (!day) continue;
+    const scheduled = dayForDate(program, date);
+    if (!scheduled) continue;
 
-    const row = counts.get(day.type) ?? {
-      type: day.type,
-      label: day.label,
+    const row = counts.get(scheduled.type) ?? {
+      type: scheduled.type,
+      label: scheduled.label,
+      labelAr: scheduled.labelAr,
       scheduled: 0,
       completed: 0,
       weekdays: [],
@@ -351,9 +394,9 @@ function countSchedule(
     }
 
     const sessions = workoutsByDate[date] ?? [];
-    if (sessions.some((session) => session.type === day.type)) row.completed += 1;
+    if (sessions.some((session) => session.type === scheduled.type)) row.completed += 1;
 
-    counts.set(day.type, row);
+    counts.set(scheduled.type, row);
   }
 
   return [...counts.values()];
@@ -379,15 +422,14 @@ function trainingInsights(input: InsightInput, today: string, trained: string[])
         tone: 'warning',
         category: 'training',
         icon: 'time-outline',
-        title: `No session logged in ${plural(gap, 'day', 'days')}`,
-        detail:
-          `The last one was ${formatShortDay(lastSession)}.` +
-          (missedScheduled > 0
-            ? ` ${plural(missedScheduled, 'training day', 'training days')} on the schedule have ` +
-              'passed since then.'
-            : '') +
-          ' Logging the next session restarts the count.',
-        actionLabel: 'Open training',
+        titleKey: 'trainingGapTitle',
+        detailKey: missedScheduled > 0 ? 'trainingGapDetailMissed' : 'trainingGapDetail',
+        params: {
+          days: count('day', gap),
+          date: day(lastSession),
+          missed: count('day', missedScheduled),
+        },
+        actionLabelKey: 'actionOpenTraining',
         actionHref: ROUTES.training,
       });
       // The gap already says everything the schedule breakdown would repeat.
@@ -414,13 +456,16 @@ function trainingInsights(input: InsightInput, today: string, trained: string[])
       tone: 'warning',
       category: 'training',
       icon: 'calendar-outline',
-      title: `${worst.label} days are the ones slipping`,
-      detail:
-        `${worst.label} was scheduled ${plural(worst.scheduled, 'time', 'times')} in the last ` +
-        `${HISTORY_WINDOW_DAYS} days and logged ${worst.completed === 0 ? 'none' : worst.completed}. ` +
-        'It falls on ' +
-        `${joinPhrases(worst.weekdays.map(weekdayName))}. The next one is the one to protect.`,
-      actionLabel: 'Open training',
+      titleKey: 'missedTypeTitle',
+      detailKey: worst.completed === 0 ? 'missedTypeDetailNone' : 'missedTypeDetail',
+      params: {
+        label: { kind: 'name', en: worst.label, ar: worst.labelAr },
+        scheduled: count('day', worst.scheduled),
+        completed: worst.completed,
+        window: HISTORY_WINDOW_DAYS,
+        weekdays: { kind: 'weekdays', value: worst.weekdays },
+      },
+      actionLabelKey: 'actionOpenTraining',
       actionHref: ROUTES.training,
     });
   }
@@ -438,16 +483,14 @@ function trainingInsights(input: InsightInput, today: string, trained: string[])
       tone: onTrack ? 'positive' : 'neutral',
       category: 'training',
       icon: 'barbell-outline',
-      title: onTrack
-        ? `${plural(trainedThisWeek, 'session', 'sessions')} logged this week`
-        : `${trainedThisWeek} of ${scheduledSoFar} sessions logged this week`,
-      detail:
-        `The schedule called for ${scheduledSoFar} between Sunday and today, and ` +
-        `${trainedThisWeek} ${trainedThisWeek === 1 ? 'is' : 'are'} logged.` +
-        (onTrack
-          ? ' The week is on plan so far.'
-          : ' The rest of the week is where the count evens out.'),
-      actionLabel: 'Open training',
+      titleKey: onTrack ? 'weekOnTrackTitle' : 'weekBehindTitle',
+      detailKey: onTrack ? 'weekOnTrackDetail' : 'weekBehindDetail',
+      params: {
+        sessions: count('session', trainedThisWeek),
+        planned: count('session', scheduledSoFar),
+        done: trainedThisWeek,
+      },
+      actionLabelKey: 'actionOpenTraining',
       actionHref: ROUTES.training,
     });
   }
@@ -464,7 +507,7 @@ function sortScans(scans: BodyScan[]): BodyScan[] {
 }
 
 interface SegmentMove {
-  label: string;
+  segment: InsightSegment;
   /** Signed change in kilograms from the earlier scan to the later one. */
   change: number;
   /** That change as a share of the segment's earlier mass. */
@@ -482,7 +525,7 @@ function segmentMoves(from: BodyScan, to: BodyScan): SegmentMove[] {
     const end = after[key];
     if (start === undefined || end === undefined || start <= 0) continue;
     moves.push({
-      label: SEGMENT_LABELS[key],
+      segment: key,
       change: end - start,
       share: (end - start) / start,
     });
@@ -498,44 +541,44 @@ interface TrendDirections {
 }
 
 /** The headline for two scans: muscle first, then fat, then weight alone. */
-function trendTitle(change: ScanChange, direction: TrendDirections): string {
+function trendTitleKey(change: ScanChange, direction: TrendDirections): InsightKey {
   const { muscleUp, muscleDown, fatUp, fatDown } = direction;
 
-  if (muscleUp && fatDown) return 'Muscle up and fat down';
-  if (muscleUp && fatUp) return 'Muscle and fat both up';
-  if (muscleUp) return 'Muscle up since the last scan';
-  if (muscleDown && fatUp) return 'Muscle down and fat up';
-  if (muscleDown) return 'Muscle down since the last scan';
-  if (fatUp) return 'Fat up since the last scan';
-  if (fatDown) return 'Fat down since the last scan';
+  if (muscleUp && fatDown) return 'trendMuscleUpFatDown';
+  if (muscleUp && fatUp) return 'trendMuscleUpFatUp';
+  if (muscleUp) return 'trendMuscleUp';
+  if (muscleDown && fatUp) return 'trendMuscleDownFatUp';
+  if (muscleDown) return 'trendMuscleDown';
+  if (fatUp) return 'trendFatUp';
+  if (fatDown) return 'trendFatDown';
 
   const composition = change.skeletalMuscleKg !== undefined || change.bodyFatKg !== undefined;
   if (!composition && Math.abs(change.weightKg) >= SCAN_NOISE_KG) {
-    return change.weightKg > 0 ? 'Weight up since the last scan' : 'Weight down since the last scan';
+    return change.weightKg > 0 ? 'trendWeightUp' : 'trendWeightDown';
   }
-  return 'Little moved between the last two scans';
+  return 'trendFlat';
+}
+
+/** Which pair of readings the detail sentence can actually quote. */
+function trendDetailKey(hasMuscle: boolean, hasFatKg: boolean, hasFatPct: boolean): InsightKey {
+  if (hasMuscle && hasFatKg) return 'trendDetailMuscleFat';
+  if (hasMuscle && hasFatPct) return 'trendDetailMuscleFatPercent';
+  if (hasMuscle) return 'trendDetailMuscle';
+  if (hasFatKg) return 'trendDetailFat';
+  if (hasFatPct) return 'trendDetailFatPercent';
+  return 'trendDetailWeight';
 }
 
 function scanTrendInsight(previous: BodyScan, latest: BodyScan, goal?: Goal): Insight {
   const change = scanChange(previous, latest);
-  const span = `between ${formatShortDay(previous.date)} and ${formatShortDay(latest.date)}`;
-  const parts: string[] = [];
 
-  if (previous.skeletalMuscleKg !== undefined && latest.skeletalMuscleKg !== undefined) {
-    parts.push(
-      `skeletal muscle went from ${kg(previous.skeletalMuscleKg)} to ${kg(latest.skeletalMuscleKg)}`,
-    );
-  }
-  if (previous.bodyFatKg !== undefined && latest.bodyFatKg !== undefined) {
-    parts.push(`body fat from ${kg(previous.bodyFatKg)} to ${kg(latest.bodyFatKg)}`);
-  } else if (previous.bodyFatPercent !== undefined && latest.bodyFatPercent !== undefined) {
-    parts.push(
-      `percent body fat from ${percent(previous.bodyFatPercent)} to ${percent(latest.bodyFatPercent)}`,
-    );
-  }
-  if (parts.length === 0) {
-    parts.push(`weight went from ${kg(previous.weightKg)} to ${kg(latest.weightKg)}`);
-  }
+  const hasMuscle =
+    previous.skeletalMuscleKg !== undefined && latest.skeletalMuscleKg !== undefined;
+  const hasFatKg = previous.bodyFatKg !== undefined && latest.bodyFatKg !== undefined;
+  const hasFatPct =
+    !hasFatKg &&
+    previous.bodyFatPercent !== undefined &&
+    latest.bodyFatPercent !== undefined;
 
   const muscle = change.skeletalMuscleKg ?? 0;
   const fat = change.bodyFatKg ?? 0;
@@ -550,19 +593,26 @@ function scanTrendInsight(previous: BodyScan, latest: BodyScan, goal?: Goal): In
   const tone: Insight['tone'] =
     muscleUp && !fatUp ? 'positive' : muscleDown || fatConcerns ? 'warning' : 'neutral';
 
-  const title = trendTitle(change, { muscleUp, muscleDown, fatUp, fatDown });
-
   return {
     id: 'body_trend',
     priority: PRIORITY.scanTrend,
     tone,
     category: 'body',
     icon: 'analytics-outline',
-    title,
-    detail:
-      `Over ${plural(change.days, 'day', 'days')} ${span}, ${joinPhrases(parts)}. ` +
-      'A third reading on the same machine makes the line clearer.',
-    actionLabel: 'View scans',
+    titleKey: trendTitleKey(change, { muscleUp, muscleDown, fatUp, fatDown }),
+    detailKey: trendDetailKey(hasMuscle, hasFatKg, hasFatPct),
+    params: {
+      days: count('day', change.days),
+      from: day(previous.date),
+      to: day(latest.date),
+      muscleFrom: fine(previous.skeletalMuscleKg ?? 0),
+      muscleTo: fine(latest.skeletalMuscleKg ?? 0),
+      fatFrom: fine(hasFatKg ? (previous.bodyFatKg ?? 0) : (previous.bodyFatPercent ?? 0)),
+      fatTo: fine(hasFatKg ? (latest.bodyFatKg ?? 0) : (latest.bodyFatPercent ?? 0)),
+      weightFrom: fine(previous.weightKg),
+      weightTo: fine(latest.weightKg),
+    },
+    actionLabelKey: 'actionViewScans',
     actionHref: ROUTES.body,
   };
 }
@@ -571,12 +621,12 @@ function imbalanceInsight(scan: BodyScan): Insight | null {
   const lean = scan.segmentalLeanKg;
   if (!lean) return null;
 
-  const pairs: { what: string; right?: number; left?: number }[] = [
+  const pairs: { what: 'arm' | 'leg'; right?: number; left?: number }[] = [
     { what: 'arm', right: lean.rightArm, left: lean.leftArm },
     { what: 'leg', right: lean.rightLeg, left: lean.leftLeg },
   ];
 
-  let worst: { what: string; right: number; left: number; share: number } | null = null;
+  let worst: { what: 'arm' | 'leg'; right: number; left: number; share: number } | null = null;
   for (const pair of pairs) {
     const { right, left } = pair;
     if (right === undefined || left === undefined) continue;
@@ -589,8 +639,15 @@ function imbalanceInsight(scan: BodyScan): Insight | null {
 
   if (!worst) return null;
 
-  const heavier = worst.right > worst.left ? 'right' : 'left';
-  const lighter = heavier === 'right' ? 'left' : 'right';
+  const rightHeavier = worst.right > worst.left;
+  const titleKey: InsightKey =
+    worst.what === 'arm'
+      ? rightHeavier
+        ? 'imbalanceArmRightTitle'
+        : 'imbalanceArmLeftTitle'
+      : rightHeavier
+        ? 'imbalanceLegRightTitle'
+        : 'imbalanceLegLeftTitle';
 
   return {
     id: 'body_imbalance',
@@ -598,13 +655,15 @@ function imbalanceInsight(scan: BodyScan): Insight | null {
     tone: 'neutral',
     category: 'body',
     icon: 'swap-horizontal-outline',
-    title: `${sentenceCase(heavier)} ${worst.what} reads heavier than the ${lighter}`,
-    detail:
-      `On ${formatShortDay(scan.date)} the right ${worst.what} held ${kgFine(worst.right)} of lean ` +
-      `mass against ${kgFine(worst.left)} on the left, a ${percent(worst.share * 100)} difference. ` +
-      `Working one side at a time loads the ${lighter} ${worst.what} the same as the other. ` +
-      'Segmental readings carry some noise, so watch it across scans rather than one.',
-    actionLabel: 'Open training',
+    titleKey,
+    detailKey: worst.what === 'arm' ? 'imbalanceArmDetail' : 'imbalanceLegDetail',
+    params: {
+      date: day(scan.date),
+      right: finer(worst.right),
+      left: finer(worst.left),
+      share: formatAmount(worst.share * 100, 1),
+    },
+    actionLabelKey: 'actionOpenTraining',
     actionHref: ROUTES.training,
   };
 }
@@ -617,16 +676,10 @@ function stalledSegmentInsight(previous: BodyScan, latest: BodyScan): Insight | 
   const flat = moves.filter((move) => Math.abs(move.share) < SEGMENT_FLAT);
   if (movers.length === 0 || flat.length === 0) return null;
 
-  const topMovers = [...movers].sort((a, b) => b.change - a.change).slice(0, 2);
-  const grew = joinPhrases(
-    topMovers.map(
-      (move) => `${move.label} gained ${kgFine(move.change)} (${percent(move.share * 100)})`,
-    ),
-  );
-  const stood = joinPhrases(
-    flat.map((move) => `${move.label} moved ${kgFine(Math.abs(move.change))}`),
-  );
-  const flatTitle = joinPhrases(collapseSides(flat.map((move) => move.label)));
+  const leader = [...movers].sort((a, b) => b.change - a.change)[0];
+  if (!leader) return null;
+
+  const noise = flat.reduce((max, move) => Math.max(max, Math.abs(move.change)), 0);
 
   return {
     id: 'body_segment_stalled',
@@ -634,12 +687,18 @@ function stalledSegmentInsight(previous: BodyScan, latest: BodyScan): Insight | 
     tone: 'neutral',
     category: 'body',
     icon: 'footsteps-outline',
-    title: `${sentenceCase(flatTitle)} did not move`,
-    detail:
-      `Between ${formatShortDay(previous.date)} and ${formatShortDay(latest.date)}, ${grew}, ` +
-      `while ${stood}. Load and reps logged in each session are what show whether the work ` +
-      'on those segments is progressing.',
-    actionLabel: 'Open training',
+    titleKey: 'stalledTitle',
+    detailKey: 'stalledDetail',
+    params: {
+      segments: { kind: 'segments', value: collapseSides(flat.map((move) => move.segment)) },
+      mover: { kind: 'segments', value: [leader.segment] },
+      gain: finer(leader.change),
+      // Rounded up so the sentence never claims a tighter bound than it measured.
+      noise: finer(Math.ceil(noise * 100) / 100),
+      from: day(previous.date),
+      to: day(latest.date),
+    },
+    actionLabelKey: 'actionOpenTraining',
     actionHref: ROUTES.training,
   };
 }
@@ -681,10 +740,9 @@ function consistencyInsights(today: string, logged: string[]): Insight[] {
       tone: 'positive',
       category: 'consistency',
       icon: 'flash-outline',
-      title: `${plural(streak, 'day', 'days')} logged in a row`,
-      detail:
-        `Meals are on record for ${plural(streak, 'day', 'days')} straight. ` +
-        'Every number above is drawn from that run.',
+      titleKey: 'streakTitle',
+      detailKey: 'streakDetail',
+      params: { days: count('day', streak) },
     });
   }
 
@@ -695,11 +753,14 @@ function consistencyInsights(today: string, logged: string[]): Insight[] {
       tone: 'neutral',
       category: 'consistency',
       icon: 'calendar-number-outline',
-      title: `${loggedDays} of the last ${HISTORY_WINDOW_DAYS} days have meals`,
-      detail:
-        `${plural(missed, 'day', 'days')} in that fortnight have nothing logged, so every ` +
-        `average here comes from ${loggedDays}. Back-filling a day takes a minute in history.`,
-      actionLabel: 'Open history',
+      titleKey: 'missedDaysTitle',
+      detailKey: 'missedDaysDetail',
+      params: {
+        logged: count('day', loggedDays),
+        missed: count('day', missed),
+        window: HISTORY_WINDOW_DAYS,
+      },
+      actionLabelKey: 'actionOpenHistory',
       actionHref: ROUTES.history,
     });
   }
@@ -724,11 +785,9 @@ function gateInsights(
       tone: 'neutral',
       category: 'nutrition',
       icon: 'person-outline',
-      title: 'No targets to measure against yet',
-      detail:
-        'Sex, age, height, weight and goal are what the calorie and macro targets are built ' +
-        'from. Without them there is nothing to compare your logged days to.',
-      actionLabel: 'Finish profile',
+      titleKey: 'gateProfileTitle',
+      detailKey: 'gateProfileDetail',
+      actionLabelKey: 'actionFinishProfile',
       actionHref: ROUTES.onboarding,
     });
   }
@@ -740,11 +799,14 @@ function gateInsights(
       tone: 'neutral',
       category: 'nutrition',
       icon: 'restaurant-outline',
-      title: 'Food averages need more days',
-      detail:
-        `${summaries.length} of the last ${NUTRITION_WINDOW_DAYS} days have meals logged. ` +
-        `At ${MIN_LOGGED_DAYS} this list starts reporting protein and calorie averages.`,
-      actionLabel: 'Log a meal',
+      titleKey: 'gateFoodTitle',
+      detailKey: summaries.length === 0 ? 'gateFoodDetailNone' : 'gateFoodDetail',
+      params: {
+        logged: count('day', summaries.length),
+        window: NUTRITION_WINDOW_DAYS,
+        min: MIN_LOGGED_DAYS,
+      },
+      actionLabelKey: 'actionLogMeal',
       actionHref: ROUTES.addMeal,
     });
   }
@@ -756,11 +818,9 @@ function gateInsights(
       tone: 'neutral',
       category: 'training',
       icon: 'barbell-outline',
-      title: 'No sessions logged yet',
-      detail:
-        'Once sessions are on record, this list can compare what the schedule asked for with ' +
-        'what was done, by day type.',
-      actionLabel: 'Open training',
+      titleKey: 'gateTrainingTitle',
+      detailKey: 'gateTrainingDetail',
+      actionLabelKey: 'actionOpenTraining',
       actionHref: ROUTES.training,
     });
   }
@@ -772,17 +832,9 @@ function gateInsights(
       tone: 'neutral',
       category: 'body',
       icon: 'body-outline',
-      title:
-        input.scans.length === 0
-          ? 'No body scan on file'
-          : 'One body scan on file',
-      detail:
-        input.scans.length === 0
-          ? 'A body-composition reading adds muscle, fat and per-limb numbers that weight alone ' +
-            'cannot show.'
-          : 'A second reading is what turns a single sheet into a direction for muscle, fat and ' +
-            'each limb.',
-      actionLabel: 'Add a scan',
+      titleKey: input.scans.length === 0 ? 'gateScanNoneTitle' : 'gateScanOneTitle',
+      detailKey: input.scans.length === 0 ? 'gateScanNoneDetail' : 'gateScanOneDetail',
+      actionLabelKey: 'actionAddScan',
       actionHref: ROUTES.body,
     });
   }

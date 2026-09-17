@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Platform,
   ScrollView,
@@ -10,6 +11,8 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { FOOD_CATEGORIES, useFoodLabels } from '@/components/meal/useFoodLabels';
+import { useDayLabels } from '@/components/today/useDayLabels';
 import {
   AppHeader,
   Badge,
@@ -21,16 +24,15 @@ import {
   TextField,
   Txt,
 } from '@/components/ui';
-import { CATEGORY_LABELS } from '@/data/foods';
-import { currentSlot, formatDayLabel, todayKey } from '@/domain/date';
+import { currentSlot, todayKey } from '@/domain/date';
+import { formatAmount, formatCount } from '@/domain/format';
 import { makeId } from '@/domain/id';
 import { caloriesFromMacros, macrosForGrams } from '@/domain/nutrition';
-import { MEAL_SLOTS, SLOT_LABELS } from '@/domain/totals';
+import { MEAL_SLOTS } from '@/domain/totals';
+import { useDirection } from '@/i18n';
 import { useApp } from '@/state/AppStore';
 import { spacing, useTheme } from '@/theme';
 import type { FoodCategory, FoodItem, Macros, MealSlot, ServingOption } from '@/types';
-
-import { formatCount } from '../onboarding/_layout';
 
 /** Decoration only: the surrounding text already carries the meaning. */
 const DECORATIVE: AccessibilityProps =
@@ -44,12 +46,9 @@ const DEFAULT_CATEGORY: FoodCategory = 'dishes';
 /** Every category, with the default one leading so the selection is on screen. */
 const CATEGORIES: FoodCategory[] = [
   DEFAULT_CATEGORY,
-  ...(Object.keys(CATEGORY_LABELS) as FoodCategory[]).filter(
-    (category) => category !== DEFAULT_CATEGORY,
-  ),
+  ...FOOD_CATEGORIES.filter((category) => category !== DEFAULT_CATEGORY),
 ];
 const DEFAULT_SERVING_GRAMS = 100;
-const DEFAULT_SERVING_NAME = '1 serving';
 
 const NAME_MAX = 80;
 const SERVING_NAME_MAX = 40;
@@ -92,40 +91,6 @@ function readDate(value: string | string[] | undefined): string {
 
 const round1 = (value: number) => Math.round(value * 10) / 10;
 
-/** Prints 250 rather than 250.0, so labels read like the bundled database. */
-function formatGrams(value: number): string {
-  const rounded = round1(value);
-  if (Number.isInteger(rounded)) return formatCount(rounded);
-  const [whole, fraction] = rounded.toFixed(1).split('.');
-  return `${formatCount(Number(whole))}.${fraction}`;
-}
-
-function requiredNumberError(
-  value: number | null,
-  max: number,
-  unit: string,
-): string | undefined {
-  if (value === null) return 'Enter a number. Use 0 if there is none.';
-  if (!Number.isFinite(value) || value < 0) return 'Use a number of 0 or more.';
-  if (value > max) return `More than ${max} ${unit} in 100 g is not possible.`;
-  return undefined;
-}
-
-function optionalNumberError(
-  value: number | null,
-  max: number,
-  unit: string,
-): string | undefined {
-  if (value === null) return undefined;
-  return requiredNumberError(value, max, unit);
-}
-
-/** "a name", "a name and the numbers", "a name, the numbers and a weight". */
-function joinList(items: string[]): string {
-  if (items.length <= 1) return items[0] ?? '';
-  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
-}
-
 /**
  * Define a food the bundled database does not carry. Everything is entered per
  * 100 g, with one named serving on top, so the result behaves exactly like a
@@ -135,6 +100,10 @@ export default function CustomFoodScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ slot?: string; date?: string; name?: string }>();
   const { colors } = useTheme();
+  const { t } = useTranslation(['meals', 'macros', 'units', 'common']);
+  const { isRTL } = useDirection();
+  const labels = useFoodLabels();
+  const dayLabels = useDayLabels();
   const insets = useSafeAreaInsets();
   const { addCustomFood } = useApp();
 
@@ -143,8 +112,10 @@ export default function CustomFoodScreen() {
 
   const [initialName] = useState(() => (firstParam(params.name) ?? '').trim());
 
+  // The first field is the name in the language being read, the second is the
+  // name in the other one. Which of the two lands in `nameAr` is decided on save.
   const [name, setName] = useState(initialName);
-  const [nameAr, setNameAr] = useState('');
+  const [otherName, setOtherName] = useState('');
   const [category, setCategory] = useState<FoodCategory>(DEFAULT_CATEGORY);
 
   const [calories, setCalories] = useState<number | null>(null);
@@ -176,22 +147,36 @@ export default function CustomFoodScreen() {
     else router.replace({ pathname: '/meal/add', params: { slot, date } });
   }, [router, slot, date]);
 
+  const numberError = useCallback(
+    (value: number | null, max: number, kind: 'calories' | 'grams'): string | undefined => {
+      if (value === null) return t('meals:customNumberMissing');
+      if (!Number.isFinite(value) || value < 0) return t('meals:customNumberNegative');
+      if (value > max) {
+        return kind === 'calories'
+          ? t('meals:customKcalMax', { max: formatCount(max) })
+          : t('meals:customGramMax', { max: formatCount(max) });
+      }
+      return undefined;
+    },
+    [t],
+  );
+
   const trimmedName = name.trim();
 
-  const nameError = trimmedName.length === 0 ? 'Give this food a name.' : undefined;
-  const caloriesError = requiredNumberError(calories, MAX_CALORIES, 'kcal');
-  const proteinError = requiredNumberError(protein, MAX_MACRO_GRAMS, 'g');
-  const carbsError = requiredNumberError(carbs, MAX_MACRO_GRAMS, 'g');
-  const fatError = requiredNumberError(fat, MAX_MACRO_GRAMS, 'g');
-  const fiberError = optionalNumberError(fiber, MAX_MACRO_GRAMS, 'g');
+  const nameError = trimmedName.length === 0 ? t('meals:customNameError') : undefined;
+  const caloriesError = numberError(calories, MAX_CALORIES, 'calories');
+  const proteinError = numberError(protein, MAX_MACRO_GRAMS, 'grams');
+  const carbsError = numberError(carbs, MAX_MACRO_GRAMS, 'grams');
+  const fatError = numberError(fat, MAX_MACRO_GRAMS, 'grams');
+  const fiberError = fiber === null ? undefined : numberError(fiber, MAX_MACRO_GRAMS, 'grams');
 
   const servingError =
     servingGrams === null
-      ? 'Enter what one serving weighs.'
+      ? t('meals:customServingMissing')
       : !Number.isFinite(servingGrams) || servingGrams <= 0
-        ? 'A serving has to weigh more than 0 g.'
+        ? t('meals:customServingZero')
         : servingGrams > MAX_SERVING_GRAMS
-          ? `Keep a serving under ${MAX_SERVING_GRAMS} g.`
+          ? t('meals:customServingMax', { max: formatCount(MAX_SERVING_GRAMS) })
           : undefined;
 
   const valid =
@@ -243,8 +228,8 @@ export default function CustomFoodScreen() {
   ]);
 
   const servingWeight = round1(servingGrams ?? 0);
-  const servingTitle = servingName.trim() || DEFAULT_SERVING_NAME;
-  const servingLabel = `${servingTitle} (${formatGrams(servingWeight)} g)`;
+  const servingTitle = servingName.trim() || t('meals:customServingDefault');
+  const servingLabel = `${servingTitle} (${labels.weight(servingWeight)})`;
   const servingMacros = useMemo(
     () => macrosForGrams(per100, servingWeight),
     [per100, servingWeight],
@@ -252,25 +237,25 @@ export default function CustomFoodScreen() {
 
   const missing = useMemo(() => {
     const items: string[] = [];
-    if (trimmedName.length === 0) items.push('a name');
+    if (trimmedName.length === 0) items.push(t('meals:customMissingName'));
     if (calories === null || protein === null || carbs === null || fat === null) {
-      items.push('the values per 100 g');
+      items.push(t('meals:customMissingValues'));
     }
-    if (servingGrams === null) items.push('a serving weight');
+    if (servingGrams === null) items.push(t('meals:customMissingServing'));
     return items;
-  }, [trimmedName, calories, protein, carbs, fat, servingGrams]);
+  }, [trimmedName, calories, protein, carbs, fat, servingGrams, t]);
 
   const footerHint = valid
     ? servingLabel
     : missing.length > 0
-      ? `Add ${joinList(missing)}`
-      : 'Fix the highlighted fields';
-
-  const macroLine = `P ${formatGrams(servingMacros.protein)} g · C ${formatGrams(
-    servingMacros.carbs,
-  )} g · F ${formatGrams(servingMacros.fat)} g${
-    servingMacros.fiber !== undefined ? ` · Fibre ${formatGrams(servingMacros.fiber)} g` : ''
-  }`;
+      ? t('meals:customMissingPrefix', {
+          items:
+            missing.length === 1
+              ? missing[0]
+              : `${missing.slice(0, -1).join(t('meals:customListSeparator'))}` +
+                `${t('meals:customListLast')}${missing[missing.length - 1]}`,
+        })
+      : t('meals:customFixFields');
 
   const useImpliedCalories = useCallback(() => {
     if (!drift) return;
@@ -287,22 +272,28 @@ export default function CustomFoodScreen() {
     setSaveError(null);
 
     const serving: ServingOption = { label: servingLabel, grams: servingWeight };
+    const other = otherName.trim();
     const food: FoodItem = {
       id: makeId('food'),
-      name: trimmedName,
+      // Arabic goes in `nameAr` whichever field it was typed into, so search and
+      // the Arabic label keep working the same way as for a bundled food.
+      name: isRTL ? other || trimmedName : trimmedName,
       category,
       per100,
       servings: [serving],
     };
-    const arabic = nameAr.trim();
-    if (arabic.length > 0) food.nameAr = arabic;
+    if (isRTL) {
+      if (other.length > 0) food.nameAr = trimmedName;
+    } else if (other.length > 0) {
+      food.nameAr = other;
+    }
 
     try {
       await addCustomFood(food);
       goBack();
     } catch {
       setSaving(false);
-      setSaveError('Could not save this food. Please try again.');
+      setSaveError(t('meals:customSaveError'));
     }
   }, [
     saving,
@@ -310,19 +301,21 @@ export default function CustomFoodScreen() {
     servingLabel,
     servingWeight,
     trimmedName,
+    otherName,
+    isRTL,
     category,
     per100,
-    nameAr,
     addCustomFood,
     goBack,
+    t,
   ]);
 
   return (
     <Screen padded={false} keyboardAvoiding>
       <View style={styles.top}>
         <AppHeader
-          title="Custom food"
-          subtitle={`${SLOT_LABELS[slot]} · ${formatDayLabel(date)}`}
+          title={t('meals:customTitle')}
+          subtitle={`${labels.slot(slot)} · ${dayLabels.day(date)}`}
           onBack={goBack}
         />
       </View>
@@ -335,21 +328,21 @@ export default function CustomFoodScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.sectionHeadFirst}>
-          <Txt variant="heading">Food</Txt>
+          <Txt variant="heading">{t('meals:customFoodSection')}</Txt>
         </View>
         <Txt variant="label" color="muted" style={styles.sectionBody}>
-          What you will search for later. Everything here is saved to this device only.
+          {t('meals:customFoodBody')}
         </Txt>
 
         <TextField
-          label="Name"
+          label={t('meals:customName')}
           value={name}
           style={styles.field}
           onChangeText={(text) => {
             touch('name');
             setName(text);
           }}
-          placeholder="Grandma's lamb saleeg"
+          placeholder={t('meals:customNamePlaceholder')}
           maxLength={NAME_MAX}
           autoCapitalize="sentences"
           autoFocus={initialName.length === 0}
@@ -357,19 +350,19 @@ export default function CustomFoodScreen() {
         />
 
         <TextField
-          label="Arabic name"
-          value={nameAr}
-          onChangeText={setNameAr}
-          placeholder="سليق باللحم"
+          label={t('meals:customOtherName')}
+          value={otherName}
+          onChangeText={setOtherName}
+          placeholder={t('meals:customOtherNamePlaceholder')}
           maxLength={NAME_MAX}
           autoCapitalize="none"
-          hint="Optional. Lets you find this food when you search in Arabic."
+          hint={t('meals:customOtherNameHint')}
           style={styles.field}
         />
 
         <View style={styles.field}>
           <Txt variant="label" color="muted" weight="medium" style={styles.label}>
-            Category
+            {t('meals:customCategory')}
           </Txt>
           <ScrollView
             horizontal
@@ -381,7 +374,7 @@ export default function CustomFoodScreen() {
             {CATEGORIES.map((value) => (
               <Chip
                 key={value}
-                label={CATEGORY_LABELS[value]}
+                label={labels.category(value)}
                 selected={category === value}
                 onPress={() => setCategory(value)}
               />
@@ -390,23 +383,22 @@ export default function CustomFoodScreen() {
         </View>
 
         <View style={styles.sectionHead}>
-          <Txt variant="heading">Nutrition</Txt>
-          <Badge label="per 100 g" tone="accent" />
+          <Txt variant="heading">{t('meals:customNutritionSection')}</Txt>
+          <Badge label={t('meals:customPer100Badge')} tone="accent" />
         </View>
         <Txt variant="label" color="muted" style={styles.sectionBody}>
-          Copy the 100 g column from the label, or the numbers for 100 g of the cooked
-          dish. The portion you actually eat comes from the serving below.
+          {t('meals:customNutritionBody')}
         </Txt>
 
         <NumberField
           key={`calories-${calorieFieldKey}`}
-          label="Calories"
+          label={t('macros:calories')}
           value={calories}
           onChange={(value) => {
             touch('calories');
             setCalories(value);
           }}
-          suffix="kcal /100 g"
+          suffix={t('meals:customKcalSuffix')}
           placeholder="0"
           min={0}
           max={MAX_CALORIES}
@@ -415,13 +407,13 @@ export default function CustomFoodScreen() {
         />
 
         <NumberField
-          label="Protein"
+          label={t('macros:protein')}
           value={protein}
           onChange={(value) => {
             touch('protein');
             setProtein(value);
           }}
-          suffix="g /100 g"
+          suffix={t('meals:customGramSuffix')}
           placeholder="0"
           min={0}
           max={MAX_MACRO_GRAMS}
@@ -430,13 +422,13 @@ export default function CustomFoodScreen() {
         />
 
         <NumberField
-          label="Carbs"
+          label={t('macros:carbs')}
           value={carbs}
           onChange={(value) => {
             touch('carbs');
             setCarbs(value);
           }}
-          suffix="g /100 g"
+          suffix={t('meals:customGramSuffix')}
           placeholder="0"
           min={0}
           max={MAX_MACRO_GRAMS}
@@ -445,13 +437,13 @@ export default function CustomFoodScreen() {
         />
 
         <NumberField
-          label="Fat"
+          label={t('macros:fat')}
           value={fat}
           onChange={(value) => {
             touch('fat');
             setFat(value);
           }}
-          suffix="g /100 g"
+          suffix={t('meals:customGramSuffix')}
           placeholder="0"
           min={0}
           max={MAX_MACRO_GRAMS}
@@ -460,14 +452,14 @@ export default function CustomFoodScreen() {
         />
 
         <NumberField
-          label="Fibre"
+          label={t('macros:fiber')}
           value={fiber}
           onChange={(value) => {
             touch('fiber');
             setFiber(value);
           }}
-          suffix="g /100 g"
-          placeholder="Optional"
+          suffix={t('meals:customGramSuffix')}
+          placeholder={t('common:optional')}
           min={0}
           max={MAX_MACRO_GRAMS}
           error={touched.fiber ? fiberError : undefined}
@@ -484,49 +476,55 @@ export default function CustomFoodScreen() {
                 {...DECORATIVE}
               />
               <Txt variant="label" weight="semibold" color="warning">
-                Worth a second look
+                {t('meals:customDriftTitle')}
               </Txt>
             </View>
             <Txt variant="label" color="muted" style={styles.warningBody}>
-              {`${formatGrams(per100.protein)} g protein, ${formatGrams(per100.carbs)} g carbs and ${formatGrams(per100.fat)} g fat work out to ${formatCount(drift.implied)} kcal per 100 g, not ${formatCount(drift.typed)}. Keep your number if that is what the label says.`}
+              {t('meals:customDriftBody', {
+                protein: formatAmount(per100.protein, 1),
+                carbs: formatAmount(per100.carbs, 1),
+                fat: formatAmount(per100.fat, 1),
+                implied: formatCount(drift.implied),
+                typed: formatCount(drift.typed),
+              })}
             </Txt>
             <Button
-              label={`Use ${formatCount(drift.implied)} kcal`}
+              label={t('meals:customDriftAction', { value: formatCount(drift.implied) })}
               icon="swap-horizontal"
               variant="secondary"
               size="sm"
               onPress={useImpliedCalories}
-              accessibilityHint="Replaces the calories you typed with the value the macros imply"
+              accessibilityHint={t('meals:customDriftHint')}
               style={styles.warningAction}
             />
           </Card>
         ) : null}
 
         <View style={styles.sectionHead}>
-          <Txt variant="heading">Serving</Txt>
+          <Txt variant="heading">{t('meals:customServingSection')}</Txt>
         </View>
         <Txt variant="label" color="muted" style={styles.sectionBody}>
-          The portion offered first when you add this food to a meal.
+          {t('meals:customServingBody')}
         </Txt>
 
         <TextField
-          label="Call it"
+          label={t('meals:customServingName')}
           value={servingName}
           onChangeText={setServingName}
-          placeholder={DEFAULT_SERVING_NAME}
+          placeholder={t('meals:customServingDefault')}
           maxLength={SERVING_NAME_MAX}
           autoCapitalize="none"
           style={styles.field}
         />
 
         <NumberField
-          label="One of those weighs"
+          label={t('meals:customServingWeight')}
           value={servingGrams}
           onChange={(value) => {
             touch('serving');
             setServingGrams(value);
           }}
-          suffix="g"
+          suffix={t('units:gram')}
           placeholder="100"
           min={1}
           max={MAX_SERVING_GRAMS}
@@ -535,15 +533,15 @@ export default function CustomFoodScreen() {
         />
 
         <Txt variant="caption" color="faint" style={styles.servingNote}>
-          {`Saved as “${servingLabel}”`}
+          {t('meals:customServingSaved', { label: servingLabel })}
         </Txt>
 
         <Card style={styles.preview}>
           <View style={styles.previewHead}>
             <Txt variant="caption" color="faint" weight="semibold" style={styles.previewLabel}>
-              ONE SERVING ADDS
+              {t('meals:customPreviewTitle')}
             </Txt>
-            <Badge label={CATEGORY_LABELS[category]} />
+            <Badge label={labels.category(category)} />
           </View>
 
           <Txt weight="medium" numberOfLines={1}>
@@ -555,16 +553,16 @@ export default function CustomFoodScreen() {
               {formatCount(servingMacros.calories)}
             </Txt>
             <Txt variant="label" color="faint" style={styles.previewUnit}>
-              kcal
+              {t('units:kcal')}
             </Txt>
           </View>
 
           <Txt variant="label" color="muted" tabular>
-            {macroLine}
+            {labels.macroLine(servingMacros)}
           </Txt>
 
           <Txt variant="caption" color="faint" style={styles.previewFoot}>
-            {`Scaled from ${formatCount(per100.calories)} kcal per 100 g.`}
+            {t('meals:customPreviewFoot', { value: formatCount(per100.calories) })}
           </Txt>
         </Card>
       </ScrollView>
@@ -589,14 +587,17 @@ export default function CustomFoodScreen() {
           <View
             style={styles.summary}
             accessible
-            accessibilityLabel={`${formatCount(servingMacros.calories)} kilocalories per serving. ${footerHint}`}
+            accessibilityLabel={t('meals:customFooterSpoken', {
+              value: formatCount(servingMacros.calories),
+              hint: footerHint,
+            })}
           >
             <View style={styles.summaryValue}>
               <Txt variant="heading" tabular numberOfLines={1}>
                 {formatCount(servingMacros.calories)}
               </Txt>
               <Txt variant="label" color="faint" weight="medium">
-                kcal
+                {t('units:kcal')}
               </Txt>
             </View>
             <Txt variant="label" color="muted" numberOfLines={1} style={styles.summaryMeta}>
@@ -605,12 +606,12 @@ export default function CustomFoodScreen() {
           </View>
 
           <Button
-            label="Save food"
+            label={t('meals:customSave')}
             icon="checkmark"
             onPress={() => void save()}
             disabled={!valid}
             loading={saving}
-            accessibilityHint="Saves this food and returns to the search"
+            accessibilityHint={t('meals:customSaveHint')}
           />
         </View>
       </View>
@@ -673,7 +674,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   servingNote: {
-    marginLeft: spacing.xs,
+    marginStart: spacing.xs,
     marginTop: spacing.sm,
   },
   preview: {

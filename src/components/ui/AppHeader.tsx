@@ -1,6 +1,8 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { StyleSheet, View } from 'react-native';
 
+import { mirrorIcon, useDirection } from '@/i18n';
 import { spacing } from '@/theme';
 
 import { IconButton } from './IconButton';
@@ -11,18 +13,31 @@ export interface AppHeaderProps {
   subtitle?: string;
   /** Shows a back chevron when provided. */
   onBack?: () => void;
+  /** Spoken label for the back control. Defaults to the translated "Back". */
+  backLabel?: string;
   /** Trailing node, usually an IconButton. */
   right?: React.ReactNode;
   /** Renders the title below the bar at display scale. */
   large?: boolean;
 }
 
-export function AppHeader({ title, subtitle, onBack, right, large = false }: AppHeaderProps) {
+export function AppHeader({
+  title,
+  subtitle,
+  onBack,
+  backLabel,
+  right,
+  large = false,
+}: AppHeaderProps) {
+  const { t } = useTranslation('common');
+  const { isRTL } = useDirection();
+
   const back = onBack ? (
     <IconButton
-      icon="chevron-back"
+      // In Arabic the page is behind you on the other side, so the chevron flips.
+      icon={mirrorIcon('chevron-back', isRTL)}
       onPress={onBack}
-      accessibilityLabel="Go back"
+      accessibilityLabel={backLabel ?? t('back')}
       style={styles.back}
     />
   ) : null;

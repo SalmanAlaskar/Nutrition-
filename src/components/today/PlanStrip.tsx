@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Platform,
   Pressable,
@@ -11,7 +12,9 @@ import {
 } from 'react-native';
 
 import { Txt } from '@/components/ui';
+import { formatAmount, formatCount } from '@/domain/format';
 import { isSessionComplete } from '@/domain/training';
+import { useDirection } from '@/i18n';
 import { radius, spacing, useTheme } from '@/theme';
 import type {
   BodyScan,
@@ -20,8 +23,6 @@ import type {
   Targets,
   WorkoutSession,
 } from '@/types';
-
-import { formatCount } from '../../../app/onboarding/_layout';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -60,119 +61,8 @@ interface Pillar {
   value: string;
   detail: string;
   tone: Tone;
-  /** Read out in place of the three separate lines. */
-  spoken: string;
   hint: string;
   onPress: () => void;
-}
-
-function caloriePillar(
-  totals: DailyTotals,
-  targets: Targets | null,
-  onPress: () => void,
-): Pillar {
-  const eaten = Math.round(totals.macros.calories);
-  const shared = { key: 'calories', icon: 'flame-outline' as IconName, label: 'Calories', onPress };
-
-  if (!targets) {
-    return {
-      ...shared,
-      value: formatCount(eaten),
-      detail: 'kcal logged',
-      tone: 'text',
-      spoken: `Calories. ${formatCount(eaten)} kilocalories logged, no target set.`,
-      hint: 'Opens your history',
-    };
-  }
-
-  const left = Math.round(targets.calories) - eaten;
-  const over = left < 0;
-
-  return {
-    ...shared,
-    value: formatCount(eaten),
-    detail: over
-      ? `${formatCount(Math.abs(left))} over`
-      : `${formatCount(left)} kcal left`,
-    tone: over ? 'danger' : 'accent',
-    spoken:
-      `Calories. ${formatCount(eaten)} of ${formatCount(targets.calories)} kilocalories, ` +
-      (over
-        ? `${formatCount(Math.abs(left))} over target.`
-        : `${formatCount(left)} left.`),
-    hint: 'Opens your history',
-  };
-}
-
-function trainingPillar(
-  programDay: ProgramDay | null,
-  sessions: WorkoutSession[],
-  onPress: () => void,
-): Pillar {
-  const shared = {
-    key: 'training',
-    icon: 'barbell-outline' as IconName,
-    label: 'Training',
-    onPress,
-    hint: 'Opens the session for this day',
-  };
-  const done = sessions.some((session) => isSessionComplete(session));
-  const started = sessions.length > 0;
-
-  if (!programDay) {
-    return {
-      ...shared,
-      value: started ? sessions[0].dayLabel ?? 'Session' : 'Rest',
-      detail: started ? 'Logged' : 'No session planned',
-      tone: started ? 'accent' : 'muted',
-      spoken: started
-        ? 'Training. Rest day, one session logged.'
-        : 'Training. Rest day, nothing planned.',
-    };
-  }
-
-  return {
-    ...shared,
-    value: programDay.label,
-    detail: done ? 'Done' : started ? 'Started' : 'Not logged',
-    tone: done ? 'accent' : 'text',
-    spoken: `Training. ${programDay.label} day, ${
-      done ? 'finished' : started ? 'in progress' : 'not logged yet'
-    }.`,
-  };
-}
-
-function bodyPillar(scan: BodyScan | null, onPress: () => void): Pillar {
-  const shared = {
-    key: 'body',
-    icon: 'body-outline' as IconName,
-    label: 'Body',
-    onPress,
-    hint: 'Opens your body readings',
-  };
-
-  if (!scan) {
-    return {
-      ...shared,
-      value: '--',
-      detail: 'No reading yet',
-      tone: 'muted',
-      spoken: 'Body. No reading yet.',
-    };
-  }
-
-  const weight = `${scan.weightKg.toFixed(1)} kg`;
-  const fat = scan.bodyFatPercent;
-
-  return {
-    ...shared,
-    value: weight,
-    detail: fat === undefined ? 'Last reading' : `${fat.toFixed(1)}% fat`,
-    tone: 'text',
-    spoken:
-      `Body. ${weight}` +
-      (fat === undefined ? '.' : `, ${fat.toFixed(1)} percent body fat.`),
-  };
 }
 
 /**
@@ -192,12 +82,102 @@ export function PlanStrip({
   style,
 }: PlanStripProps) {
   const { colors } = useTheme();
+  const { t } = useTranslation(['today', 'macros', 'nav', 'units']);
+  const { isRTL } = useDirection();
 
-  const pillars: Pillar[] = [
-    caloriePillar(totals, targets, onCalories),
-    trainingPillar(programDay, sessions, onTraining),
-    bodyPillar(scan, onBody),
-  ];
+  const caloriePillar = (): Pillar => {
+    const eaten = Math.round(totals.macros.calories);
+    const shared = {
+      key: 'calories',
+      icon: 'flame-outline' as IconName,
+      label: t('macros:calories'),
+      hint: t('today:hintCalories'),
+      onPress: onCalories,
+    };
+
+    if (!targets) {
+      return {
+        ...shared,
+        value: formatCount(eaten),
+        detail: t('today:planLogged'),
+        tone: 'text',
+      };
+    }
+
+    const left = Math.round(targets.calories) - eaten;
+    const over = left < 0;
+
+    return {
+      ...shared,
+      value: formatCount(eaten),
+      detail: over
+        ? t('today:planOver', { value: formatCount(Math.abs(left)) })
+        : t('today:planLeft', { value: formatCount(left) }),
+      tone: over ? 'danger' : 'accent',
+    };
+  };
+
+  const trainingPillar = (): Pillar => {
+    const shared = {
+      key: 'training',
+      icon: 'barbell-outline' as IconName,
+      label: t('nav:training'),
+      hint: t('today:hintTraining'),
+      onPress: onTraining,
+    };
+    const done = sessions.some((session) => isSessionComplete(session));
+    const started = sessions.length > 0;
+
+    if (!programDay) {
+      return {
+        ...shared,
+        value: started
+          ? sessions[0].dayLabel ?? t('today:planSession')
+          : t('today:planRest'),
+        detail: started ? t('today:planSessionLogged') : t('today:planNoSession'),
+        tone: started ? 'accent' : 'muted',
+      };
+    }
+
+    return {
+      ...shared,
+      value: (isRTL ? programDay.labelAr ?? programDay.label : programDay.label),
+      detail: done
+        ? t('today:planDone')
+        : started
+          ? t('today:planStarted')
+          : t('today:planNotLogged'),
+      tone: done ? 'accent' : 'text',
+    };
+  };
+
+  const bodyPillar = (): Pillar => {
+    const shared = {
+      key: 'body',
+      icon: 'body-outline' as IconName,
+      label: t('today:body'),
+      hint: t('today:hintBody'),
+      onPress: onBody,
+    };
+
+    if (!scan) {
+      return { ...shared, value: '--', detail: t('today:planNoReading'), tone: 'muted' };
+    }
+
+    const fat = scan.bodyFatPercent;
+
+    return {
+      ...shared,
+      value: `${formatAmount(scan.weightKg, 1)} ${t('units:kg')}`,
+      detail:
+        fat === undefined
+          ? t('today:planLastReading')
+          : t('today:planBodyFat', { value: formatAmount(fat, 1) }),
+      tone: 'text',
+    };
+  };
+
+  const pillars: Pillar[] = [caloriePillar(), trainingPillar(), bodyPillar()];
 
   const valueColor: Record<Tone, string> = {
     text: colors.text,
@@ -222,7 +202,11 @@ export function PlanStrip({
           <Pressable
             onPress={pillar.onPress}
             accessibilityRole="button"
-            accessibilityLabel={pillar.spoken}
+            accessibilityLabel={t('today:pillarSpoken', {
+              label: pillar.label,
+              value: pillar.value,
+              detail: pillar.detail,
+            })}
             accessibilityHint={pillar.hint}
             style={({ pressed }) => [
               styles.pillar,

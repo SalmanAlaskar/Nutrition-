@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Pressable,
   ScrollView,
@@ -10,15 +11,10 @@ import {
 } from 'react-native';
 
 import { Txt } from '@/components/ui';
-import {
-  daysBetween,
-  formatDayLabel,
-  lastNDays,
-  parseDateKey,
-  todayKey,
-  weekdayInitial,
-} from '@/domain/date';
+import { daysBetween, lastNDays, parseDateKey, todayKey } from '@/domain/date';
 import { radius, spacing, useTheme } from '@/theme';
+
+import { useDayLabels } from './useDayLabels';
 
 export interface DayStripProps {
   selectedDate: string;
@@ -39,6 +35,8 @@ const EDGE = spacing.lg;
 
 export function DayStrip({ selectedDate, loggedDates, onSelect, style }: DayStripProps) {
   const { colors } = useTheme();
+  const { t } = useTranslation('today');
+  const labels = useDayLabels();
   const scrollRef = useRef<ScrollView>(null);
   const viewportRef = useRef(0);
   const mountedRef = useRef(false);
@@ -119,14 +117,14 @@ export function DayStrip({ selectedDate, loggedDates, onSelect, style }: DayStri
           // On the filled day the dot has to read against the accent, not on it.
           const dotColor = selected ? colors.accentText : colors.accent;
 
-          const label = formatDayLabel(key);
+          const label = labels.day(key, today);
 
           return (
             <Pressable
               key={key}
               onPress={() => onSelect(key)}
               accessibilityRole="button"
-              accessibilityLabel={hasMeals ? `${label}, meals logged` : label}
+              accessibilityLabel={hasMeals ? t('dayWithMeals', { day: label }) : label}
               accessibilityState={{ selected }}
               style={({ pressed }) => [
                 styles.day,
@@ -139,7 +137,7 @@ export function DayStrip({ selectedDate, loggedDates, onSelect, style }: DayStri
               ]}
             >
               <Txt variant="caption" weight="bold" color={weekdayColor}>
-                {weekdayInitial(key)}
+                {labels.weekdayInitial(key)}
               </Txt>
               <Txt
                 variant="body"

@@ -39,6 +39,11 @@ export interface ChipProps {
 /** A chip carrying a figure gets locked digit widths so a filter row never jitters. */
 const HAS_DIGIT = /\d/;
 
+const MIN_TARGET = 44;
+const CHIP_HEIGHT = 34;
+/** The chip stays compact; the slop is what carries the target to 44 points. */
+const VERTICAL_SLOP = Math.ceil((MIN_TARGET - CHIP_HEIGHT) / 2);
+
 export function Chip({ label, selected = false, onPress, icon, color, style }: ChipProps) {
   const { colors } = useTheme();
   const tone = color ?? colors.accent;
@@ -78,7 +83,7 @@ export function Chip({ label, selected = false, onPress, icon, color, style }: C
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ selected }}
-      hitSlop={{ top: 6, bottom: 6, left: 8, right: 8 }}
+      hitSlop={{ top: VERTICAL_SLOP, bottom: VERTICAL_SLOP, left: spacing.sm, right: spacing.sm }}
       style={({ pressed }) => [
         styles.chip,
         { backgroundColor: background, borderColor },
@@ -99,7 +104,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     columnGap: spacing.xs + 2,
     flexDirection: 'row',
-    minHeight: 34,
+    minHeight: CHIP_HEIGHT,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm - 2,
   },

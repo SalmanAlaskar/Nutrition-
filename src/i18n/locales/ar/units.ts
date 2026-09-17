@@ -9,7 +9,7 @@ export const units = {
   years: 'سنة',
   percent: '٪',
   perDay: 'يومياً',
-  per100g: '/١٠٠ جم',
+  per100g: '/100 جم',
   sets: 'مجموعات',
   reps: 'تكرار',
   minutes: 'دقيقة',

@@ -1,7 +1,9 @@
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Animated, Platform, StyleSheet, View, type ViewProps } from 'react-native';
 
+import { useDayText } from '@/components/history/dayText';
 import {
   AppHeader,
   Badge,
@@ -21,11 +23,8 @@ import {
   type TxtColor,
 } from '@/components/ui';
 import { latestScan, scanChange } from '@/domain/bodyScan';
-import { formatDayLabel, formatShortDay } from '@/domain/date';
+import { formatAmount, formatCount, formatDelta, formatPercent } from '@/domain/format';
 import {
-  ACTIVITY_HINTS,
-  ACTIVITY_LABELS,
-  GOAL_LABELS,
   LIMITS,
   basalMetabolicRate,
   bmiCategory,
@@ -44,8 +43,6 @@ import {
 import { useApp } from '@/state/AppStore';
 import { radius, spacing, useTheme } from '@/theme';
 import type { ActivityLevel, Goal, Profile, Sex, UnitSystem } from '@/types';
-
-import { formatCount } from '../onboarding/_layout';
 
 /**
  * Decorative nodes are hidden from assistive tech with the prop the platform
@@ -75,6 +72,14 @@ const ACTIVITY_ICONS: Record<ActivityLevel, string> = {
   very_active: 'flame-outline',
 };
 
+const ACTIVITY_KEYS = {
+  sedentary: { title: 'activitySedentary', hint: 'activitySedentaryHint' },
+  light: { title: 'activityLight', hint: 'activityLightHint' },
+  moderate: { title: 'activityModerate', hint: 'activityModerateHint' },
+  active: { title: 'activityActive', hint: 'activityActiveHint' },
+  very_active: { title: 'activityAthlete', hint: 'activityAthleteHint' },
+} as const satisfies Record<ActivityLevel, { title: string; hint: string }>;
+
 const GOAL_ORDER: Goal[] = ['lose', 'maintain', 'gain'];
 
 const GOAL_ICONS: Record<Goal, string> = {
@@ -83,21 +88,11 @@ const GOAL_ICONS: Record<Goal, string> = {
   gain: 'trending-up-outline',
 };
 
-const GOAL_HINTS: Record<Goal, string> = {
-  lose: '20% below maintenance, with protein kept high',
-  maintain: 'Eat at maintenance and hold your weight',
-  gain: '12% above maintenance to support training',
-};
-
-const SEX_OPTIONS = [
-  { value: 'male' as const, label: 'Male' },
-  { value: 'female' as const, label: 'Female' },
-];
-
-const UNIT_OPTIONS = [
-  { value: 'metric' as const, label: 'Metric' },
-  { value: 'imperial' as const, label: 'Imperial' },
-];
+const GOAL_KEYS = {
+  lose: { title: 'goalLose', hint: 'goalLoseHint' },
+  maintain: { title: 'goalMaintain', hint: 'goalMaintainHint' },
+  gain: { title: 'goalGain', hint: 'goalGainHint' },
+} as const satisfies Record<Goal, { title: string; hint: string }>;
 
 const FEET_RANGE = { min: 3, max: 8 };
 const INCH_RANGE = { min: 0, max: 11 };
@@ -109,6 +104,13 @@ const BMI_TONE: Record<BmiCategory, 'accent' | 'warning' | 'danger'> = {
   Overweight: 'warning',
   Obese: 'danger',
 };
+
+const BMI_KEYS = {
+  Underweight: 'bmiUnderweight',
+  Healthy: 'bmiHealthy',
+  Overweight: 'bmiOverweight',
+  Obese: 'bmiObese',
+} as const satisfies Record<BmiCategory, string>;
 
 /** Ends of the scale drawn under the BMI number, and the band edges inside it. */
 const BMI_SCALE = { min: 15, max: 40 };
@@ -125,7 +127,32 @@ const BMI_TICKS = [18.5, 25, 30];
  * exists on a ScanChange, so the difference since the previous reading can be
  * printed beside the value.
  */
-const SCAN_ROWS: {
+const SCAN_ROWS = [
+  { key: 'weightKg', labelKey: 'rowWeight', unit: 'kg', decimals: 1, higherIsBetter: null },
+  {
+    key: 'skeletalMuscleKg',
+    labelKey: 'rowMuscle',
+    unit: 'kg',
+    decimals: 1,
+    higherIsBetter: true,
+  },
+  { key: 'bodyFatKg', labelKey: 'rowFatMass', unit: 'kg', decimals: 1, higherIsBetter: false },
+  {
+    key: 'bodyFatPercent',
+    labelKey: 'rowFatPercent',
+    unit: 'percent',
+    decimals: 1,
+    higherIsBetter: false,
+  },
+  {
+    key: 'visceralFatLevel',
+    labelKey: 'rowVisceral',
+    unit: 'none',
+    decimals: 0,
+    higherIsBetter: false,
+  },
+  { key: 'inBodyScore', labelKey: 'rowScore', unit: 'none', decimals: 0, higherIsBetter: true },
+] as const satisfies readonly {
   key:
     | 'weightKg'
     | 'skeletalMuscleKg'
@@ -133,31 +160,12 @@ const SCAN_ROWS: {
     | 'bodyFatPercent'
     | 'visceralFatLevel'
     | 'inBodyScore';
-  label: string;
-  unit: string;
+  labelKey: string;
+  unit: 'kg' | 'percent' | 'none';
   decimals: number;
   /** Direction of a good change, null when it depends on the goal. */
   higherIsBetter: boolean | null;
-}[] = [
-  { key: 'weightKg', label: 'Weight', unit: 'kg', decimals: 1, higherIsBetter: null },
-  {
-    key: 'skeletalMuscleKg',
-    label: 'Skeletal muscle',
-    unit: 'kg',
-    decimals: 1,
-    higherIsBetter: true,
-  },
-  { key: 'bodyFatKg', label: 'Body fat mass', unit: 'kg', decimals: 1, higherIsBetter: false },
-  { key: 'bodyFatPercent', label: 'Body fat', unit: '%', decimals: 1, higherIsBetter: false },
-  {
-    key: 'visceralFatLevel',
-    label: 'Visceral fat level',
-    unit: '',
-    decimals: 0,
-    higherIsBetter: false,
-  },
-  { key: 'inBodyScore', label: 'Scan score', unit: '', decimals: 0, higherIsBetter: true },
-];
+}[];
 
 /** Editable copy of the numeric fields, held in whatever units are on screen. */
 interface Draft {
@@ -205,12 +213,6 @@ function draftFromProfile(profile: Profile | null): Draft {
   };
 }
 
-function heightLabel(heightCm: number, system: UnitSystem): string {
-  if (system !== 'imperial') return `${heightCm} cm`;
-  const { feet, inches } = cmToFeetInches(heightCm);
-  return `${feet} ft ${inches} in`;
-}
-
 /**
  * Fades an "Updated" marker in whenever the signature changes, so a number
  * edited in one card is visibly connected to the plan further down.
@@ -247,17 +249,20 @@ function SectionTitle({
   title,
   hint,
   first = false,
+  lead = false,
 }: {
   title: string;
   hint?: string;
   /** Tightens the gap when the section sits directly under the header. */
   first?: boolean;
+  /** Marks the section the inputs feed into, so the plan reads as the result. */
+  lead?: boolean;
 }) {
   return (
     <View style={[styles.sectionTitle, first ? styles.sectionTitleFirst : null]}>
       <Txt
         variant="caption"
-        color="faint"
+        color={lead ? 'accent' : 'faint'}
         weight="semibold"
         accessibilityRole="header"
         style={styles.sectionLabel}
@@ -297,6 +302,8 @@ export default function ProfileScreen() {
   const { ready, profile, targets, weights, bodyScans, updateProfile, logWeight } = useApp();
   const { colors } = useTheme();
   const router = useRouter();
+  const { t } = useTranslation(['profile', 'units', 'macros']);
+  const dayText = useDayText();
 
   const units: UnitSystem = profile?.units ?? 'metric';
   const profileAge = profile?.age ?? null;
@@ -355,8 +362,8 @@ export default function ProfileScreen() {
   if (!ready) {
     return (
       <Screen>
-        <AppHeader title="Profile" />
-        <LoadingView message="Loading your profile" />
+        <AppHeader title={t('title')} />
+        <LoadingView message={t('loading')} />
       </Screen>
     );
   }
@@ -364,19 +371,19 @@ export default function ProfileScreen() {
   if (!profile) {
     return (
       <Screen scroll>
-        <AppHeader title="Profile" />
+        <AppHeader title={t('title')} />
         <EmptyState
           icon="person-add-outline"
-          title="No profile yet"
-          message="Tell the app about your body and goal and it will work out a daily calorie and macro plan."
-          actionLabel="Set up my profile"
+          title={t('emptyTitle')}
+          message={t('emptyMessage')}
+          actionLabel={t('emptyAction')}
           onAction={() => router.replace('/onboarding')}
         />
       </Screen>
     );
   }
 
-  const weightUnit = units === 'imperial' ? 'lb' : 'kg';
+  const weightUnit = units === 'imperial' ? t('units:lb') : t('units:kg');
   const plan = targets ?? macroTargets(profile);
   const split = macroEnergySplit(plan);
   const automaticTarget = calorieTarget({ ...profile, customCalorieTarget: undefined });
@@ -384,6 +391,7 @@ export default function ProfileScreen() {
   const maintenance = totalDailyEnergyExpenditure(profile);
   const bmi = bodyMassIndex(profile.heightCm, profile.weightKg);
   const category = bmiCategory(bmi);
+  const categoryLabel = t(BMI_KEYS[category]);
   const bmiTone = BMI_TONE[category];
   const bmiToneColor =
     bmiTone === 'accent' ? colors.accent : bmiTone === 'danger' ? colors.danger : colors.warning;
@@ -393,10 +401,28 @@ export default function ProfileScreen() {
   const healthyHigh = fromKg(healthyHighKg, units);
   const usingOverride = profileCustomTarget !== null;
 
+  const heightLabel =
+    units === 'imperial'
+      ? t('heightImperial', {
+          feet: formatCount(cmToFeetInches(profile.heightCm).feet),
+          inches: formatCount(cmToFeetInches(profile.heightCm).inches),
+        })
+      : t('heightMetric', { value: formatCount(profile.heightCm) });
+
+  const unitOptions = [
+    { value: 'metric' as const, label: t('unitMetric') },
+    { value: 'imperial' as const, label: t('unitImperial') },
+  ];
+
+  const sexOptions = [
+    { value: 'male' as const, label: t('male') },
+    { value: 'female' as const, label: t('female') },
+  ];
+
   const macroRows = [
-    { key: 'protein', label: 'Protein', grams: plan.protein, color: colors.protein },
-    { key: 'carbs', label: 'Carbs', grams: plan.carbs, color: colors.carbs },
-    { key: 'fat', label: 'Fat', grams: plan.fat, color: colors.fat },
+    { key: 'protein', label: t('macros:protein'), grams: plan.protein, color: colors.protein },
+    { key: 'carbs', label: t('macros:carbs'), grams: plan.carbs, color: colors.carbs },
+    { key: 'fat', label: t('macros:fat'), grams: plan.fat, color: colors.fat },
   ] as const;
 
   const commitAge = (value: number | null) => {
@@ -491,74 +517,78 @@ export default function ProfileScreen() {
 
   const ageError =
     draft.age !== null && !inRange(draft.age, LIMITS.age.min, LIMITS.age.max)
-      ? `Enter an age between ${LIMITS.age.min} and ${LIMITS.age.max}`
+      ? t('ageError', {
+          min: formatCount(LIMITS.age.min),
+          max: formatCount(LIMITS.age.max),
+        })
       : undefined;
 
   const heightError =
     draft.heightCm !== null &&
     !inRange(draft.heightCm, LIMITS.heightCm.min, LIMITS.heightCm.max)
-      ? `Enter a height between ${LIMITS.heightCm.min} and ${LIMITS.heightCm.max} cm`
+      ? t('heightError', {
+          min: formatCount(LIMITS.heightCm.min),
+          max: formatCount(LIMITS.heightCm.max),
+        })
       : undefined;
 
   const weightError =
     draft.weight !== null &&
     !inRange(toKg(draft.weight, units), LIMITS.weightKg.min, LIMITS.weightKg.max)
-      ? `Enter a weight between ${fromKg(LIMITS.weightKg.min, units)} and ${fromKg(
-          LIMITS.weightKg.max,
-          units,
-        )} ${weightUnit}`
+      ? t('weightError', {
+          min: formatAmount(fromKg(LIMITS.weightKg.min, units)),
+          max: formatAmount(fromKg(LIMITS.weightKg.max, units)),
+          unit: weightUnit,
+        })
       : undefined;
 
   const customTargetError =
     customTarget !== null &&
     !inRange(customTarget, CUSTOM_CALORIE_RANGE.min, CUSTOM_CALORIE_RANGE.max)
-      ? `Enter a target between ${formatCount(CUSTOM_CALORIE_RANGE.min)} and ${formatCount(
-          CUSTOM_CALORIE_RANGE.max,
-        )} kcal`
+      ? t('customError', {
+          min: formatCount(CUSTOM_CALORIE_RANGE.min),
+          max: formatCount(CUSTOM_CALORIE_RANGE.max),
+        })
       : undefined;
 
   return (
     <Screen scroll>
       <AppHeader
-        title="Profile"
-        subtitle="Your body, your goal, and the plan they produce"
+        title={t('title')}
+        subtitle={t('subtitle')}
         right={
           <IconButton
             icon="settings-outline"
             onPress={() => router.push('/settings')}
-            accessibilityLabel="Open settings"
+            accessibilityLabel={t('openSettings')}
           />
         }
       />
 
       {/* ----------------------------------------------------------- you -- */}
-      <SectionTitle
-        first
-        title="About you"
-        hint="Every number below is worked out from these."
-      />
+      <SectionTitle first title={t('aboutTitle')} hint={t('aboutHint')} />
       <Card style={styles.firstCard}>
-        <LabeledControl label="Units">
+        <LabeledControl label={t('units')}>
           <SegmentedControl<UnitSystem>
-            options={UNIT_OPTIONS}
+            options={unitOptions}
             value={units}
             onChange={(next) => void updateProfile({ units: next })}
           />
         </LabeledControl>
 
-        <LabeledControl label="Sex" style={styles.field}>
+        <LabeledControl label={t('sex')} style={styles.field}>
           <SegmentedControl<Sex>
-            options={SEX_OPTIONS}
+            options={sexOptions}
             value={profile.sex}
             onChange={(next) => void updateProfile({ sex: next })}
           />
         </LabeledControl>
 
         <NumberField
-          label="Age"
+          label={t('age')}
           value={draft.age}
           onChange={commitAge}
-          suffix="years"
+          suffix={t('units:years')}
           min={LIMITS.age.min}
           max={LIMITS.age.max}
           error={ageError}
@@ -568,19 +598,19 @@ export default function ProfileScreen() {
         {units === 'imperial' ? (
           <View style={[styles.row, styles.field]}>
             <NumberField
-              label="Height (feet)"
+              label={t('heightFeet')}
               value={draft.feet}
               onChange={(next) => commitImperialHeight(next, draft.inches)}
-              suffix="ft"
+              suffix={t('feetSuffix')}
               min={FEET_RANGE.min}
               max={FEET_RANGE.max}
               style={styles.rowItem}
             />
             <NumberField
-              label="Inches"
+              label={t('heightInches')}
               value={draft.inches}
               onChange={(next) => commitImperialHeight(draft.feet, next)}
-              suffix="in"
+              suffix={t('inchesSuffix')}
               min={INCH_RANGE.min}
               max={INCH_RANGE.max}
               style={styles.rowItem}
@@ -588,10 +618,10 @@ export default function ProfileScreen() {
           </View>
         ) : (
           <NumberField
-            label="Height"
+            label={t('height')}
             value={draft.heightCm}
             onChange={commitHeightCm}
-            suffix="cm"
+            suffix={t('units:cm')}
             min={LIMITS.heightCm.min}
             max={LIMITS.heightCm.max}
             error={heightError}
@@ -600,7 +630,7 @@ export default function ProfileScreen() {
         )}
 
         <NumberField
-          label="Weight"
+          label={t('weight')}
           value={draft.weight}
           onChange={commitWeight}
           suffix={weightUnit}
@@ -612,13 +642,13 @@ export default function ProfileScreen() {
       </Card>
 
       {/* ------------------------------------------------------ movement -- */}
-      <SectionTitle title="Activity" hint="How much you move in a normal week." />
+      <SectionTitle title={t('activityTitle')} hint={t('activityHint')} />
       <View style={styles.optionList}>
         {ACTIVITY_ORDER.map((level) => (
           <OptionRow
             key={level}
-            title={ACTIVITY_LABELS[level]}
-            subtitle={ACTIVITY_HINTS[level]}
+            title={t(ACTIVITY_KEYS[level].title)}
+            subtitle={t(ACTIVITY_KEYS[level].hint)}
             icon={ACTIVITY_ICONS[level]}
             selected={profile.activityLevel === level}
             onPress={() => void updateProfile({ activityLevel: level })}
@@ -627,13 +657,13 @@ export default function ProfileScreen() {
       </View>
 
       {/* ---------------------------------------------------------- goal -- */}
-      <SectionTitle title="Goal" hint="What you want your weight to do." />
+      <SectionTitle title={t('goalTitle')} hint={t('goalHint')} />
       <View style={styles.optionList}>
         {GOAL_ORDER.map((goal) => (
           <OptionRow
             key={goal}
-            title={GOAL_LABELS[goal]}
-            subtitle={GOAL_HINTS[goal]}
+            title={t(GOAL_KEYS[goal].title)}
+            subtitle={t(GOAL_KEYS[goal].hint)}
             icon={GOAL_ICONS[goal]}
             selected={profile.goal === goal}
             onPress={() => void updateProfile({ goal })}
@@ -642,32 +672,34 @@ export default function ProfileScreen() {
       </View>
 
       {/* ---------------------------------------------------------- plan -- */}
-      <SectionTitle title="Your plan" hint="Recalculated the moment you change anything above." />
+      <Divider style={styles.planDivider} />
+      <SectionTitle lead title={t('planTitle')} hint={t('planHint')} />
       <Card style={[styles.planCard, { borderColor: colors.accent }]}>
         <View style={styles.planHeader}>
           <View
             accessible
-            accessibilityLabel={`${formatCount(plan.calories)} calories a day, ${
-              usingOverride ? 'a target you set yourself' : 'calculated from your body and goal'
-            }`}
+            accessibilityLabel={t(
+              usingOverride ? 'planSpokenCustom' : 'planSpokenCalculated',
+              { calories: formatCount(plan.calories) },
+            )}
             style={styles.planNumber}
           >
             <Txt variant="display" color="accent" tabular>
               {formatCount(plan.calories)}
             </Txt>
-            <Txt variant="label" color="muted" style={styles.planUnit}>
-              kcal / day
+            <Txt variant="label" color="muted" numberOfLines={1} style={styles.planUnit}>
+              {t('planUnit')}
             </Txt>
           </View>
 
           <View style={styles.planBadges}>
             {recalc.showing ? (
               <Animated.View style={{ opacity: recalc.opacity }}>
-                <Badge label="Updated" tone="accent" />
+                <Badge label={t('updated')} tone="accent" />
               </Animated.View>
             ) : null}
             <Badge
-              label={usingOverride ? 'Custom' : 'Calculated'}
+              label={usingOverride ? t('custom') : t('calculated')}
               tone={usingOverride ? 'warning' : 'default'}
             />
           </View>
@@ -687,24 +719,26 @@ export default function ProfileScreen() {
             <View
               key={row.key}
               accessible
-              accessibilityLabel={`${row.label}: ${formatCount(row.grams)} grams a day, ${Math.round(
-                split[row.key] * 100,
-              )} percent of your energy`}
+              accessibilityLabel={t('macroSpoken', {
+                label: row.label,
+                grams: formatCount(row.grams),
+                percent: formatPercent(split[row.key]),
+              })}
               style={styles.macroRow}
             >
               <View style={[styles.dot, { backgroundColor: row.color }]} {...DECORATIVE} />
-              <Txt weight="medium" style={styles.macroLabel}>
+              <Txt weight="medium" numberOfLines={1} style={styles.macroLabel}>
                 {row.label}
               </Txt>
               <Txt variant="label" color="faint" tabular>
-                {`${Math.round(split[row.key] * 100)}%`}
+                {formatPercent(split[row.key])}
               </Txt>
               <View style={styles.macroValue}>
                 <Txt weight="semibold" tabular>
                   {formatCount(row.grams)}
                 </Txt>
                 <Txt variant="label" color="faint">
-                  g
+                  {t('units:gram')}
                 </Txt>
               </View>
             </View>
@@ -714,34 +748,32 @@ export default function ProfileScreen() {
 
       <View style={styles.tileRow}>
         <StatTile
-          label="Resting burn"
+          label={t('restingBurn')}
           value={formatCount(bmr)}
-          unit="kcal"
-          hint="What your body uses at complete rest"
+          unit={t('units:kcal')}
+          hint={t('restingBurnHint')}
           icon="moon-outline"
         />
         <StatTile
-          label="Maintenance"
+          label={t('maintenance')}
           value={formatCount(maintenance)}
-          unit="kcal"
-          hint="Resting burn scaled by your activity"
+          unit={t('units:kcal')}
+          hint={t('maintenanceHint')}
           icon="flame-outline"
         />
       </View>
 
       <Card style={styles.card}>
-        <Txt weight="semibold">Set your own target</Txt>
+        <Txt weight="semibold">{t('customTitle')}</Txt>
         <Txt variant="label" color="muted" style={styles.paragraph}>
-          {usingOverride
-            ? `Your plan is using this number instead of the calculated ${formatCount(
-                automaticTarget,
-              )} kcal.`
-            : `Leave this empty to keep the calculated ${formatCount(automaticTarget)} kcal.`}
+          {t(usingOverride ? 'customActive' : 'customIdle', {
+            value: formatCount(automaticTarget),
+          })}
         </Txt>
         <NumberField
           value={customTarget}
           onChange={commitCustomTarget}
-          suffix="kcal"
+          suffix={t('units:kcal')}
           placeholder={formatCount(automaticTarget)}
           min={CUSTOM_CALORIE_RANGE.min}
           max={CUSTOM_CALORIE_RANGE.max}
@@ -750,7 +782,7 @@ export default function ProfileScreen() {
         />
         {usingOverride ? (
           <Button
-            label="Back to calculated"
+            label={t('backToCalculated')}
             onPress={clearCustomTarget}
             variant="secondary"
             size="sm"
@@ -761,24 +793,31 @@ export default function ProfileScreen() {
       </Card>
 
       {/* ----------------------------------------------------------- bmi -- */}
-      <SectionTitle title="Body mass index" />
+      <SectionTitle title={t('bmiTitle')} hint={t('bmiHint')} />
       <Card style={styles.firstCard}>
         <View style={styles.bmiHeader}>
           <View
             accessible
-            accessibilityLabel={`Body mass index ${bmi}, in the ${category.toLowerCase()} band`}
+            accessibilityLabel={t('bmiSpoken', {
+              value: formatAmount(bmi),
+              category: categoryLabel,
+            })}
             style={styles.bmiNumber}
           >
             <Txt variant="title" tabular>
-              {bmi}
+              {formatAmount(bmi)}
             </Txt>
             <Txt variant="label" color="faint" style={styles.bmiUnit}>
-              kg/m2
+              {t('bmiUnit')}
             </Txt>
           </View>
-          <Badge label={category} tone={bmiTone} />
+          <Badge label={categoryLabel} tone={bmiTone} />
         </View>
 
+        {/*
+          A value scale, not a layout: it runs low to high from the left in both
+          languages, so the bands and the marker keep their physical order.
+        */}
         <View style={styles.bmiScale} {...DECORATIVE}>
           <View style={styles.bmiTrack}>
             {BMI_BANDS.map((band) => (
@@ -813,7 +852,7 @@ export default function ProfileScreen() {
               tabular
               style={[styles.bmiTick, { left: `${bmiOffset(tick) * 100}%` }]}
             >
-              {tick}
+              {formatAmount(tick)}
             </Txt>
           ))}
         </View>
@@ -821,47 +860,49 @@ export default function ProfileScreen() {
         <Divider style={styles.bmiDivider} />
 
         <Txt variant="label" color="muted">
-          {`The 18.5 to 24.9 band for ${heightLabel(
-            profile.heightCm,
-            units,
-          )} is ${healthyLow} to ${healthyHigh} ${weightUnit}. BMI ignores muscle, frame and body fat, so read it as one rough marker.`}
+          {`${t('bmiRange', {
+            height: heightLabel,
+            low: formatAmount(healthyLow),
+            high: formatAmount(healthyHigh),
+            unit: weightUnit,
+          })} ${t('bmiCaveat')}`}
         </Txt>
       </Card>
 
       {/* ----------------------------------------------- body composition -- */}
       <SectionTitle
-        title="Body composition"
+        title={t('scanTitle')}
         hint={
           latestBodyScan
-            ? `Last reading ${formatDayLabel(latestBodyScan.date)}${
-                latestBodyScan.device ? `, ${latestBodyScan.device}` : ''
-              }.`
-            : 'Readings from a body-composition scan, when you have one.'
+            ? latestBodyScan.device
+              ? t('scanHintLastDevice', {
+                  day: dayText.dayLabel(latestBodyScan.date),
+                  device: latestBodyScan.device,
+                })
+              : t('scanHintLast', { day: dayText.dayLabel(latestBodyScan.date) })
+            : t('scanHintNone')
         }
       />
       {latestBodyScan === null ? (
         <Card style={styles.firstCard}>
           <EmptyState
             icon="body-outline"
-            title="No reading yet"
-            message="Add a scan to follow muscle and fat separately, instead of weight alone."
-            actionLabel="Add a reading"
+            title={t('scanEmptyTitle')}
+            message={t('scanEmptyMessage')}
+            actionLabel={t('scanEmptyAction')}
             onAction={() => router.push('/body/import')}
           />
         </Card>
       ) : (
         <Card style={styles.firstCard}>
-          {bodyChange ? (
-            <Txt variant="label" color="muted" style={styles.scanIntro}>
-              {`Change since ${formatShortDay(bodyChange.fromDate)}, ${bodyChange.days} ${
-                bodyChange.days === 1 ? 'day' : 'days'
-              } earlier.`}
-            </Txt>
-          ) : (
-            <Txt variant="label" color="muted" style={styles.scanIntro}>
-              First reading. Add another to see what moved.
-            </Txt>
-          )}
+          <Txt variant="label" color="muted" style={styles.scanIntro}>
+            {bodyChange
+              ? t(bodyChange.days === 1 ? 'scanChangeOneDay' : 'scanChange', {
+                  date: dayText.shortDay(bodyChange.fromDate),
+                  days: formatCount(bodyChange.days),
+                })
+              : t('scanFirst')}
+          </Txt>
 
           {scanRows.map((row, index) => {
             const value = latestBodyScan[row.key];
@@ -870,49 +911,54 @@ export default function ProfileScreen() {
               delta === undefined || delta === 0 || row.higherIsBetter === null
                 ? null
                 : delta > 0 === row.higherIsBetter;
-            const deltaColor: TxtColor =
+            const rowDeltaColor: TxtColor =
               better === null ? 'faint' : better ? colors.accent : colors.warning;
-            const shown = value === undefined ? '—' : value.toFixed(row.decimals);
+            const shown = value === undefined ? '—' : formatAmount(value, row.decimals);
+            const label = t(row.labelKey);
+            const unit =
+              row.unit === 'kg' ? t('units:kg') : row.unit === 'percent' ? t('units:percent') : '';
+            const spokenChange =
+              delta === undefined
+                ? ''
+                : delta === 0
+                  ? `. ${t('deltaFlat')}`
+                  : `. ${t(delta > 0 ? 'deltaUp' : 'deltaDown', {
+                      amount: formatAmount(Math.abs(delta), row.decimals),
+                    })}`;
 
             return (
               <View key={row.key}>
                 {index > 0 ? <Divider /> : null}
                 <View
                   accessible
-                  accessibilityLabel={`${row.label}: ${shown}${
-                    row.unit ? ` ${row.unit === '%' ? 'percent' : row.unit}` : ''
-                  }${
-                    delta === undefined
-                      ? ''
-                      : `, ${delta > 0 ? 'up' : delta < 0 ? 'down' : 'level at'} ${Math.abs(
-                          delta,
-                        ).toFixed(row.decimals)} since the previous reading`
-                  }`}
+                  accessibilityLabel={`${t('rowSpoken', {
+                    label,
+                    value: shown,
+                    unit,
+                  })}${spokenChange}`}
                   style={styles.scanRow}
                 >
                   <Txt weight="medium" numberOfLines={1} style={styles.scanLabel}>
-                    {row.label}
+                    {label}
                   </Txt>
                   <View style={styles.scanValue}>
                     <Txt weight="semibold" tabular>
                       {shown}
                     </Txt>
-                    {row.unit ? (
+                    {unit ? (
                       <Txt variant="label" color="faint">
-                        {row.unit}
+                        {unit}
                       </Txt>
                     ) : null}
                   </View>
                   <Txt
                     variant="label"
-                    color={deltaColor}
+                    color={rowDeltaColor}
                     align="end"
                     tabular
                     style={styles.scanDelta}
                   >
-                    {delta === undefined
-                      ? '—'
-                      : `${delta > 0 ? '+' : ''}${delta.toFixed(row.decimals)}`}
+                    {delta === undefined ? '—' : formatDelta(delta, row.decimals)}
                   </Txt>
                 </View>
               </View>
@@ -923,16 +969,16 @@ export default function ProfileScreen() {
 
       <Card padded={false} style={styles.card}>
         <ListRow
-          title="Scan history"
-          subtitle="Every reading, with what changed between them"
+          title={t('scanHistory')}
+          subtitle={t('scanHistoryHint')}
           icon="analytics-outline"
           chevron
           onPress={() => router.push('/body')}
         />
         <Divider inset />
         <ListRow
-          title="Add a reading"
-          subtitle="Type the numbers in or import a sheet"
+          title={t('scanAdd')}
+          subtitle={t('scanAddHint')}
           icon="add-circle-outline"
           chevron
           onPress={() => router.push('/body/import')}
@@ -940,11 +986,11 @@ export default function ProfileScreen() {
       </Card>
 
       {/* -------------------------------------------------------- weight -- */}
-      <SectionTitle title="Weight log" hint="Logging today's weight also updates your plan." />
+      <SectionTitle title={t('weightTitle')} hint={t('weightHint')} />
       <Card style={styles.firstCard}>
         <View style={styles.row}>
           <NumberField
-            label="Today's weight"
+            label={t('weightToday')}
             value={logValue}
             onChange={setLogValue}
             suffix={weightUnit}
@@ -953,12 +999,12 @@ export default function ProfileScreen() {
             style={styles.rowItem}
           />
           <Button
-            label="Log"
+            label={t('logAction')}
             onPress={() => void handleLogWeight()}
             disabled={!canLogWeight}
             loading={logging}
             icon="add-outline"
-            accessibilityHint="Saves this weight against today and recalculates your plan"
+            accessibilityHint={t('logHint')}
             style={styles.logButton}
           />
         </View>
@@ -966,26 +1012,33 @@ export default function ProfileScreen() {
         {weightDelta !== null && firstWeight ? (
           <View
             accessible
-            accessibilityLabel={`${weightDelta > 0 ? 'Up' : weightDelta < 0 ? 'Down' : 'Level at'} ${Math.abs(
-              weightDelta,
-            )} ${weightUnit} since ${formatShortDay(firstWeight.date)}`}
+            accessibilityLabel={t(
+              weightDelta > 0
+                ? 'deltaSpokenUp'
+                : weightDelta < 0
+                  ? 'deltaSpokenDown'
+                  : 'deltaSpokenLevel',
+              {
+                amount: formatAmount(Math.abs(weightDelta)),
+                unit: weightUnit,
+                date: dayText.shortDay(firstWeight.date),
+              },
+            )}
             style={styles.deltaRow}
           >
             <Txt weight="semibold" color={deltaColor} tabular>
-              {`${weightDelta > 0 ? '+' : ''}${weightDelta}`}
+              {formatDelta(weightDelta)}
             </Txt>
             <Txt variant="label" color="faint">
               {weightUnit}
             </Txt>
-            <Txt variant="label" color="muted" style={styles.deltaSince}>
-              {`since ${formatShortDay(firstWeight.date)}`}
+            <Txt variant="label" color="muted" numberOfLines={1} style={styles.deltaSince}>
+              {t('sinceDate', { date: dayText.shortDay(firstWeight.date) })}
             </Txt>
           </View>
         ) : (
           <Txt variant="label" color="faint" style={styles.deltaEmpty}>
-            {weights.length === 0
-              ? 'Nothing logged yet. The first entry starts your trend.'
-              : 'One entry so far. Log again tomorrow to see a trend.'}
+            {weights.length === 0 ? t('weightNone') : t('weightOne')}
           </Txt>
         )}
       </Card>
@@ -996,8 +1049,8 @@ export default function ProfileScreen() {
             <View key={log.id}>
               {index > 0 ? <Divider inset /> : null}
               <ListRow
-                title={`${fromKg(log.weightKg, units)} ${weightUnit}`}
-                subtitle={formatDayLabel(log.date)}
+                title={`${formatAmount(fromKg(log.weightKg, units))} ${weightUnit}`}
+                subtitle={dayText.dayLabel(log.date)}
                 icon="scale-outline"
               />
             </View>
@@ -1007,8 +1060,8 @@ export default function ProfileScreen() {
 
       <Card padded={false} style={styles.settingsCard}>
         <ListRow
-          title="Settings"
-          subtitle="Photo analysis, your foods, export and erase"
+          title={t('settingsRow')}
+          subtitle={t('settingsRowHint')}
           icon="options-outline"
           chevron
           onPress={() => router.push('/settings')}
@@ -1069,6 +1122,9 @@ const styles = StyleSheet.create({
   },
 
   /* plan */
+  planDivider: {
+    marginTop: spacing.xxl,
+  },
   planCard: {
     borderWidth: 1,
   },
@@ -1085,6 +1141,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   planUnit: {
+    flexShrink: 1,
     marginBottom: spacing.xs,
   },
   planBadges: {
@@ -1159,6 +1216,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     width: '100%',
   },
+  /* Keeps the low-to-high bands under a marker positioned from the left. */
   bmiMarker: {
     borderRadius: radius.pill,
     borderWidth: 2,
@@ -1216,7 +1274,8 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   deltaSince: {
-    marginLeft: spacing.xs,
+    flexShrink: 1,
+    marginStart: spacing.xs,
   },
   deltaEmpty: {
     marginTop: spacing.lg,

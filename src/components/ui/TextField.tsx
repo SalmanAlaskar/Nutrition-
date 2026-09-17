@@ -13,6 +13,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
+import { useDirection } from '@/i18n';
 import { fontSize, fontWeight, radius, spacing, useTheme } from '@/theme';
 
 import { Txt, tabularNums } from './Txt';
@@ -43,6 +44,11 @@ export interface TextFieldProps {
   keyboardType?: KeyboardTypeOptions;
   error?: string;
   hint?: string;
+  /**
+   * Spoken instead of `hint`, for guidance that would only add noise on screen,
+   * such as the range a NumberField clamps to. An error still wins over both.
+   */
+  accessibilityHint?: string;
   /** Static unit shown at the trailing edge, e.g. "g" or "kcal". */
   suffix?: string;
   multiline?: boolean;
@@ -70,6 +76,7 @@ export function TextField({
   keyboardType,
   error,
   hint,
+  accessibilityHint,
   suffix,
   multiline = false,
   autoFocus = false,
@@ -86,6 +93,7 @@ export function TextField({
   style,
 }: TextFieldProps) {
   const { colors } = useTheme();
+  const { isRTL } = useDirection();
   const [focused, setFocused] = useState(false);
 
   const invalid = Boolean(error);
@@ -144,7 +152,7 @@ export function TextField({
             onSubmitEditing={onSubmitEditing}
             selectionColor={colors.accent}
             accessibilityLabel={spokenLabel}
-            accessibilityHint={error ?? hint}
+            accessibilityHint={error ?? accessibilityHint ?? hint}
             onFocus={() => {
               setFocused(true);
               onFocus?.();
@@ -155,7 +163,9 @@ export function TextField({
             }}
             style={[
               styles.input,
-              { color: editable ? colors.text : colors.textMuted },
+              // The value sits on the reading edge, which also keeps it clear of
+              // the suffix on the opposite side.
+              { color: editable ? colors.text : colors.textMuted, textAlign: isRTL ? 'right' : 'left' },
               tabularValue ? styles.inputTabular : null,
               multiline ? styles.inputMultiline : null,
               WEB_INPUT_STYLE,

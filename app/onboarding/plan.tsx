@@ -1,5 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Alert,
   Platform,
@@ -20,8 +21,8 @@ import {
   Txt,
   type BadgeTone,
 } from '@/components/ui';
+import { formatAmount, formatCount, formatPercent } from '@/domain/format';
 import {
-  GOAL_LABELS,
   basalMetabolicRate,
   bmiCategory,
   bodyMassIndex,
@@ -32,11 +33,12 @@ import {
   totalDailyEnergyExpenditure,
   type BmiCategory,
 } from '@/domain/nutrition';
+import { mirrorIcon, useDirection } from '@/i18n';
 import { useApp } from '@/state/AppStore';
 import { radius, spacing, useTheme } from '@/theme';
-import type { Profile } from '@/types';
+import type { Goal, Profile } from '@/types';
 
-import { formatCount, parsePlanDraft, planDraftParams } from './_layout';
+import { Eyebrow, StepProgress, parsePlanDraft, planDraftParams } from './_layout';
 
 const BMI_TONE: Record<BmiCategory, BadgeTone> = {
   Underweight: 'warning',
@@ -45,11 +47,24 @@ const BMI_TONE: Record<BmiCategory, BadgeTone> = {
   Obese: 'danger',
 };
 
+const BMI_KEYS = {
+  Underweight: 'onboarding:bmiUnderweight',
+  Healthy: 'onboarding:bmiHealthy',
+  Overweight: 'onboarding:bmiOverweight',
+  Obese: 'onboarding:bmiObese',
+} as const satisfies Record<BmiCategory, string>;
+
+const GOAL_KEYS = {
+  lose: 'onboarding:goalLose',
+  maintain: 'onboarding:goalMaintain',
+  gain: 'onboarding:goalGain',
+} as const satisfies Record<Goal, string>;
+
 const RING_STROKE = 9;
 const RING_MIN = 64;
 const RING_MAX = 96;
-/** Screen gutter plus card padding, both edges. */
-const RING_INSET = spacing.lg * 4;
+/** Screen gutter, card padding and the inner panel's padding, both edges. */
+const RING_INSET = spacing.lg * 6;
 
 /** Alert is a no-op on react-native-web, so the browser gets its own dialog. */
 function notifyFailure(title: string, message: string): void {
@@ -65,18 +80,21 @@ function notifyFailure(title: string, message: string): void {
 function DetailRow({
   label,
   value,
+  unit,
   hint,
   right,
 }: {
   label: string;
   value: string;
+  /** Shown after the value at label weight, so the figure stays dominant. */
+  unit?: string;
   hint: string;
   right?: React.ReactNode;
 }) {
   return (
     <View
       accessible
-      accessibilityLabel={`${label}: ${value}. ${hint}`}
+      accessibilityLabel={`${label}: ${unit ? `${value} ${unit}` : value}. ${hint}`}
       style={styles.detailRow}
     >
       <View style={styles.detailText}>
@@ -86,9 +104,14 @@ function DetailRow({
         </Txt>
       </View>
       <View style={styles.detailValue}>
-        <Txt weight="semibold" tabular>
+        <Txt weight="semibold" tabular numberOfLines={1}>
           {value}
         </Txt>
+        {unit ? (
+          <Txt variant="label" color="faint" numberOfLines={1}>
+            {unit}
+          </Txt>
+        ) : null}
         {right}
       </View>
     </View>
@@ -101,6 +124,8 @@ export default function PlanStep() {
   const { saveProfile } = useApp();
   const { colors } = useTheme();
   const { width } = useWindowDimensions();
+  const { isRTL } = useDirection();
+  const { t } = useTranslation(['onboarding', 'macros', 'units']);
 
   const draft = useMemo(() => parsePlanDraft(params), [params]);
   const missingDraft = draft === null;
@@ -118,8 +143,8 @@ export default function PlanStep() {
   if (!draft) {
     return (
       <Screen>
-        <AppHeader title="Your plan" />
-        <LoadingView message="Taking you back to your body details" />
+        <AppHeader title={t('onboarding:planTitle')} />
+        <LoadingView message={t('onboarding:returning')} />
       </Screen>
     );
   }
@@ -135,20 +160,24 @@ export default function PlanStep() {
   const [lowKg, highKg] = healthyWeightRangeKg(profile.heightCm);
 
   const imperial = profile.units === 'imperial';
-  const weightUnit = imperial ? 'lb' : 'kg';
+  const weightUnit = imperial ? t('units:lb') : t('units:kg');
   const healthyLow = imperial ? kgToLb(lowKg) : lowKg;
   const healthyHigh = imperial ? kgToLb(highKg) : highKg;
+
+  const goalLabel = t(GOAL_KEYS[profile.goal]);
 
   // Read the gap off the finished target: a safety floor can soften the deficit.
   const deltaPercent =
     maintenance > 0
       ? Math.round(((targets.calories - maintenance) / maintenance) * 100)
       : 0;
-  const maintenanceText = `your maintenance of ${formatCount(maintenance)} calories a day`;
   const goalSentence =
     deltaPercent === 0
-      ? `Matched to ${maintenanceText}.`
-      : `About ${Math.abs(deltaPercent)}% ${deltaPercent < 0 ? 'below' : 'above'} ${maintenanceText}.`;
+      ? t('onboarding:goalMatched', { calories: formatCount(maintenance) })
+      : t(deltaPercent < 0 ? 'onboarding:goalBelow' : 'onboarding:goalAbove', {
+          percent: formatPercent(Math.abs(deltaPercent) / 100),
+          calories: formatCount(maintenance),
+        });
 
   const ringSize = Math.round(
     Math.min(
@@ -160,21 +189,21 @@ export default function PlanStep() {
   const macros = [
     {
       key: 'protein',
-      label: 'Protein',
+      label: t('macros:protein'),
       grams: targets.protein,
       share: split.protein,
       color: colors.protein,
     },
     {
       key: 'carbs',
-      label: 'Carbs',
+      label: t('macros:carbs'),
       grams: targets.carbs,
       share: split.carbs,
       color: colors.carbs,
     },
     {
       key: 'fat',
-      label: 'Fat',
+      label: t('macros:fat'),
       grams: targets.fat,
       share: split.fat,
       color: colors.fat,
@@ -193,11 +222,10 @@ export default function PlanStep() {
       await saveProfile(profile);
       router.replace('/(tabs)');
     } catch {
-      const message =
-        'Your plan could not be saved on this device. Check you have some free storage and try again.';
+      const message = t('onboarding:saveFailedBody');
       setSaving(false);
       setError(message);
-      notifyFailure('Could not save your plan', message);
+      notifyFailure(t('onboarding:saveFailedTitle'), message);
     }
   };
 
@@ -205,28 +233,40 @@ export default function PlanStep() {
     <Screen scroll edges={['top', 'bottom']}>
       <AppHeader
         large
-        title="Your plan"
-        subtitle="Step 3 of 3 — what those answers work out to"
+        title={t('onboarding:planTitle')}
+        subtitle={t('onboarding:planSubtitle')}
         onBack={goBack}
       />
+
+      <StepProgress current={3} />
 
       <Card style={styles.hero}>
         <View
           accessible
-          accessibilityLabel={`${formatCount(targets.calories)} calories a day. ${GOAL_LABELS[profile.goal]}. ${goalSentence}`}
+          accessibilityLabel={t('onboarding:planSpoken', {
+            calories: formatCount(targets.calories),
+            goal: goalLabel,
+            detail: goalSentence,
+          })}
           style={styles.heroBlock}
         >
-          <Txt variant="display" color="accent" tabular>
-            {formatCount(targets.calories)}
-          </Txt>
-          <Txt variant="label" color="muted" style={styles.heroUnit}>
-            calories a day
-          </Txt>
           <View style={[styles.heroPill, { backgroundColor: colors.accentSoft }]}>
-            <Txt variant="label" weight="semibold" color="accent">
-              {GOAL_LABELS[profile.goal]}
+            <Txt variant="label" weight="semibold" color="accent" numberOfLines={1}>
+              {goalLabel}
             </Txt>
           </View>
+          <Txt
+            variant="display"
+            color="accent"
+            tabular
+            numberOfLines={1}
+            style={styles.heroValue}
+          >
+            {formatCount(targets.calories)}
+          </Txt>
+          <Txt variant="label" color="muted" numberOfLines={1}>
+            {t('onboarding:caloriesPerDay')}
+          </Txt>
           <Txt color="muted" align="center" style={styles.heroNote}>
             {goalSentence}
           </Txt>
@@ -234,71 +274,93 @@ export default function PlanStep() {
 
         <Divider style={styles.heroDivider} />
 
-        <View style={styles.macroRow}>
-          {macros.map((macro) => (
-            <View
-              key={macro.key}
-              accessible
-              accessibilityLabel={`${macro.label}: ${macro.grams} grams a day, ${Math.round(
-                macro.share * 100,
-              )} percent of your daily energy`}
-              style={styles.macro}
-            >
-              <ProgressRing
-                size={ringSize}
-                strokeWidth={RING_STROKE}
-                progress={macro.share}
-                color={macro.color}
-              >
-                <Txt variant="label" weight="bold" tabular>
-                  {`${macro.grams} g`}
-                </Txt>
-              </ProgressRing>
-              <Txt variant="label" weight="semibold" style={styles.macroLabel}>
-                {macro.label}
-              </Txt>
-              <Txt variant="caption" color="faint" tabular>
-                {`${Math.round(macro.share * 100)}%`}
-              </Txt>
-            </View>
-          ))}
+        <View style={[styles.macroPanel, { backgroundColor: colors.surfaceAlt }]}>
+          <View style={styles.macroRow}>
+            {macros.map((macro) => {
+              const grams = `${formatCount(macro.grams)} ${t('units:gram')}`;
+              return (
+                <View
+                  key={macro.key}
+                  accessible
+                  accessibilityLabel={t('onboarding:macroSpoken', {
+                    label: macro.label,
+                    grams,
+                    percent: formatPercent(macro.share),
+                  })}
+                  style={styles.macro}
+                >
+                  <ProgressRing
+                    size={ringSize}
+                    strokeWidth={RING_STROKE}
+                    progress={macro.share}
+                    color={macro.color}
+                  >
+                    <Txt variant="label" weight="bold" tabular numberOfLines={1}>
+                      {grams}
+                    </Txt>
+                  </ProgressRing>
+                  <Txt
+                    variant="label"
+                    weight="semibold"
+                    numberOfLines={1}
+                    style={styles.macroLabel}
+                  >
+                    {macro.label}
+                  </Txt>
+                  <Txt variant="caption" color="faint" tabular numberOfLines={1}>
+                    {formatPercent(macro.share)}
+                  </Txt>
+                </View>
+              );
+            })}
+          </View>
         </View>
 
         <Txt variant="caption" color="faint" align="center" style={styles.macroNote}>
-          Each ring shows that macro's share of your daily energy.
+          {t('onboarding:macroNote')}
         </Txt>
       </Card>
 
-      <Card padded={false} style={styles.details}>
+      <Eyebrow label={t('onboarding:breakdown')} style={styles.breakdown} />
+
+      <Card padded={false}>
         <DetailRow
-          label="Resting burn"
-          value={`${formatCount(bmr)} kcal`}
-          hint="What your body uses at complete rest"
+          label={t('onboarding:restingBurn')}
+          value={formatCount(bmr)}
+          unit={t('units:kcal')}
+          hint={t('onboarding:restingBurnHint')}
         />
         <Divider inset />
         <DetailRow
-          label="Maintenance"
-          value={`${formatCount(maintenance)} kcal`}
-          hint="Resting burn scaled by your activity level"
+          label={t('onboarding:maintenanceRow')}
+          value={formatCount(maintenance)}
+          unit={t('units:kcal')}
+          hint={t('onboarding:maintenanceRowHint')}
         />
         <Divider inset />
         <DetailRow
-          label="BMI"
-          value={String(bmi)}
-          hint="From your height and weight"
-          right={<Badge label={category} tone={BMI_TONE[category]} style={styles.badge} />}
+          label={t('onboarding:bmi')}
+          value={formatAmount(bmi)}
+          hint={t('onboarding:bmiHint')}
+          right={
+            <Badge
+              label={t(BMI_KEYS[category])}
+              tone={BMI_TONE[category]}
+              style={styles.badge}
+            />
+          }
         />
         <Divider inset />
         <DetailRow
-          label="Healthy weight"
-          value={`${healthyLow}-${healthyHigh} ${weightUnit}`}
-          hint="The 18.5 to 24.9 BMI band for your height"
+          label={t('onboarding:healthyWeight')}
+          value={`${formatAmount(healthyLow)}–${formatAmount(healthyHigh)}`}
+          unit={weightUnit}
+          hint={t('onboarding:healthyWeightHint')}
         />
       </Card>
 
       <Txt variant="caption" color="faint" style={styles.disclaimer}>
-        These are estimates from the Mifflin-St Jeor equation — a starting point
-        you can adjust any time, not medical advice.
+        {t('onboarding:disclaimer')}
       </Txt>
 
       <View style={styles.spacer} />
@@ -310,14 +372,14 @@ export default function PlanStep() {
       ) : null}
 
       <Button
-        label="Start tracking"
-        iconRight="arrow-forward"
+        label={t('onboarding:startTracking')}
+        iconRight={mirrorIcon('arrow-forward', isRTL)}
         size="lg"
         fullWidth
         loading={saving}
         disabled={saving}
         onPress={() => void startTracking()}
-        accessibilityHint="Saves your plan and opens your daily log"
+        accessibilityHint={t('onboarding:startTrackingHint')}
         style={styles.start}
       />
     </Screen>
@@ -326,19 +388,18 @@ export default function PlanStep() {
 
 const styles = StyleSheet.create({
   hero: {
-    marginTop: spacing.md,
+    marginTop: spacing.xs,
   },
   heroBlock: {
     alignItems: 'center',
   },
-  heroUnit: {
-    marginTop: spacing.xs,
-  },
   heroPill: {
     borderRadius: radius.pill,
-    marginTop: spacing.lg,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm - 1,
+  },
+  heroValue: {
+    marginTop: spacing.md,
   },
   heroNote: {
     marginTop: spacing.md,
@@ -346,6 +407,11 @@ const styles = StyleSheet.create({
   heroDivider: {
     marginBottom: spacing.xl,
     marginTop: spacing.xl,
+  },
+  macroPanel: {
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
   },
   macroRow: {
     columnGap: spacing.md,
@@ -360,10 +426,11 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   macroNote: {
-    marginTop: spacing.lg,
-  },
-  details: {
     marginTop: spacing.md,
+  },
+  breakdown: {
+    marginBottom: spacing.sm,
+    marginTop: spacing.xl,
   },
   detailRow: {
     alignItems: 'center',

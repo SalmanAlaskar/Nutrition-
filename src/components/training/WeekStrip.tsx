@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Platform,
   Pressable,
@@ -11,10 +12,10 @@ import {
 } from 'react-native';
 
 import { Txt } from '@/components/ui';
-import { formatDayLabel, weekdayInitial } from '@/domain/date';
-import { SESSION_LABELS } from '@/domain/training';
 import { radius, spacing, useTheme } from '@/theme';
 import type { SessionType } from '@/types';
+
+import { useTrainingText } from './useTrainingText';
 
 /** Decoration is hidden from assistive tech; the DOM only understands aria-hidden. */
 const DECORATIVE: AccessibilityProps =
@@ -40,18 +41,21 @@ export interface WeekStripProps {
   style?: StyleProp<ViewStyle>;
 }
 
-const REST_LABEL = 'Rest';
-
 /** The training week at a glance: what each day holds and what is already done. */
 export function WeekStrip({ days, selectedDate, today, onSelect, style }: WeekStripProps) {
   const { colors } = useTheme();
+  const { t } = useTranslation('training');
+  const text = useTrainingText();
 
   return (
     <View style={[styles.row, style]}>
       {days.map((day) => {
         const selected = day.date === selectedDate;
         const isToday = day.date === today;
-        const typeLabel = day.type ? SESSION_LABELS[day.type] : REST_LABEL;
+        const typeLabel = day.type ? text.type(day.type) : t('rest');
+        const spoken = day.completed
+          ? t('spokenDayDone', { date: text.date(day.date, today), type: typeLabel })
+          : t('spokenDay', { date: text.date(day.date, today), type: typeLabel });
 
         const background = selected ? colors.accent : colors.surface;
         const border = selected || isToday ? colors.accent : colors.border;
@@ -67,14 +71,6 @@ export function WeekStrip({ days, selectedDate, today, onSelect, style }: WeekSt
             : colors.textFaint;
         // On the filled day the tick has to read against the accent, not on it.
         const tickColor = selected ? colors.accentText : colors.success;
-
-        const spoken = [
-          formatDayLabel(day.date, today),
-          typeLabel,
-          day.completed ? 'completed' : null,
-        ]
-          .filter((part): part is string => Boolean(part))
-          .join(', ');
 
         return (
           <Pressable
@@ -94,7 +90,7 @@ export function WeekStrip({ days, selectedDate, today, onSelect, style }: WeekSt
             ]}
           >
             <Txt variant="caption" weight="bold" color={initialColor}>
-              {weekdayInitial(day.date)}
+              {text.weekdayLetter(day.date)}
             </Txt>
             <Txt
               variant="caption"

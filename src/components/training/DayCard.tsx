@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Platform,
   StyleSheet,
@@ -10,9 +11,11 @@ import {
 } from 'react-native';
 
 import { Badge, Button, Card, Divider, Txt } from '@/components/ui';
-import { SESSION_ICONS, SESSION_MUSCLES } from '@/domain/training';
+import { SESSION_ICONS } from '@/domain/training';
 import { radius, spacing, useTheme } from '@/theme';
 import type { ProgramDay } from '@/types';
+
+import { useTrainingText } from './useTrainingText';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -28,10 +31,14 @@ export type DayCardStatus = 'none' | 'in_progress' | 'completed';
 export interface DayCardExercise {
   /** Exercise id, unique inside the day. */
   id: string;
+  /** Leading name, already in the reading language. */
   name: string;
-  nameAr?: string;
-  /** Planned volume, e.g. '4 sets · 5-8 reps'. */
+  /** The other name, shown quietly underneath. */
+  altName?: string;
+  /** Planned volume in its dense form, e.g. '4×5-8'. */
   detail: string;
+  /** The same volume in words, for the row's spoken label. */
+  detailSpoken: string;
   /** Ticked in the logged session for this day. */
   done?: boolean;
 }
@@ -48,15 +55,6 @@ export interface DayCardProps {
   style?: StyleProp<ViewStyle>;
 }
 
-const REST_TITLE = 'Rest day';
-const REST_SUBTITLE = 'Nothing scheduled. Recovery is part of the plan.';
-
-const STATUS_LABEL: Record<DayCardStatus, string | null> = {
-  none: null,
-  in_progress: 'In progress',
-  completed: 'Done',
-};
-
 /** The plan for one day: what it covers, what is in it, and how to start it. */
 export function DayCard({
   day,
@@ -68,12 +66,19 @@ export function DayCard({
   style,
 }: DayCardProps) {
   const { colors } = useTheme();
+  const { t } = useTranslation('training');
+  const text = useTrainingText();
 
   const resting = day === null;
-  const title = day ? day.label : REST_TITLE;
-  const subtitle = day ? SESSION_MUSCLES[day.type] : REST_SUBTITLE;
+  const title = day ? text.day(day) : t('restTitle');
+  const subtitle = day ? text.muscles(day.type) : t('restSubtitle');
   const icon = day ? SESSION_ICONS[day.type] : 'moon-outline';
-  const badge = STATUS_LABEL[status];
+  const badge =
+    status === 'completed'
+      ? t('statusDone')
+      : status === 'in_progress'
+        ? t('statusInProgress')
+        : null;
 
   const bubbleColor = resting ? colors.surfaceAlt : colors.accentSoft;
   const glyphColor = resting ? colors.textMuted : colors.accent;
@@ -106,7 +111,15 @@ export function DayCard({
         <View style={styles.list}>
           <Divider style={styles.divider} />
           {exercises.map((exercise) => (
-            <View key={exercise.id} style={styles.exercise}>
+            <View
+              key={exercise.id}
+              style={styles.exercise}
+              accessible
+              accessibilityLabel={t('plannedSpoken', {
+                name: exercise.name,
+                planned: exercise.detailSpoken,
+              })}
+            >
               <View style={styles.mark} {...DECORATIVE}>
                 <Ionicons
                   name={exercise.done ? 'checkmark-circle' : 'ellipse-outline'}
@@ -118,13 +131,13 @@ export function DayCard({
                 <Txt weight="medium" numberOfLines={1}>
                   {exercise.name}
                 </Txt>
-                {exercise.nameAr ? (
-                  <Txt variant="caption" color="faint" numberOfLines={1} style={styles.arabic}>
-                    {exercise.nameAr}
+                {exercise.altName ? (
+                  <Txt variant="caption" color="faint" numberOfLines={1} style={styles.alt}>
+                    {exercise.altName}
                   </Txt>
                 ) : null}
               </View>
-              <Txt variant="label" color="muted" numberOfLines={1} tabular>
+              <Txt variant="label" color="muted" numberOfLines={1} tabular style={styles.detail}>
                 {exercise.detail}
               </Txt>
             </View>
@@ -184,9 +197,14 @@ const styles = StyleSheet.create({
   },
   exerciseText: {
     flex: 1,
+    flexShrink: 1,
   },
-  arabic: {
+  alt: {
     marginTop: 1,
+  },
+  // The planned volume never wraps and never gives way to a long Arabic name.
+  detail: {
+    flexShrink: 0,
   },
   action: {
     marginTop: spacing.lg,

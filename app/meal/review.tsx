@@ -2,8 +2,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Platform, StyleSheet, View, type AccessibilityProps } from 'react-native';
 
+import { useFoodLabels } from '@/components/meal/useFoodLabels';
+import { useDayLabels } from '@/components/today/useDayLabels';
 import {
   AppHeader,
   Badge,
@@ -18,16 +21,12 @@ import {
   TextField,
   Txt,
 } from '@/components/ui';
-import { currentSlot, formatDayLabel, todayKey } from '@/domain/date';
+import { currentSlot, todayKey } from '@/domain/date';
+import { formatCount } from '@/domain/format';
 import { makeId } from '@/domain/id';
 import { macrosForGrams, sumMacros } from '@/domain/nutrition';
-import { MEAL_SLOTS, SLOT_LABELS } from '@/domain/totals';
-import {
-  analyzeMealPhoto,
-  describeVisionError,
-  VisionError,
-  type VisionErrorCode,
-} from '@/services/vision';
+import { MEAL_SLOTS } from '@/domain/totals';
+import { analyzeMealPhoto, VisionError, type VisionErrorCode } from '@/services/vision';
 import { hasApiKey } from '@/storage/secrets';
 import { useApp } from '@/state/AppStore';
 import {
@@ -39,14 +38,29 @@ import {
 import { radius, spacing, useTheme } from '@/theme';
 import type { Macros, Meal, MealEntry, MealSlot, PhotoAnalysisResult } from '@/types';
 
-import { formatCount } from '../onboarding/_layout';
-
 type Phase = 'starting' | 'consent' | 'analyzing' | 'reviewing' | 'failed' | 'manual';
 
-interface Failure {
-  headline: string;
-  suggestion: string;
-  code: VisionErrorCode | null;
+/** What went wrong, in the reader's language rather than the service's. */
+const FAILURE_TITLE_KEYS = {
+  'no-key': 'meals:failNoKeyTitle',
+  network: 'meals:failNetworkTitle',
+  'rate-limit': 'meals:failRateLimitTitle',
+  'bad-response': 'meals:failBadResponseTitle',
+  unsupported: 'meals:failUnsupportedTitle',
+  'too-large': 'meals:failTooLargeTitle',
+} as const satisfies Record<VisionErrorCode, string>;
+
+const FAILURE_BODY_KEYS = {
+  'no-key': 'meals:failNoKeyBody',
+  network: 'meals:failNetworkBody',
+  'rate-limit': 'meals:failRateLimitBody',
+  'bad-response': 'meals:failBadResponseBody',
+  unsupported: 'meals:failUnsupportedBody',
+  'too-large': 'meals:failTooLargeBody',
+} as const satisfies Record<VisionErrorCode, string>;
+
+function isVisionErrorCode(value: string): value is VisionErrorCode {
+  return value in FAILURE_TITLE_KEYS;
 }
 
 /** One estimated food, held open for editing until the meal is saved. */
@@ -67,16 +81,12 @@ const DECORATIVE: AccessibilityProps =
     ? { 'aria-hidden': true }
     : { accessibilityElementsHidden: true, importantForAccessibility: 'no-hide-descendants' };
 
-const SLOT_OPTIONS = MEAL_SLOTS.map((slot) => ({
-  value: slot,
-  label: SLOT_LABELS[slot],
-  icon: {
-    breakfast: 'cafe-outline',
-    lunch: 'restaurant-outline',
-    dinner: 'moon-outline',
-    snack: 'nutrition-outline',
-  }[slot],
-}));
+const SLOT_ICONS: Record<MealSlot, string> = {
+  breakfast: 'cafe-outline',
+  lunch: 'restaurant-outline',
+  dinner: 'moon-outline',
+  snack: 'nutrition-outline',
+};
 
 const MAX_GRAMS = 2000;
 
@@ -122,32 +132,29 @@ function confidenceTone(confidence: number): 'success' | 'warning' | 'danger' {
   return 'danger';
 }
 
-/** Groups thousands without losing the one decimal a gram value may carry. */
-function grams(value: number): string {
-  const rounded = Math.round(value * 10) / 10;
-  if (Number.isInteger(rounded)) return formatCount(rounded);
-  const [whole, fraction] = rounded.toFixed(1).split('.');
-  return `${formatCount(Number(whole))}.${fraction}`;
-}
-
 /** Says what the percentage means, so the number is never the whole claim. */
-function confidenceWord(confidence: number): string {
-  if (confidence >= 0.7) return 'Fairly sure';
-  if (confidence >= 0.4) return 'Rough guess';
-  return 'Barely a guess';
+function confidenceKey(
+  confidence: number,
+): 'meals:confidenceHigh' | 'meals:confidenceMedium' | 'meals:confidenceLow' {
+  if (confidence >= 0.7) return 'meals:confidenceHigh';
+  if (confidence >= 0.4) return 'meals:confidenceMedium';
+  return 'meals:confidenceLow';
 }
 
 /** Host of the configured API, for the line shown before a photo is uploaded. */
-function endpointLabel(baseUrl: string): string {
+function endpointHost(baseUrl: string): string | undefined {
   const trimmed = baseUrl.trim().replace(/\/+$/, '');
   const withoutScheme = trimmed.replace(/^https?:\/\//, '');
-  return withoutScheme.split('/')[0] || 'the analysis service';
+  return withoutScheme.split('/')[0] || undefined;
 }
 
 export default function ReviewPhotoMealScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ slot?: string; date?: string }>();
   const { colors } = useTheme();
+  const { t } = useTranslation(['meals', 'macros', 'units', 'common']);
+  const labels = useFoodLabels();
+  const dayLabels = useDayLabels();
   const { ready, settings, addMeal, setSelectedDate } = useApp();
 
   // Read once: the handoff slot is cleared on save and must not vanish mid-edit.
@@ -155,7 +162,8 @@ export default function ReviewPhotoMealScreen() {
   const date = readDate(params.date);
 
   const [phase, setPhase] = useState<Phase>('starting');
-  const [failure, setFailure] = useState<Failure | null>(null);
+  /** Null while nothing has failed, or when the failure had no known cause. */
+  const [failureCode, setFailureCode] = useState<VisionErrorCode | null>(null);
   const [rows, setRows] = useState<ReviewRow[]>([]);
   const [slot, setSlot] = useState<MealSlot>(() => readSlot(params.slot));
   const [note, setNote] = useState('');
@@ -195,7 +203,7 @@ export default function ReviewPhotoMealScreen() {
     const controller = new AbortController();
     abortRef.current = controller;
 
-    setFailure(null);
+    setFailureCode(null);
     setPhase('analyzing');
 
     try {
@@ -212,12 +220,11 @@ export default function ReviewPhotoMealScreen() {
       setPhase('reviewing');
     } catch (error) {
       if (controller.signal.aborted || !mountedRef.current) return;
-      const described = describeVisionError(error);
-      setPendingPhotoMeal({ ...pending, error: described.suggestion });
-      setFailure({
-        ...described,
-        code: error instanceof VisionError ? error.code : null,
-      });
+      // The code, not a sentence: the copy is written on this screen so it
+      // survives a language change and a remount alike.
+      const code = error instanceof VisionError ? error.code : null;
+      setPendingPhotoMeal({ ...pending, error: code ?? 'unknown' });
+      setFailureCode(code);
       setPhase('failed');
     }
   }, [pending, settings, applyAnalysis]);
@@ -233,7 +240,7 @@ export default function ReviewPhotoMealScreen() {
       return;
     }
     if (pending.error) {
-      setFailure({ headline: 'Analysis failed', suggestion: pending.error, code: null });
+      setFailureCode(isVisionErrorCode(pending.error) ? pending.error : null);
       setPhase('failed');
       return;
     }
@@ -270,13 +277,13 @@ export default function ReviewPhotoMealScreen() {
             id: row.id,
             name: row.name.trim(),
             quantityGrams: grams,
-            servingLabel: `About ${formatCount(grams)} g`,
+            servingLabel: t('meals:reviewAboutGrams', { amount: formatCount(grams) }),
             macros: macrosForGrams(row.per100, grams),
             source: 'photo' as const,
             confidence: row.confidence,
           };
         }),
-    [rows],
+    [rows, t],
   );
 
   const totals = useMemo(() => sumMacros(entries.map((entry) => entry.macros)), [entries]);
@@ -321,29 +328,36 @@ export default function ReviewPhotoMealScreen() {
     } catch {
       if (!mountedRef.current) return;
       setSaving(false);
-      setSaveError('This meal could not be saved. Try again in a moment.');
+      setSaveError(t('meals:reviewSaveError'));
     }
-  }, [pending, saving, canSave, date, slot, entries, note, addMeal, setSelectedDate, router]);
+  }, [pending, saving, canSave, date, slot, entries, note, addMeal, setSelectedDate, router, t]);
 
   if (!pending) {
     return (
       <Screen>
-        <LoadingView message="No photo to review. Opening the camera." />
+        <LoadingView message={t('meals:reviewNoPhoto')} />
       </Screen>
     );
   }
 
   const analysing = phase === 'analyzing';
   /** A new photo is the only thing that can fix these two. */
-  const needsNewPhoto = failure?.code === 'unsupported' || failure?.code === 'too-large';
+  const needsNewPhoto = failureCode === 'unsupported' || failureCode === 'too-large';
   /** Retrying before the key or the model is fixed will fail the same way. */
-  const needsSettings = failure?.code === 'no-key' || failure?.code === 'unsupported';
+  const needsSettings = failureCode === 'no-key' || failureCode === 'unsupported';
+  const slotLabel = labels.slot(slot);
+  const dayLabel = dayLabels.day(date);
+  const slotOptions = MEAL_SLOTS.map((value) => ({
+    value,
+    label: labels.slot(value),
+    icon: SLOT_ICONS[value],
+  }));
 
   return (
     <Screen scroll keyboardAvoiding edges={['top', 'bottom']}>
       <AppHeader
-        title="Check the photo"
-        subtitle={`${SLOT_LABELS[slot]} · ${formatDayLabel(date)}`}
+        title={t('meals:reviewTitle')}
+        subtitle={`${slotLabel} · ${dayLabel}`}
         onBack={leave}
       />
 
@@ -352,13 +366,13 @@ export default function ReviewPhotoMealScreen() {
         style={[styles.photo, { backgroundColor: colors.surfaceAlt }]}
         contentFit="cover"
         transition={150}
-        accessibilityLabel="The meal you photographed"
+        accessibilityLabel={t('meals:reviewPhotoAlt')}
       />
 
       <View
         style={[styles.disclaimer, { backgroundColor: colors.surfaceAlt }]}
         accessible
-        accessibilityLabel="These numbers are an estimate from one photo. Correct the names and the grams before saving."
+        accessibilityLabel={t('meals:reviewDisclaimer')}
       >
         <Ionicons
           name="information-circle-outline"
@@ -367,32 +381,34 @@ export default function ReviewPhotoMealScreen() {
           {...DECORATIVE}
         />
         <Txt variant="label" color="muted" style={styles.disclaimerText}>
-          Everything below is an estimate from one photo. Correct the names and the grams before
-          you save.
+          {t('meals:reviewDisclaimer')}
         </Txt>
       </View>
 
       {phase === 'starting' ? (
         <Card style={styles.block}>
-          <LoadingView message="Preparing this photo" />
+          <LoadingView message={t('meals:reviewPreparing')} />
         </Card>
       ) : null}
 
       {phase === 'consent' ? (
         <Card style={styles.block}>
-          <Txt variant="heading">Send this photo for analysis?</Txt>
+          <Txt variant="heading">{t('meals:reviewConsentTitle')}</Txt>
           <Txt color="muted" style={styles.blockBody}>
-            {`The photo is uploaded to ${endpointLabel(settings.aiBaseUrl)} and read by ${settings.aiModel}. Nothing else leaves your device.`}
+            {t('meals:reviewConsentBody', {
+              host: endpointHost(settings.aiBaseUrl) ?? t('meals:reviewConsentService'),
+              model: settings.aiModel,
+            })}
           </Txt>
           <View style={styles.blockActions}>
             <Button
-              label="Analyse photo"
+              label={t('meals:reviewAnalyse')}
               icon="sparkles-outline"
               onPress={() => void runAnalysis()}
               fullWidth
             />
             <Button
-              label="Not now, log it myself"
+              label={t('meals:reviewConsentDecline')}
               variant="secondary"
               onPress={() => setPhase('manual')}
               fullWidth
@@ -403,9 +419,9 @@ export default function ReviewPhotoMealScreen() {
 
       {analysing ? (
         <Card style={styles.block}>
-          <LoadingView message="Reading the plate. This usually takes a few seconds." />
+          <LoadingView message={t('meals:reviewAnalysing')} />
           <Button
-            label="Cancel and log it myself"
+            label={t('meals:reviewCancelAnalysis')}
             variant="ghost"
             onPress={() => {
               abortRef.current?.abort();
@@ -416,25 +432,25 @@ export default function ReviewPhotoMealScreen() {
         </Card>
       ) : null}
 
-      {phase === 'failed' && failure ? (
+      {phase === 'failed' ? (
         <Card style={styles.block}>
           <Txt variant="heading" color="danger">
-            {failure.headline}
+            {failureCode ? t(FAILURE_TITLE_KEYS[failureCode]) : t('meals:failUnknownTitle')}
           </Txt>
           <Txt color="muted" style={styles.blockBody}>
-            {failure.suggestion}
+            {failureCode ? t(FAILURE_BODY_KEYS[failureCode]) : t('meals:failUnknownBody')}
           </Txt>
           <View style={styles.blockActions}>
             {needsSettings ? (
               <Button
-                label="Open Settings"
+                label={t('meals:openSettings')}
                 icon="settings-outline"
                 onPress={goToSettings}
                 fullWidth
               />
             ) : (
               <Button
-                label="Try again"
+                label={t('common:retry')}
                 icon="refresh-outline"
                 onPress={() => void runAnalysis()}
                 fullWidth
@@ -443,7 +459,7 @@ export default function ReviewPhotoMealScreen() {
 
             {needsNewPhoto ? (
               <Button
-                label="Take another photo"
+                label={t('meals:reviewRetakePhoto')}
                 icon="camera-outline"
                 variant="secondary"
                 onPress={retakePhoto}
@@ -453,7 +469,7 @@ export default function ReviewPhotoMealScreen() {
 
             {needsSettings ? (
               <Button
-                label="Try again"
+                label={t('common:retry')}
                 icon="refresh-outline"
                 variant="secondary"
                 onPress={() => void runAnalysis()}
@@ -462,31 +478,30 @@ export default function ReviewPhotoMealScreen() {
             ) : null}
 
             <Button
-              label="Log this photo by hand"
+              label={t('meals:reviewManualFromFailure')}
               variant="ghost"
               onPress={() => {
-                setFailure(null);
+                setFailureCode(null);
                 setPhase('manual');
               }}
               fullWidth
             />
           </View>
           <Txt variant="caption" color="faint" align="center" style={styles.blockFoot}>
-            The photo is still here. You can save it with a note and fill in the foods later.
+            {t('meals:reviewFailureFoot')}
           </Txt>
         </Card>
       ) : null}
 
       {phase === 'manual' ? (
         <Card style={styles.block}>
-          <Txt variant="heading">Logging it by hand</Txt>
+          <Txt variant="heading">{t('meals:reviewManualTitle')}</Txt>
           <Txt color="muted" style={styles.blockBody}>
-            Search the database for each food, or keep the photo with a note and fill in the
-            details later.
+            {t('meals:reviewManualBody')}
           </Txt>
           <View style={styles.blockActions}>
             <Button
-              label="Search the food database"
+              label={t('meals:reviewSearchDatabase')}
               icon="search-outline"
               variant="secondary"
               onPress={addAnotherFood}
@@ -494,27 +509,26 @@ export default function ReviewPhotoMealScreen() {
             />
           </View>
           <Txt variant="caption" color="faint" style={styles.blockFoot}>
-            Foods added from the search are logged as their own meal for this day.
+            {t('meals:reviewManualFoot')}
           </Txt>
         </Card>
       ) : null}
 
       {phase === 'reviewing' && rows.length === 0 ? (
         <Card style={styles.block}>
-          <Txt variant="heading">Nothing recognised</Txt>
+          <Txt variant="heading">{t('meals:reviewNothingTitle')}</Txt>
           <Txt color="muted" style={styles.blockBody}>
-            The model could not name anything on this plate. Add the foods yourself, or save the
-            photo with a note.
+            {t('meals:reviewNothingBody')}
           </Txt>
           <View style={styles.blockActions}>
             <Button
-              label="Try again"
+              label={t('common:retry')}
               icon="refresh-outline"
               onPress={() => void runAnalysis()}
               fullWidth
             />
             <Button
-              label="Search the food database"
+              label={t('meals:reviewSearchDatabase')}
               icon="search-outline"
               variant="secondary"
               onPress={addAnotherFood}
@@ -526,7 +540,9 @@ export default function ReviewPhotoMealScreen() {
 
       {rows.length > 0 ? (
         <Txt variant="caption" color="faint" weight="semibold" style={styles.sectionHead}>
-          {rows.length === 1 ? '1 ITEM FOUND' : `${rows.length} ITEMS FOUND`}
+          {rows.length === 1
+            ? t('meals:reviewFoundOne')
+            : t('meals:reviewFoundOther', { value: formatCount(rows.length) })}
         </Txt>
       ) : null}
 
@@ -536,34 +552,36 @@ export default function ReviewPhotoMealScreen() {
           <Card key={row.id} style={styles.rowCard}>
             <View style={styles.rowHead}>
               <Badge
-                label={`${confidenceWord(row.confidence)} · ${Math.round(row.confidence * 100)}%`}
+                label={`${t(confidenceKey(row.confidence))} · ${Math.round(row.confidence * 100)}%`}
                 tone={confidenceTone(row.confidence)}
               />
               <IconButton
                 icon="trash-outline"
                 variant="danger"
                 size={18}
-                accessibilityLabel={`Remove ${row.name || 'this item'}`}
+                accessibilityLabel={t('meals:reviewRemoveItem', {
+                  name: row.name.trim() || t('meals:reviewThisItem'),
+                })}
                 onPress={() => removeRow(row.id)}
                 style={styles.rowRemove}
               />
             </View>
 
             <TextField
-              label="Food"
+              label={t('meals:reviewFoodField')}
               value={row.name}
               onChangeText={(text) => updateRow(row.id, { name: text })}
-              placeholder="Name this item"
+              placeholder={t('meals:reviewFoodPlaceholder')}
               maxLength={80}
               autoCapitalize="sentences"
               style={styles.rowField}
             />
 
             <NumberField
-              label="Portion"
+              label={t('meals:reviewPortionField')}
               value={row.grams}
               onChange={(value) => updateRow(row.id, { grams: value })}
-              suffix="g"
+              suffix={t('units:gram')}
               placeholder="0"
               min={1}
               max={MAX_GRAMS}
@@ -578,11 +596,11 @@ export default function ReviewPhotoMealScreen() {
                   {formatCount(macros.calories)}
                 </Txt>
                 <Txt variant="label" color="faint" weight="medium">
-                  kcal
+                  {t('units:kcal')}
                 </Txt>
               </View>
               <Txt variant="label" color="muted" tabular>
-                {`P ${grams(macros.protein)} g · C ${grams(macros.carbs)} g · F ${grams(macros.fat)} g`}
+                {labels.macroLine(macros)}
               </Txt>
             </View>
 
@@ -599,10 +617,10 @@ export default function ReviewPhotoMealScreen() {
         <Card style={[styles.block, styles.totalsCard]}>
           <View style={styles.totalsText}>
             <Txt variant="caption" color="faint" weight="semibold">
-              MEAL TOTAL
+              {t('meals:reviewMealTotal')}
             </Txt>
             <Txt variant="label" color="muted" style={styles.totalsMacros} tabular>
-              {`P ${grams(totals.protein)} g · C ${grams(totals.carbs)} g · F ${grams(totals.fat)} g`}
+              {labels.macroLine(totals)}
             </Txt>
           </View>
           <View style={styles.totalsValue}>
@@ -610,7 +628,7 @@ export default function ReviewPhotoMealScreen() {
               {formatCount(totals.calories)}
             </Txt>
             <Txt variant="label" color="faint" weight="medium">
-              kcal
+              {t('units:kcal')}
             </Txt>
           </View>
         </Card>
@@ -618,7 +636,7 @@ export default function ReviewPhotoMealScreen() {
 
       {phase === 'reviewing' && rows.length > 0 ? (
         <Button
-          label="Add a food the model missed"
+          label={t('meals:reviewAddMissed')}
           icon="add-circle-outline"
           variant="secondary"
           onPress={addAnotherFood}
@@ -629,10 +647,10 @@ export default function ReviewPhotoMealScreen() {
 
       <View style={styles.block}>
         <Txt variant="label" color="muted" weight="medium" style={styles.fieldLabel}>
-          Meal
+          {t('meals:reviewSlotField')}
         </Txt>
         <SegmentedControl<MealSlot>
-          options={SLOT_OPTIONS}
+          options={slotOptions}
           value={slot}
           onChange={(next) => {
             slotTouched.current = true;
@@ -642,14 +660,14 @@ export default function ReviewPhotoMealScreen() {
       </View>
 
       <TextField
-        label="Note"
+        label={t('meals:reviewNote')}
         value={note}
         onChangeText={(text) => {
           noteTouched.current = true;
           setNote(text);
         }}
-        placeholder="What was on the plate?"
-        hint="A note on its own is enough to keep the photo, even with no foods listed."
+        placeholder={t('meals:reviewNotePlaceholder')}
+        hint={t('meals:reviewNoteHint')}
         multiline
         maxLength={240}
         style={styles.block}
@@ -663,15 +681,17 @@ export default function ReviewPhotoMealScreen() {
 
       <Button
         label={
-          entries.length > 0
-            ? `Log ${entries.length === 1 ? '1 food' : `${entries.length} foods`}`
-            : 'Save photo'
+          entries.length === 0
+            ? t('meals:reviewSavePhoto')
+            : entries.length === 1
+              ? t('meals:reviewLogOne')
+              : t('meals:reviewLogOther', { value: formatCount(entries.length) })
         }
         icon="checkmark-circle-outline"
         onPress={() => void save()}
         disabled={!canSave || analysing}
         loading={saving}
-        accessibilityHint={`Saves this photo to ${SLOT_LABELS[slot].toLowerCase()} on ${formatDayLabel(date)}`}
+        accessibilityHint={t('meals:reviewSaveHint', { slot: slotLabel, day: dayLabel })}
         fullWidth
         size="lg"
         style={styles.save}
@@ -679,7 +699,7 @@ export default function ReviewPhotoMealScreen() {
 
       {!canSave ? (
         <Txt variant="caption" color="faint" align="center" style={styles.saveHint}>
-          Add at least one food or write a note to save this photo.
+          {t('meals:reviewSaveBlocked')}
         </Txt>
       ) : null}
     </Screen>
@@ -719,7 +739,7 @@ const styles = StyleSheet.create({
   sectionHead: {
     letterSpacing: 0.8,
     marginBottom: spacing.sm,
-    marginLeft: spacing.xs,
+    marginStart: spacing.xs,
     marginTop: spacing.xl,
   },
   rowCard: {
@@ -733,7 +753,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   rowRemove: {
-    marginRight: -spacing.sm,
+    marginEnd: -spacing.sm,
     marginVertical: -spacing.sm,
   },
   rowField: {

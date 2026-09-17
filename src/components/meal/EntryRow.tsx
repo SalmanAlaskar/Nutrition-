@@ -1,11 +1,13 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { IconButton, Txt } from '@/components/ui';
+import { formatAmount, formatCount } from '@/domain/format';
 import { spacing, useTheme } from '@/theme';
 import type { MealEntry } from '@/types';
 
-import { formatCount } from '../../../app/onboarding/_layout';
+import { useFoodLabels } from './useFoodLabels';
 
 export interface EntryRowProps {
   entry: MealEntry;
@@ -14,14 +16,6 @@ export interface EntryRowProps {
   /** Uses millilitres instead of grams in the fallback portion label. */
   liquid?: boolean;
   style?: StyleProp<ViewStyle>;
-}
-
-/** Trims a trailing ".0" so "150.0 g" reads as "150 g", and groups thousands. */
-function amount(value: number): string {
-  const rounded = Math.round(value * 10) / 10;
-  if (Number.isInteger(rounded)) return formatCount(rounded);
-  const [whole, fraction] = rounded.toFixed(1).split('.');
-  return `${formatCount(Number(whole))}.${fraction}`;
 }
 
 /**
@@ -33,16 +27,16 @@ function amount(value: number): string {
  */
 export function EntryRow({ entry, onRemove, liquid = false, style }: EntryRowProps) {
   const { colors } = useTheme();
+  const { t } = useTranslation(['meals', 'units']);
+  const labels = useFoodLabels();
 
-  const portion =
-    entry.servingLabel ?? `${amount(entry.quantityGrams)} ${liquid ? 'ml' : 'g'}`;
+  const portion = labels.portion(entry.servingLabel, entry.quantityGrams, liquid);
   const { macros } = entry;
   const calories = formatCount(Math.round(macros.calories));
 
   const summary =
-    `${entry.name}, ${portion}, ${calories} kilocalories. ` +
-    `Protein ${amount(macros.protein)} grams, carbs ${amount(macros.carbs)} grams, ` +
-    `fat ${amount(macros.fat)} grams.`;
+    `${entry.name}, ${portion}, ${calories} ${t('units:caloriesLong')}. ` +
+    `${labels.macroSpoken(macros)}.`;
 
   return (
     <View style={[styles.row, style]}>
@@ -62,18 +56,18 @@ export function EntryRow({ entry, onRemove, liquid = false, style }: EntryRowPro
               {calories}
             </Txt>
             <Txt variant="caption" color="faint" style={styles.unit}>
-              kcal
+              {t('units:kcal')}
             </Txt>
           </View>
           <View style={styles.split}>
             <Txt variant="caption" color={colors.protein} weight="medium" tabular>
-              {`P ${amount(macros.protein)}`}
+              {`${t('meals:macroShortProtein')} ${formatAmount(macros.protein, 1)}`}
             </Txt>
             <Txt variant="caption" color={colors.carbs} weight="medium" tabular>
-              {`C ${amount(macros.carbs)}`}
+              {`${t('meals:macroShortCarbs')} ${formatAmount(macros.carbs, 1)}`}
             </Txt>
             <Txt variant="caption" color={colors.fat} weight="medium" tabular>
-              {`F ${amount(macros.fat)}`}
+              {`${t('meals:macroShortFat')} ${formatAmount(macros.fat, 1)}`}
             </Txt>
           </View>
         </View>
@@ -83,7 +77,7 @@ export function EntryRow({ entry, onRemove, liquid = false, style }: EntryRowPro
         <IconButton
           icon="close-circle"
           onPress={onRemove}
-          accessibilityLabel={`Remove ${entry.name}`}
+          accessibilityLabel={t('meals:reviewRemoveItem', { name: entry.name })}
           color={colors.textFaint}
           size={20}
           style={styles.remove}

@@ -10,6 +10,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
+import { mirrorIcon, useDirection } from '@/i18n';
 import { radius, spacing, useTheme } from '@/theme';
 
 import { Txt } from './Txt';
@@ -64,6 +65,7 @@ export function ListRow({
   style,
 }: ListRowProps) {
   const { colors } = useTheme();
+  const { isRTL } = useDirection();
   const titleColor = destructive ? colors.danger : colors.text;
   const splitRight = Boolean(onPress) && isInteractive(right);
 
@@ -92,9 +94,14 @@ export function ListRow({
     </View>
   );
 
+  // The chevron points the way the row opens, which is the reading direction.
   const chevronNode = chevron ? (
     <View {...DECORATIVE}>
-      <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
+      <Ionicons
+        name={mirrorIcon('chevron-forward', isRTL) as IconName}
+        size={18}
+        color={colors.textFaint}
+      />
     </View>
   ) : null;
 

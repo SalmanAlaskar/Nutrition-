@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Platform,
   StyleSheet,
@@ -20,10 +21,14 @@ import Svg, {
 } from 'react-native-svg';
 
 import { Button, EmptyState, Txt } from '@/components/ui';
-import { daysBetween, formatDayLabel, formatShortDay } from '@/domain/date';
+import { daysBetween } from '@/domain/date';
+import { formatAmount } from '@/domain/format';
 import { kgToLb } from '@/domain/nutrition';
+import { useDirection } from '@/i18n';
 import { fontSize, radius, spacing, useTheme } from '@/theme';
 import type { UnitSystem, WeightLog } from '@/types';
+
+import { useDayText } from './dayText';
 
 export interface WeightChartProps {
   /** Logs inside the visible range, oldest first. */
@@ -55,10 +60,6 @@ const DECORATIVE = Platform.select({
   },
 });
 
-function oneDecimal(n: number): string {
-  return (Math.round(n * 10) / 10).toFixed(1);
-}
-
 /**
  * Body weight over the range. Three or more weigh-ins draw a trend line; fewer
  * are shown as the readings themselves, which is all the data supports.
@@ -72,6 +73,9 @@ export function WeightChart({
   style,
 }: WeightChartProps) {
   const { colors } = useTheme();
+  const { t } = useTranslation(['history', 'units']);
+  const { isRTL } = useDirection();
+  const dayText = useDayText();
   const [width, setWidth] = useState(0);
 
   const handleLayout = useCallback((event: LayoutChangeEvent) => {
@@ -79,7 +83,7 @@ export function WeightChart({
     setWidth((current) => (current === next ? current : next));
   }, []);
 
-  const unitLabel = units === 'imperial' ? 'lb' : 'kg';
+  const unitLabel = units === 'imperial' ? t('units:lb') : t('units:kg');
   const toDisplay = useCallback(
     (kg: number) => (units === 'imperial' ? kgToLb(kg) : Math.round(kg * 10) / 10),
     [units],
@@ -145,64 +149,72 @@ export function WeightChart({
     return (
       <EmptyState
         icon="scale-outline"
-        title="No weigh-ins yet"
-        message="Log your weight and this chart starts tracking the direction it moves."
-        actionLabel="Log weight"
+        title={t('weightEmptyTitle')}
+        message={t('weightEmptyMessage')}
+        actionLabel={t('logWeight')}
         onAction={onLogWeight}
         style={style}
       />
     );
   }
 
-  const direction = reading.steady ? 'Steady' : reading.delta < 0 ? 'Down' : 'Up';
   const directionIcon = reading.steady ? 'remove' : reading.delta < 0 ? 'arrow-down' : 'arrow-up';
   const sparse = logs.length < MIN_TREND_POINTS;
+  const firstDay = dayText.shortDay(reading.firstDate);
+  const lastDay = dayText.shortDay(reading.lastDate);
 
   const changeSummary = reading.steady
-    ? `no change since ${formatShortDay(reading.firstDate)}`
-    : `${direction.toLowerCase()} ${oneDecimal(Math.abs(reading.delta))} ${unitLabel} since ${formatShortDay(
-        reading.firstDate,
-      )}`;
+    ? t('changeNone', { date: firstDay })
+    : t(reading.delta < 0 ? 'changeDown' : 'changeUp', {
+        amount: formatAmount(Math.abs(reading.delta)),
+        unit: unitLabel,
+        date: firstDay,
+      });
 
   const summary =
     logs.length === 1
-      ? `One weigh-in in this range: ${oneDecimal(reading.current)} ${unitLabel} on ${formatShortDay(
-          reading.lastDate,
-        )}.`
-      : `Weight ${oneDecimal(reading.current)} ${unitLabel} on ${formatShortDay(
-          reading.lastDate,
-        )}, ${changeSummary}.`;
+      ? t('weightSpokenOne', {
+          value: formatAmount(reading.current),
+          unit: unitLabel,
+          date: lastDay,
+        })
+      : t('weightSpoken', {
+          value: formatAmount(reading.current),
+          unit: unitLabel,
+          date: lastDay,
+          change: changeSummary,
+        });
 
   const callout = (
     <View style={styles.callout}>
       <View style={styles.currentBlock}>
-        <Txt variant="caption" color="faint" weight="semibold">
-          CURRENT
+        <Txt variant="caption" color="faint" weight="semibold" numberOfLines={1}>
+          {t('current').toUpperCase()}
         </Txt>
         <View style={styles.currentRow}>
           <Txt variant="title" tabular>
-            {oneDecimal(reading.current)}
+            {formatAmount(reading.current)}
           </Txt>
           <Txt variant="label" color="faint" weight="medium" style={styles.unit}>
             {unitLabel}
           </Txt>
         </View>
         <Txt variant="caption" color="faint" numberOfLines={1}>
-          {`Logged ${formatDayLabel(reading.lastDate)}`}
+          {t('loggedOn', { day: dayText.dayLabel(reading.lastDate) })}
         </Txt>
       </View>
 
       <View style={styles.deltaBlock}>
-        <Txt variant="caption" color="faint" weight="semibold" align="right">
-          CHANGE
+        <Txt variant="caption" color="faint" weight="semibold" align="end" numberOfLines={1}>
+          {t('change').toUpperCase()}
         </Txt>
         {logs.length === 1 ? (
           <>
-            <Txt variant="heading" weight="bold" color="muted" align="right">
-              First
+            <Txt variant="heading" weight="bold" color="muted" align="end">
+              {t('firstEntry')}
             </Txt>
-            <Txt variant="caption" color="faint" align="right" numberOfLines={1}>
-              nothing to compare yet
+            <Txt variant="caption" color="faint" align="end" numberOfLines={1}>
+              {t('nothingToCompare')}
             </Txt>
           </>
         ) : (
@@ -214,14 +226,16 @@ export function WeightChart({
                 color={colors.textMuted}
                 {...DECORATIVE}
               />
-              <Txt variant="heading" weight="bold" tabular>
-                {reading.steady ? 'None' : `${oneDecimal(Math.abs(reading.delta))} ${unitLabel}`}
+              <Txt variant="heading" weight="bold" tabular numberOfLines={1}>
+                {reading.steady
+                  ? t('noChange')
+                  : `${formatAmount(Math.abs(reading.delta))} ${unitLabel}`}
               </Txt>
             </View>
-            <Txt variant="caption" color="faint" align="right" numberOfLines={1}>
+            <Txt variant="caption" color="faint" align="end" numberOfLines={1}>
               {reading.steady
-                ? `since ${formatShortDay(reading.firstDate)}`
-                : `${direction.toLowerCase()} since ${formatShortDay(reading.firstDate)}`}
+                ? t('since', { date: firstDay })
+                : t(reading.delta < 0 ? 'downSince' : 'upSince', { date: firstDay })}
             </Txt>
           </>
         )}
@@ -246,11 +260,16 @@ export function WeightChart({
                   ]}
                   {...DECORATIVE}
                 />
-                <Txt variant="label" color={last ? 'text' : 'muted'} style={styles.readingDay}>
-                  {formatDayLabel(log.date)}
+                <Txt
+                  variant="label"
+                  color={last ? 'text' : 'muted'}
+                  numberOfLines={1}
+                  style={styles.readingDay}
+                >
+                  {dayText.dayLabel(log.date)}
                 </Txt>
                 <Txt variant="label" weight={last ? 'semibold' : 'regular'} tabular>
-                  {`${oneDecimal(toDisplay(log.weightKg))} ${unitLabel}`}
+                  {`${formatAmount(toDisplay(log.weightKg))} ${unitLabel}`}
                 </Txt>
               </View>
             );
@@ -258,13 +277,11 @@ export function WeightChart({
         </View>
 
         <Txt variant="caption" color="faint" style={styles.sparseHint}>
-          {logs.length === 1
-            ? 'One weigh-in in this range. A second one starts the trend.'
-            : 'Two weigh-ins in this range. A third draws the trend line.'}
+          {logs.length === 1 ? t('sparseOne') : t('sparseTwo')}
         </Txt>
 
         <Button
-          label="Log weight"
+          label={t('logWeight')}
           onPress={onLogWeight}
           variant="secondary"
           size="sm"
@@ -306,7 +323,7 @@ export function WeightChart({
               strokeDasharray="4 5"
             />
             <SvgText x={0} y={model.yHigh - 5} fill={colors.textFaint} fontSize={fontSize.xs}>
-              {oneDecimal(model.highest)}
+              {formatAmount(model.highest)}
             </SvgText>
 
             {model.flat ? null : (
@@ -321,7 +338,7 @@ export function WeightChart({
                   strokeDasharray="4 5"
                 />
                 <SvgText x={0} y={model.yLow + 13} fill={colors.textFaint} fontSize={fontSize.xs}>
-                  {oneDecimal(model.lowest)}
+                  {formatAmount(model.lowest)}
                 </SvgText>
               </>
             )}
@@ -366,12 +383,16 @@ export function WeightChart({
         ) : null}
       </View>
 
-      <View style={styles.axis} {...DECORATIVE}>
+      {/*
+        Time runs oldest to newest across the plot in both languages, so the
+        axis keeps the same physical order as the line above it.
+      */}
+      <View style={[styles.axis, isRTL ? styles.axisRtl : null]} {...DECORATIVE}>
         <Txt variant="caption" color="faint">
-          {formatShortDay(startDate)}
+          {dayText.shortDay(startDate)}
         </Txt>
         <Txt variant="caption" color="faint">
-          {formatShortDay(endDate)}
+          {dayText.shortDay(endDate)}
         </Txt>
       </View>
     </View>
@@ -413,8 +434,11 @@ const styles = StyleSheet.create({
   axis: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingStart: GUTTER,
-    paddingEnd: RIGHT_INSET,
+    paddingLeft: GUTTER,
+    paddingRight: RIGHT_INSET,
+  },
+  axisRtl: {
+    flexDirection: 'row-reverse',
   },
   readings: {
     borderRadius: radius.md,

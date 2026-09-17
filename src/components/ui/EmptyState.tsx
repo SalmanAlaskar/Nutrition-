@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Platform,
   StyleSheet,
@@ -28,8 +29,10 @@ const DECORATIVE: AccessibilityProps = Platform.select<AccessibilityProps>({
 export interface EmptyStateProps {
   /** Ionicons glyph shown in the halo. */
   icon: string;
-  title: string;
-  message: string;
+  /** Defaults to the translated "Nothing here yet". */
+  title?: string;
+  /** Defaults to a translated line explaining that the space fills in later. */
+  message?: string;
   actionLabel?: string;
   onAction?: () => void;
   style?: StyleProp<ViewStyle>;
@@ -44,6 +47,7 @@ export function EmptyState({
   style,
 }: EmptyStateProps) {
   const { colors } = useTheme();
+  const { t } = useTranslation('common');
 
   return (
     <View style={[styles.wrapper, style]}>
@@ -52,10 +56,10 @@ export function EmptyState({
       </View>
 
       <Txt variant="heading" weight="bold" style={styles.title}>
-        {title}
+        {title ?? t('emptyTitle')}
       </Txt>
       <Txt color="muted" style={styles.message}>
-        {message}
+        {message ?? t('emptyMessage')}
       </Txt>
 
       {actionLabel && onAction ? (

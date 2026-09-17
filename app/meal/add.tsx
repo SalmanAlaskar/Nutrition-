@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   FlatList,
   Platform,
@@ -15,6 +16,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EntryRow } from '@/components/meal/EntryRow';
 import { FoodResultRow } from '@/components/meal/FoodResultRow';
 import { PortionSheet } from '@/components/meal/PortionSheet';
+import { FOOD_CATEGORIES, useFoodLabels } from '@/components/meal/useFoodLabels';
+import { useDayLabels } from '@/components/today/useDayLabels';
 import {
   AppHeader,
   Button,
@@ -30,16 +33,14 @@ import {
   type SegmentedOption,
 } from '@/components/ui';
 import { searchFoods } from '@/data/foodSearch';
-import { CATEGORY_LABELS } from '@/data/foods';
-import { currentSlot, formatDayLabel, todayKey } from '@/domain/date';
+import { currentSlot, todayKey } from '@/domain/date';
+import { formatCount } from '@/domain/format';
 import { makeId } from '@/domain/id';
 import { sumMacros } from '@/domain/nutrition';
-import { MEAL_SLOTS, SLOT_LABELS } from '@/domain/totals';
+import { MEAL_SLOTS } from '@/domain/totals';
 import { useApp } from '@/state/AppStore';
 import { spacing, useTheme } from '@/theme';
 import type { FoodCategory, FoodItem, Meal, MealEntry, MealSlot } from '@/types';
-
-import { formatCount } from '../onboarding/_layout';
 
 const SEARCH_DEBOUNCE_MS = 120;
 const RESULT_LIMIT = 40;
@@ -53,15 +54,7 @@ const DECORATIVE: AccessibilityProps =
 
 type CategoryFilter = FoodCategory | 'all';
 
-const CATEGORY_FILTERS: CategoryFilter[] = [
-  'all',
-  ...(Object.keys(CATEGORY_LABELS) as FoodCategory[]),
-];
-
-const SLOT_OPTIONS: SegmentedOption<MealSlot>[] = MEAL_SLOTS.map((slot) => ({
-  value: slot,
-  label: SLOT_LABELS[slot],
-}));
+const CATEGORY_FILTERS: CategoryFilter[] = ['all', ...FOOD_CATEGORIES];
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
@@ -80,6 +73,9 @@ export default function AddMealScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { colors } = useTheme();
+  const { t } = useTranslation(['meals', 'units', 'common']);
+  const labels = useFoodLabels();
+  const dayLabels = useDayLabels();
   const insets = useSafeAreaInsets();
   const { customFoods, addMeal } = useApp();
 
@@ -113,6 +109,11 @@ export default function AddMealScreen() {
   const customIds = useMemo(
     () => new Set(customFoods.map((food) => food.id)),
     [customFoods],
+  );
+
+  const slotOptions = useMemo<SegmentedOption<MealSlot>[]>(
+    () => MEAL_SLOTS.map((value) => ({ value, label: labels.slot(value) })),
+    [labels],
   );
 
   const totalCalories = useMemo(
@@ -163,29 +164,32 @@ export default function AddMealScreen() {
       goBack();
     } catch {
       setSaving(false);
-      setError('Could not save this meal. Please try again.');
+      setError(t('meals:saveMealError'));
     }
-  }, [entries, saving, date, slot, addMeal, goBack]);
+  }, [entries, saving, date, slot, addMeal, goBack, t]);
 
   const trimmedQuery = debouncedQuery.trim();
-  const itemWord = entries.length === 1 ? 'item' : 'items';
+  const itemsText = labels.items(entries.length);
+  const dayLabel = dayLabels.day(date);
   const listHeader = trimmedQuery
-    ? `${results.length} ${results.length === 1 ? 'RESULT' : 'RESULTS'}`
+    ? results.length === 1
+      ? t('meals:resultsOne')
+      : t('meals:resultsOther', { value: formatCount(results.length) })
     : category === 'all'
-      ? 'SUGGESTIONS'
-      : `${CATEGORY_LABELS[category].toUpperCase()}`;
+      ? t('meals:suggestions')
+      : labels.category(category);
 
   return (
     <Screen padded={false} keyboardAvoiding>
       <View style={styles.top}>
-        <AppHeader title="Log a meal" subtitle={formatDayLabel(date)} onBack={goBack} />
+        <AppHeader title={t('meals:addTitle')} subtitle={dayLabel} onBack={goBack} />
 
-        <SegmentedControl<MealSlot> options={SLOT_OPTIONS} value={slot} onChange={setSlot} />
+        <SegmentedControl<MealSlot> options={slotOptions} value={slot} onChange={setSlot} />
 
         <TextField
           value={query}
           onChangeText={setQuery}
-          placeholder="Search foods, dishes, brands"
+          placeholder={t('meals:searchPlaceholder')}
           icon="search"
           autoFocus
           autoCapitalize="none"
@@ -204,7 +208,7 @@ export default function AddMealScreen() {
         {CATEGORY_FILTERS.map((value) => (
           <Chip
             key={value}
-            label={value === 'all' ? 'All' : CATEGORY_LABELS[value]}
+            label={value === 'all' ? t('meals:categoryAll') : labels.category(value)}
             selected={category === value}
             onPress={() => setCategory(value)}
           />
@@ -232,13 +236,17 @@ export default function AddMealScreen() {
         ListEmptyComponent={
           <EmptyState
             icon={trimmedQuery ? 'search-outline' : 'filter-outline'}
-            title={trimmedQuery ? 'No match found' : 'Nothing in this category'}
+            title={trimmedQuery ? t('meals:noMatchTitle') : t('meals:emptyCategoryTitle')}
             message={
               trimmedQuery
-                ? `Nothing in the database matches “${trimmedQuery}”. Add it once with your own numbers and it stays searchable.`
-                : 'Search by name in English or Arabic, or pick another category.'
+                ? t('meals:noMatchBody', { query: trimmedQuery })
+                : t('meals:emptyCategoryBody')
             }
-            actionLabel={trimmedQuery ? `Create “${trimmedQuery}”` : 'Create a custom food'}
+            actionLabel={
+              trimmedQuery
+                ? t('meals:createNamed', { query: trimmedQuery })
+                : t('meals:createCustom')
+            }
             onAction={openCustomFood}
             style={styles.empty}
           />
@@ -247,11 +255,11 @@ export default function AddMealScreen() {
           results.length > 0 ? (
             <Card padded={false} style={styles.customCard}>
               <ListRow
-                title="Create custom food"
+                title={t('meals:createCustom')}
                 subtitle={
                   trimmedQuery
-                    ? `Add “${trimmedQuery}” with your own numbers`
-                    : 'Add something the database does not have'
+                    ? t('meals:customRowNamed', { query: trimmedQuery })
+                    : t('meals:customRowBody')
                 }
                 icon="add-circle-outline"
                 onPress={openCustomFood}
@@ -275,7 +283,7 @@ export default function AddMealScreen() {
         {entries.length > 0 && draftOpen ? (
           <>
             <Txt variant="caption" color="faint" weight="semibold" style={styles.draftLabel}>
-              IN THIS MEAL
+              {t('meals:draftTitle')}
             </Txt>
             <ScrollView
               style={styles.draft}
@@ -307,10 +315,18 @@ export default function AddMealScreen() {
             accessibilityRole="button"
             accessibilityLabel={
               entries.length === 0
-                ? 'No foods added yet'
-                : `${entries.length} ${itemWord}, ${totalCalories} kilocalories. ${
-                    draftOpen ? 'Hide' : 'Show'
-                  } the list`
+                ? t('meals:draftEmptySpoken')
+                : t('meals:draftSpoken', {
+                    items: itemsText,
+                    value: formatCount(totalCalories),
+                  })
+            }
+            accessibilityHint={
+              entries.length === 0
+                ? undefined
+                : draftOpen
+                  ? t('meals:draftHide')
+                  : t('meals:draftShow')
             }
             accessibilityState={{ expanded: draftOpen, disabled: entries.length === 0 }}
             style={({ pressed }) => [
@@ -328,14 +344,12 @@ export default function AddMealScreen() {
                 {formatCount(totalCalories)}
               </Txt>
               <Txt variant="label" color="faint" weight="medium" style={styles.summaryUnit}>
-                kcal
+                {t('units:kcal')}
               </Txt>
             </View>
             <View style={styles.summaryMeta}>
               <Txt variant="label" color="muted" numberOfLines={1}>
-                {entries.length === 0
-                  ? 'Pick a food to start'
-                  : `${entries.length} ${itemWord}`}
+                {entries.length === 0 ? t('meals:pickFoodToStart') : itemsText}
               </Txt>
               {entries.length > 0 ? (
                 <Ionicons
@@ -349,12 +363,15 @@ export default function AddMealScreen() {
           </Pressable>
 
           <Button
-            label="Save meal"
+            label={t('meals:saveMeal')}
             icon="checkmark"
             onPress={() => void save()}
             disabled={entries.length === 0}
             loading={saving}
-            accessibilityHint={`Logs these foods as ${SLOT_LABELS[slot].toLowerCase()} on ${formatDayLabel(date)}`}
+            accessibilityHint={t('meals:saveMealHint', {
+              slot: labels.slot(slot),
+              day: dayLabel,
+            })}
           />
         </View>
       </View>
@@ -442,7 +459,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   summaryUnit: {
-    marginLeft: 1,
+    marginStart: 1,
   },
   summaryMeta: {
     alignItems: 'center',

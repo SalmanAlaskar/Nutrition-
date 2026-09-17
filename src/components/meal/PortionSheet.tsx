@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   KeyboardAvoidingView,
   Modal,
@@ -12,12 +13,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button, Chip, Divider, IconButton, NumberField, Txt } from '@/components/ui';
 import { entryFromFood } from '@/data/foodSearch';
-import { CATEGORY_LABELS } from '@/data/foods';
+import { formatAmount, formatCount } from '@/domain/format';
 import { EMPTY_MACROS, macrosForGrams } from '@/domain/nutrition';
 import { radius, spacing, useTheme } from '@/theme';
 import type { FoodItem, Macros, MealEntry, ServingOption } from '@/types';
 
-import { formatCount } from '../../../app/onboarding/_layout';
+import { useFoodLabels } from './useFoodLabels';
 
 export interface PortionSheetProps {
   /** Food being portioned. Kept around while the sheet animates out. */
@@ -39,13 +40,6 @@ function round(value: number, places: number): number {
   return Math.round(value * factor) / factor;
 }
 
-function amount(value: number): string {
-  const rounded = round(value, 2);
-  if (Number.isInteger(rounded)) return formatCount(rounded);
-  const [whole, fraction] = String(rounded).split('.');
-  return `${formatCount(Number(whole))}.${fraction ?? '0'}`;
-}
-
 /** The food's own portions, always with a flat 100 g fallback to type into. */
 function portionOptions(food: FoodItem): ServingOption[] {
   const unit = food.liquid ? 'ml' : 'g';
@@ -56,6 +50,8 @@ function portionOptions(food: FoodItem): ServingOption[] {
 
 export function PortionSheet({ food, visible, onClose, onAdd, custom = false }: PortionSheetProps) {
   const { colors } = useTheme();
+  const { t } = useTranslation(['meals', 'macros', 'units']);
+  const labels = useFoodLabels();
   const insets = useSafeAreaInsets();
 
   const [servingIndex, setServingIndex] = useState(0);
@@ -65,7 +61,7 @@ export function PortionSheet({ food, visible, onClose, onAdd, custom = false }: 
 
   const servings = useMemo(() => (food ? portionOptions(food) : []), [food]);
   const serving: ServingOption | undefined = servings[servingIndex] ?? servings[0];
-  const unit = food?.liquid ? 'ml' : 'g';
+  const liquid = food?.liquid ?? false;
 
   // Each newly picked food starts at one of its first listed portion.
   useEffect(() => {
@@ -115,11 +111,12 @@ export function PortionSheet({ food, visible, onClose, onAdd, custom = false }: 
     [food, grams],
   );
 
-  const portionLabel = useMemo(() => {
+  /** The serving as the entry stores it, in the words the database uses. */
+  const savedLabel = useMemo(() => {
     if (mode === 'grams' || !serving) return undefined;
     const count = quantity ?? 0;
     if (count <= 0) return undefined;
-    return count === 1 ? serving.label : `${amount(count)} × ${serving.label}`;
+    return count === 1 ? serving.label : `${formatAmount(count, 2)} × ${serving.label}`;
   }, [mode, serving, quantity]);
 
   const canAdd = grams !== null && grams > 0;
@@ -129,40 +126,50 @@ export function PortionSheet({ food, visible, onClose, onAdd, custom = false }: 
    * weight can never look as though it contradicts the selected serving.
    */
   const portionSummary = useMemo(() => {
-    if (!canAdd || grams === null) return 'Pick a portion above';
-    const weight = `${amount(grams)} ${unit}`;
-    if (!portionLabel) return weight;
-    return quantity === 1 ? portionLabel : `${portionLabel} · ${weight}`;
-  }, [canAdd, grams, unit, portionLabel, quantity]);
+    if (!canAdd || grams === null) return t('meals:portionPick');
+    const weight = labels.weight(grams, liquid);
+    if (!savedLabel || !serving) return weight;
+    const shown = labels.portion(serving.label, serving.grams, liquid);
+    if (quantity === 1) return shown;
+    return `${formatAmount(quantity ?? 0, 2)} × ${shown} · ${weight}`;
+  }, [canAdd, grams, liquid, savedLabel, serving, quantity, labels, t]);
 
   const handleAdd = useCallback(() => {
     if (!food || grams === null || grams <= 0) return;
-    const entry = entryFromFood(food, grams, portionLabel);
+    const entry = entryFromFood(food, grams, savedLabel);
     onAdd(custom ? { ...entry, source: 'custom' } : entry);
     onClose();
-  }, [food, grams, portionLabel, onAdd, custom, onClose]);
+  }, [food, grams, savedLabel, onAdd, custom, onClose]);
 
   if (!food) return null;
 
-  const macroColumns: { label: string; value: number; color: string }[] = [
-    { label: 'Protein', value: macros.protein, color: colors.protein },
-    { label: 'Carbs', value: macros.carbs, color: colors.carbs },
-    { label: 'Fat', value: macros.fat, color: colors.fat },
+  const macroColumns: { key: string; label: string; value: number; color: string }[] = [
+    { key: 'protein', label: t('macros:protein'), value: macros.protein, color: colors.protein },
+    { key: 'carbs', label: t('macros:carbs'), value: macros.carbs, color: colors.carbs },
+    { key: 'fat', label: t('macros:fat'), value: macros.fat, color: colors.fat },
   ];
   if (macros.fiber !== undefined) {
-    macroColumns.push({ label: 'Fibre', value: macros.fiber, color: colors.textMuted });
+    macroColumns.push({
+      key: 'fiber',
+      label: t('macros:fiber'),
+      value: macros.fiber,
+      color: colors.textMuted,
+    });
   }
 
-  const subtitleParts = [food.nameAr, food.brand, CATEGORY_LABELS[food.category]].filter(
-    (part): part is string => Boolean(part),
-  );
+  const subtitleParts = [
+    labels.secondaryName(food),
+    food.brand,
+    labels.category(food.category),
+  ].filter((part): part is string => Boolean(part));
 
   const summaryLabel = canAdd
-    ? `${portionSummary}. ${formatCount(Math.round(macros.calories))} kilocalories, ` +
-      macroColumns
-        .map((column) => `${column.label} ${amount(column.value)} grams`)
-        .join(', ')
-    : 'No portion chosen yet';
+    ? t('meals:portionSpoken', {
+        portion: portionSummary,
+        value: formatCount(Math.round(macros.calories)),
+        macros: labels.macroSpoken(macros),
+      })
+    : t('meals:portionNoneSpoken');
 
   return (
     <Modal
@@ -176,7 +183,7 @@ export function PortionSheet({ food, visible, onClose, onAdd, custom = false }: 
         <Pressable
           onPress={onClose}
           accessibilityRole="button"
-          accessibilityLabel="Close portion options"
+          accessibilityLabel={t('meals:portionClose')}
           style={[StyleSheet.absoluteFill, { backgroundColor: colors.overlay }]}
         />
 
@@ -200,7 +207,7 @@ export function PortionSheet({ food, visible, onClose, onAdd, custom = false }: 
             <View style={styles.header}>
               <View style={styles.headerText}>
                 <Txt variant="heading" numberOfLines={2}>
-                  {food.name}
+                  {labels.name(food)}
                 </Txt>
                 {subtitleParts.length > 0 ? (
                   <Txt variant="caption" color="faint" numberOfLines={1} style={styles.headerMeta}>
@@ -211,7 +218,7 @@ export function PortionSheet({ food, visible, onClose, onAdd, custom = false }: 
               <IconButton
                 icon="close"
                 onPress={onClose}
-                accessibilityLabel="Close portion options"
+                accessibilityLabel={t('meals:portionClose')}
                 variant="surface"
                 size={18}
               />
@@ -224,13 +231,13 @@ export function PortionSheet({ food, visible, onClose, onAdd, custom = false }: 
               showsVerticalScrollIndicator={false}
             >
               <Txt variant="caption" color="faint" weight="semibold" style={styles.sectionLabel}>
-                {servings.length === 1 ? 'PORTION' : 'CHOOSE A PORTION'}
+                {servings.length === 1 ? t('meals:portionOne') : t('meals:portionChoose')}
               </Txt>
               <View style={styles.chips}>
                 {servings.map((option, index) => (
                   <Chip
                     key={`${option.label}-${option.grams}`}
-                    label={option.label}
+                    label={labels.portion(option.label, option.grams, liquid)}
                     selected={index === servingIndex}
                     onPress={() => selectServing(index)}
                   />
@@ -238,13 +245,13 @@ export function PortionSheet({ food, visible, onClose, onAdd, custom = false }: 
               </View>
 
               <Txt variant="caption" color="faint" weight="semibold" style={styles.sectionLabelTop}>
-                HOW MANY
+                {t('meals:portionHowMany')}
               </Txt>
               <View style={styles.chips}>
                 {QUANTITY_STEPS.map((step) => (
                   <Chip
                     key={step}
-                    label={`${amount(step)}×`}
+                    label={`${formatAmount(step, 2)}×`}
                     selected={mode === 'serving' && quantity === step}
                     onPress={() => changeQuantity(step)}
                   />
@@ -253,7 +260,7 @@ export function PortionSheet({ food, visible, onClose, onAdd, custom = false }: 
 
               <View style={styles.fields}>
                 <NumberField
-                  label="Servings"
+                  label={t('meals:portionServings')}
                   value={quantity}
                   onChange={changeQuantity}
                   suffix="×"
@@ -263,10 +270,10 @@ export function PortionSheet({ food, visible, onClose, onAdd, custom = false }: 
                   style={styles.field}
                 />
                 <NumberField
-                  label={food.liquid ? 'Volume' : 'Weight'}
+                  label={liquid ? t('meals:portionVolume') : t('meals:portionWeight')}
                   value={grams}
                   onChange={changeGrams}
-                  suffix={unit}
+                  suffix={liquid ? t('meals:unitMillilitre') : t('units:gram')}
                   placeholder="0"
                   min={0}
                   max={5000}
@@ -293,7 +300,7 @@ export function PortionSheet({ food, visible, onClose, onAdd, custom = false }: 
                     {formatCount(Math.round(macros.calories))}
                   </Txt>
                   <Txt variant="label" color="muted" style={styles.summaryUnit}>
-                    kcal
+                    {t('units:kcal')}
                   </Txt>
                 </View>
 
@@ -301,11 +308,11 @@ export function PortionSheet({ food, visible, onClose, onAdd, custom = false }: 
 
                 <View style={styles.summaryMacros}>
                   {macroColumns.map((column) => (
-                    <View key={column.label} style={styles.summaryColumn}>
+                    <View key={column.key} style={styles.summaryColumn}>
                       <Txt variant="label" weight="bold" color={column.color} tabular>
-                        {amount(column.value)}
+                        {formatAmount(column.value, 1)}
                         <Txt variant="caption" color="faint">
-                          {' g'}
+                          {` ${t('units:gram')}`}
                         </Txt>
                       </Txt>
                       <Txt variant="caption" color="faint">
@@ -318,13 +325,11 @@ export function PortionSheet({ food, visible, onClose, onAdd, custom = false }: 
             </ScrollView>
 
             <Button
-              label="Add to meal"
+              label={t('meals:portionAdd')}
               icon="add"
               onPress={handleAdd}
               disabled={!canAdd}
-              accessibilityHint={
-                canAdd ? 'Adds this portion to the meal you are building' : undefined
-              }
+              accessibilityHint={canAdd ? t('meals:portionAddHint') : undefined}
               fullWidth
               size="lg"
               style={styles.add}
@@ -332,7 +337,7 @@ export function PortionSheet({ food, visible, onClose, onAdd, custom = false }: 
 
             {!canAdd ? (
               <Txt variant="caption" color="faint" align="center" style={styles.addHint}>
-                {`Set a serving count or a ${food.liquid ? 'volume' : 'weight'} above zero.`}
+                {liquid ? t('meals:portionNeedVolume') : t('meals:portionNeedWeight')}
               </Txt>
             ) : null}
           </View>

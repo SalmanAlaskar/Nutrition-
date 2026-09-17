@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Platform,
   StyleSheet,
@@ -10,24 +11,26 @@ import {
 } from 'react-native';
 
 import { InsightList } from '@/components/insights/InsightList';
+import { useFoodLabels } from '@/components/meal/useFoodLabels';
 import { CalorieSummary } from '@/components/today/CalorieSummary';
 import { DayStrip } from '@/components/today/DayStrip';
 import { MealSection } from '@/components/today/MealSection';
 import { PlanStrip } from '@/components/today/PlanStrip';
 import { QuickAddRow } from '@/components/today/QuickAddRow';
+import { useDayLabels } from '@/components/today/useDayLabels';
 import { AppHeader, Button, Card, IconButton, LoadingView, Screen, Txt } from '@/components/ui';
 import { latestScan } from '@/domain/bodyScan';
-import { currentSlot, formatDayLabel, formatShortDay, lastNDays, todayKey } from '@/domain/date';
+import { currentSlot, lastNDays, todayKey } from '@/domain/date';
+import { formatCount } from '@/domain/format';
 import { buildInsights } from '@/domain/insights';
-import { slotStatus, slotTargets } from '@/domain/mealPlan';
-import { MEAL_SLOTS, SLOT_LABELS, loggingStreak, mealsBySlot } from '@/domain/totals';
-import { SESSION_MUSCLES, dayForDate, isSessionComplete } from '@/domain/training';
+import { slotStatus, slotTargets, type SlotStatus } from '@/domain/mealPlan';
+import { MEAL_SLOTS, loggingStreak, mealsBySlot } from '@/domain/totals';
+import { dayForDate, isSessionComplete } from '@/domain/training';
+import { useDirection } from '@/i18n';
 import { getMealsForDates, getWorkoutsForDates } from '@/storage/repository';
 import { useApp } from '@/state/AppStore';
 import { radius, spacing, useTheme } from '@/theme';
-import type { Meal, MealSlot, WorkoutSession } from '@/types';
-
-import { formatCount } from '../onboarding/_layout';
+import type { Meal, MealSlot, SessionType, WorkoutSession } from '@/types';
 
 /**
  * Height assumed for the floating actions until they report their own, so the
@@ -62,12 +65,22 @@ interface History {
 const EMPTY_HISTORY: History = { mealsByDate: {}, workoutsByDate: {} };
 
 /** Short word under a meal section saying how the slot is tracking. */
-const STATUS_WORDS = {
-  empty: '',
-  under: 'under plan',
-  'on-track': 'on track',
-  over: 'over plan',
-} as const;
+const STATUS_KEYS = {
+  under: 'today:statusUnder',
+  'on-track': 'today:statusOnTrack',
+  over: 'today:statusOver',
+} as const satisfies Record<Exclude<SlotStatus, 'empty'>, string>;
+
+/** What each scheduled day works, keyed off the program day's own type. */
+const MUSCLE_KEYS = {
+  push: 'today:musclesPush',
+  pull: 'today:musclesPull',
+  legs: 'today:musclesLegs',
+  upper: 'today:musclesUpper',
+  lower: 'today:musclesLower',
+  full: 'today:musclesFull',
+  cardio: 'today:musclesCardio',
+} as const satisfies Record<SessionType, string>;
 
 export default function TodayScreen() {
   const {
@@ -87,6 +100,10 @@ export default function TodayScreen() {
     refresh,
   } = useApp();
   const { colors } = useTheme();
+  const { t } = useTranslation(['today', 'units', 'common']);
+  const { isRTL } = useDirection();
+  const dayLabels = useDayLabels();
+  const foodLabels = useFoodLabels();
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
   const [actionBarHeight, setActionBarHeight] = useState(ACTION_BAR_ESTIMATE);
@@ -101,8 +118,8 @@ export default function TodayScreen() {
   );
   const scan = useMemo(() => latestScan(bodyScans), [bodyScans]);
 
-  const title = formatDayLabel(selectedDate);
-  const shortDate = formatShortDay(selectedDate);
+  const title = dayLabels.day(selectedDate);
+  const shortDate = dayLabels.shortDay(selectedDate);
 
   // The bar floats over the scroll view, so its measured height plus the inset
   // it sits on is exactly the room the content needs underneath. The tab bar
@@ -217,7 +234,7 @@ export default function TodayScreen() {
   if (!ready) {
     return (
       <Screen>
-        <LoadingView message="Loading your day" />
+        <LoadingView message={t('today:loading')} />
       </Screen>
     );
   }
@@ -226,19 +243,18 @@ export default function TodayScreen() {
   // Short enough to sit beside the muscle line on a phone. A rest day with
   // nothing logged says nothing here; the row already reads "Rest day".
   const sessionState = sessionDone
-    ? 'Complete'
+    ? t('today:stateComplete')
     : todaysWorkouts.length > 0
-      ? 'In progress'
+      ? t('today:stateInProgress')
       : scheduledDay
-        ? 'Not logged'
+        ? t('today:stateNotLogged')
         : '';
-  const sessionSpoken = sessionDone
-    ? 'session complete'
-    : todaysWorkouts.length > 0
-      ? 'session in progress'
-      : scheduledDay
-        ? 'not logged yet'
-        : 'no session scheduled';
+  const sessionSpokenState = sessionState || t('today:stateNoSession');
+  const sessionTitle = scheduledDay
+    ? t('today:sessionDay', {
+        label: isRTL ? scheduledDay.labelAr ?? scheduledDay.label : scheduledDay.label,
+      })
+    : t('today:restDay');
 
   return (
     <View style={styles.root}>
@@ -256,7 +272,7 @@ export default function TodayScreen() {
               {streak >= 2 ? (
                 <View
                   accessible
-                  accessibilityLabel={`${streak} day logging streak`}
+                  accessibilityLabel={t('today:streak', { value: formatCount(streak) })}
                   style={[styles.streak, { backgroundColor: colors.accentSoft }]}
                 >
                   <Ionicons name="flame" size={14} color={colors.accent} {...DECORATIVE} />
@@ -268,7 +284,7 @@ export default function TodayScreen() {
               <IconButton
                 icon="settings-outline"
                 onPress={() => router.push('/settings')}
-                accessibilityLabel="Settings"
+                accessibilityLabel={t('today:settings')}
               />
             </View>
           }
@@ -305,7 +321,7 @@ export default function TodayScreen() {
         <View style={styles.group}>
           <View style={styles.sectionHeader}>
             <Txt variant="caption" color="faint" weight="semibold">
-              TRAINING
+              {t('today:trainingTitle')}
             </Txt>
           </View>
 
@@ -313,11 +329,10 @@ export default function TodayScreen() {
             padded={false}
             onPress={openSession}
             // Card has no hint prop, so the label carries what the tap does.
-            accessibilityLabel={
-              scheduledDay
-                ? `${scheduledDay.label} day, ${sessionSpoken}. Opens the session.`
-                : `Rest day, ${sessionSpoken}. Opens the session.`
-            }
+            accessibilityLabel={t('today:sessionCard', {
+              title: sessionTitle,
+              state: sessionSpokenState,
+            })}
           >
             <View style={styles.trainingRow}>
               <View
@@ -336,12 +351,10 @@ export default function TodayScreen() {
 
               <View style={styles.trainingText}>
                 <Txt weight="semibold" numberOfLines={1}>
-                  {scheduledDay ? `${scheduledDay.label} day` : 'Rest day'}
+                  {sessionTitle}
                 </Txt>
                 <Txt variant="label" color="muted" numberOfLines={1} style={styles.trainingMeta}>
-                  {scheduledDay
-                    ? SESSION_MUSCLES[scheduledDay.type]
-                    : 'No session planned. Recovery is part of the week.'}
+                  {scheduledDay ? t(MUSCLE_KEYS[scheduledDay.type]) : t('today:restDayBody')}
                 </Txt>
               </View>
 
@@ -370,11 +383,11 @@ export default function TodayScreen() {
         <View style={styles.group}>
           <View style={styles.sectionHeader}>
             <Txt variant="caption" color="faint" weight="semibold">
-              MEALS
+              {t('today:mealsTitle')}
             </Txt>
             {totals.mealCount > 0 ? (
               <Txt variant="caption" color="faint" tabular>
-                {`${formatCount(totals.macros.calories)} KCAL`}
+                {t('today:mealsTotal', { value: formatCount(totals.macros.calories) })}
               </Txt>
             ) : null}
           </View>
@@ -384,9 +397,12 @@ export default function TodayScreen() {
               const eaten = totals.bySlot[slot];
               const slotTarget = planTargets ? planTargets[slot] : null;
               const status = slotTarget ? slotStatus(eaten, slotTarget) : 'empty';
-              const word = STATUS_WORDS[status];
+              const word = status === 'empty' ? '' : t(STATUS_KEYS[status]);
               const planLine = slotTarget
-                ? `${formatCount(eaten.calories)} of ${formatCount(slotTarget.calories)} kcal`
+                ? t('today:slotPlan', {
+                    eaten: formatCount(eaten.calories),
+                    target: formatCount(slotTarget.calories),
+                  })
                 : null;
 
               return (
@@ -402,9 +418,18 @@ export default function TodayScreen() {
                   {planLine ? (
                     <View
                       accessible
-                      accessibilityLabel={`${SLOT_LABELS[slot]} plan, ${planLine}${
-                        word ? `, ${word}` : ''
-                      }`}
+                      accessibilityLabel={
+                        word
+                          ? t('today:slotPlanSpokenStatus', {
+                              slot: foodLabels.slot(slot),
+                              line: planLine,
+                              status: word,
+                            })
+                          : t('today:slotPlanSpoken', {
+                              slot: foodLabels.slot(slot),
+                              line: planLine,
+                            })
+                      }
                       style={styles.slotPlan}
                     >
                       <Txt variant="caption" color="faint" tabular>
@@ -426,7 +451,8 @@ export default function TodayScreen() {
         {insights.length > 0 ? (
           <InsightList
             insights={insights}
-            subtitle="From your last two weeks of logs."
+            title={t('today:insightsTitle')}
+            subtitle={t('today:insightsSubtitle')}
             style={styles.group}
           />
         ) : null}
@@ -442,19 +468,19 @@ export default function TodayScreen() {
           ]}
         >
           <Button
-            label="Scan meal"
+            label={t('today:scanMeal')}
             icon="camera-outline"
             variant="secondary"
             onPress={openCamera}
-            accessibilityHint="Opens the camera to log a meal from a photo"
+            accessibilityHint={t('today:scanMealHint')}
             fullWidth
             style={styles.action}
           />
           <Button
-            label="Add food"
+            label={t('today:addFood')}
             icon="add"
             onPress={() => openAdd(currentSlot())}
-            accessibilityHint="Opens food search for the current meal"
+            accessibilityHint={t('today:addFoodHint')}
             fullWidth
             style={styles.action}
           />

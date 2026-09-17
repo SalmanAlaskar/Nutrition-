@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Platform,
   StyleSheet,
@@ -10,12 +11,11 @@ import {
 } from 'react-native';
 
 import { Button, Card, Divider, MacroBar, ProgressRing, Txt } from '@/components/ui';
+import { formatCount } from '@/domain/format';
 import { progress } from '@/domain/nutrition';
 import { remainingBudget } from '@/domain/totals';
 import { radius, spacing, useTheme } from '@/theme';
 import type { DailyTotals, Targets } from '@/types';
-
-import { formatCount } from '../../../app/onboarding/_layout';
 
 export interface CalorieSummaryProps {
   totals: DailyTotals;
@@ -44,6 +44,7 @@ export function CalorieSummary({
   style,
 }: CalorieSummaryProps) {
   const { colors } = useTheme();
+  const { t } = useTranslation(['today', 'macros', 'units']);
   const consumed = Math.round(totals.macros.calories);
 
   if (!targets) {
@@ -55,11 +56,10 @@ export function CalorieSummary({
           </View>
 
           <Txt variant="heading" style={styles.setupTitle}>
-            No daily target yet
+            {t('today:noTargetTitle')}
           </Txt>
           <Txt color="muted" style={styles.setupBody}>
-            Add your body details and goal, and the app works out your calories and
-            macros for every day.
+            {t('today:noTargetBody')}
           </Txt>
 
           <View style={[styles.setupMeta, { backgroundColor: colors.surfaceAlt }]}>
@@ -67,15 +67,15 @@ export function CalorieSummary({
               {formatCount(consumed)}
             </Txt>
             <Txt variant="label" color="faint">
-              kcal logged today
+              {t('today:noTargetLogged')}
             </Txt>
           </View>
 
           <Button
-            label="Finish profile"
+            label={t('today:finishProfile')}
             onPress={onFinishProfile}
             icon="person-outline"
-            accessibilityHint="Sets your calorie and macro targets"
+            accessibilityHint={t('today:finishProfileHint')}
             style={styles.setupAction}
           />
         </View>
@@ -87,14 +87,18 @@ export function CalorieSummary({
   const over = budget.overTarget;
   const stateColor = over ? colors.danger : colors.accent;
   const remainingText = over
-    ? `${formatCount(Math.abs(budget.calories))} kcal over target`
-    : `${formatCount(budget.calories)} kcal left today`;
+    ? t('today:caloriesOver', { value: formatCount(Math.abs(budget.calories)) })
+    : t('today:caloriesLeft', { value: formatCount(budget.calories) });
 
   return (
     <Card style={style}>
       <View
         accessible
-        accessibilityLabel={`${formatCount(consumed)} of ${formatCount(targets.calories)} calories. ${remainingText}.`}
+        accessibilityLabel={t('today:ringSpoken', {
+          eaten: formatCount(consumed),
+          target: formatCount(targets.calories),
+          state: remainingText,
+        })}
         style={styles.hero}
       >
         <ProgressRing
@@ -107,7 +111,7 @@ export function CalorieSummary({
             {formatCount(consumed)}
           </Txt>
           <Txt variant="label" color="muted" tabular style={styles.ringTarget}>
-            {`of ${formatCount(targets.calories)} kcal`}
+            {t('today:ringTarget', { target: formatCount(targets.calories) })}
           </Txt>
         </ProgressRing>
 
@@ -129,19 +133,19 @@ export function CalorieSummary({
 
       <View style={styles.macros}>
         <MacroBar
-          label="Protein"
+          label={t('macros:protein')}
           value={totals.macros.protein}
           target={targets.protein}
           color={colors.protein}
         />
         <MacroBar
-          label="Carbs"
+          label={t('macros:carbs')}
           value={totals.macros.carbs}
           target={targets.carbs}
           color={colors.carbs}
         />
         <MacroBar
-          label="Fat"
+          label={t('macros:fat')}
           value={totals.macros.fat}
           target={targets.fat}
           color={colors.fat}

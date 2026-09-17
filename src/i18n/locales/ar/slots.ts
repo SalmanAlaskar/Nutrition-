@@ -3,5 +3,5 @@ export const slots = {
   breakfast: 'الفطور',
   lunch: 'الغداء',
   dinner: 'العشاء',
-  snack: 'الوجبات الخفيفة'
+  snack: 'وجبة خفيفة'
 } as const;

@@ -1,5 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { StyleSheet, View } from 'react-native';
 
 import {
@@ -11,61 +12,71 @@ import {
   Screen,
   Txt,
 } from '@/components/ui';
-import {
-  ACTIVITY_HINTS,
-  ACTIVITY_LABELS,
-  GOAL_LABELS,
-  totalDailyEnergyExpenditure,
-} from '@/domain/nutrition';
+import { formatCount, formatPercent } from '@/domain/format';
+import { GOAL_FACTORS, totalDailyEnergyExpenditure } from '@/domain/nutrition';
+import { mirrorIcon, useDirection } from '@/i18n';
 import { spacing } from '@/theme';
 import type { ActivityLevel, Goal } from '@/types';
 
 import {
+  Eyebrow,
+  StepProgress,
   bodyDraftParams,
-  formatCount,
   parseBodyDraft,
   parsePlanDraft,
   planDraftParams,
   type PlanDraft,
 } from './_layout';
 
-const ACTIVITY_ORDER: ActivityLevel[] = [
-  'sedentary',
-  'light',
-  'moderate',
-  'active',
-  'very_active',
-];
+/** Lightest week first, so the list reads as a ramp. */
+const ACTIVITY_ORDER = [
+  {
+    value: 'sedentary',
+    icon: 'bed-outline',
+    labelKey: 'onboarding:activitySedentary',
+    hintKey: 'onboarding:activitySedentaryHint',
+  },
+  {
+    value: 'light',
+    icon: 'walk-outline',
+    labelKey: 'onboarding:activityLight',
+    hintKey: 'onboarding:activityLightHint',
+  },
+  {
+    value: 'moderate',
+    icon: 'bicycle-outline',
+    labelKey: 'onboarding:activityModerate',
+    hintKey: 'onboarding:activityModerateHint',
+  },
+  {
+    value: 'active',
+    icon: 'barbell-outline',
+    labelKey: 'onboarding:activityActive',
+    hintKey: 'onboarding:activityActiveHint',
+  },
+  {
+    value: 'very_active',
+    icon: 'flame-outline',
+    labelKey: 'onboarding:activityVeryActive',
+    hintKey: 'onboarding:activityVeryActiveHint',
+  },
+] as const satisfies readonly {
+  value: ActivityLevel;
+  icon: string;
+  labelKey: string;
+  hintKey: string;
+}[];
 
-const ACTIVITY_ICONS: Record<ActivityLevel, string> = {
-  sedentary: 'bed-outline',
-  light: 'walk-outline',
-  moderate: 'bicycle-outline',
-  active: 'barbell-outline',
-  very_active: 'flame-outline',
-};
-
-const GOAL_ORDER: Goal[] = ['lose', 'maintain', 'gain'];
-
-const GOAL_ICONS: Record<Goal, string> = {
-  lose: 'trending-down-outline',
-  maintain: 'remove-outline',
-  gain: 'trending-up-outline',
-};
-
-/** What each goal actually does to the daily target. */
-const GOAL_HINTS: Record<Goal, string> = {
-  lose: 'A 20% calorie deficit, with protein kept high',
-  maintain: 'Matches your maintenance calories exactly',
-  gain: 'A 12% surplus to support training',
-};
+const GOAL_ORDER = [
+  { value: 'lose', icon: 'trending-down-outline', labelKey: 'onboarding:goalLose' },
+  { value: 'maintain', icon: 'remove-outline', labelKey: 'onboarding:goalMaintain' },
+  { value: 'gain', icon: 'trending-up-outline', labelKey: 'onboarding:goalGain' },
+] as const satisfies readonly { value: Goal; icon: string; labelKey: string }[];
 
 function Section({ title, hint }: { title: string; hint: string }) {
   return (
     <View style={styles.section}>
-      <Txt variant="caption" color="faint" weight="semibold" style={styles.sectionLabel}>
-        {title.toUpperCase()}
-      </Txt>
+      <Eyebrow label={title} />
       <Txt variant="label" color="muted" style={styles.sectionHint}>
         {hint}
       </Txt>
@@ -76,6 +87,8 @@ function Section({ title, hint }: { title: string; hint: string }) {
 export default function GoalsStep() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const { isRTL } = useDirection();
+  const { t } = useTranslation(['onboarding', 'common']);
 
   const body = useMemo(() => parseBodyDraft(params), [params]);
   const missingBody = body === null;
@@ -93,11 +106,26 @@ export default function GoalsStep() {
     if (missingBody) router.replace('/onboarding/body');
   }, [missingBody, router]);
 
+  /** What each goal actually does to the daily target, read off the factors. */
+  const goalHint = (option: Goal): string => {
+    if (option === 'lose') {
+      return t('onboarding:goalLoseHint', {
+        percent: formatPercent(1 - GOAL_FACTORS.lose),
+      });
+    }
+    if (option === 'gain') {
+      return t('onboarding:goalGainHint', {
+        percent: formatPercent(GOAL_FACTORS.gain - 1),
+      });
+    }
+    return t('onboarding:goalMaintainHint');
+  };
+
   if (!body) {
     return (
       <Screen>
-        <AppHeader title="Your week" />
-        <LoadingView message="Taking you back to your body details" />
+        <AppHeader title={t('onboarding:goalsTitle')} />
+        <LoadingView message={t('onboarding:returning')} />
       </Screen>
     );
   }
@@ -117,21 +145,26 @@ export default function GoalsStep() {
     <Screen scroll edges={['top', 'bottom']}>
       <AppHeader
         large
-        title="Your week"
-        subtitle="Step 2 of 3 — how much you move and what you want"
+        title={t('onboarding:goalsTitle')}
+        subtitle={t('onboarding:goalsSubtitle')}
         onBack={goBack}
       />
 
-      <Section title="Activity level" hint="Pick the week you actually have, not the one you plan." />
+      <StepProgress current={2} />
+
+      <Section
+        title={t('onboarding:activityTitle')}
+        hint={t('onboarding:activityHint')}
+      />
       <View style={styles.options}>
         {ACTIVITY_ORDER.map((level) => (
           <OptionRow
-            key={level}
-            title={ACTIVITY_LABELS[level]}
-            subtitle={ACTIVITY_HINTS[level]}
-            icon={ACTIVITY_ICONS[level]}
-            selected={activityLevel === level}
-            onPress={() => setActivityLevel(level)}
+            key={level.value}
+            title={t(level.labelKey)}
+            subtitle={t(level.hintKey)}
+            icon={level.icon}
+            selected={activityLevel === level.value}
+            onPress={() => setActivityLevel(level.value)}
           />
         ))}
       </View>
@@ -139,36 +172,35 @@ export default function GoalsStep() {
       <Card style={styles.estimate}>
         <View
           accessible
-          accessibilityLabel={`Maintenance estimate: ${formatCount(maintenance)} calories a day`}
+          accessibilityLabel={t('onboarding:maintenanceSpoken', {
+            calories: formatCount(maintenance),
+          })}
         >
-          <Txt variant="caption" color="faint" weight="semibold" style={styles.sectionLabel}>
-            MAINTENANCE ESTIMATE
-          </Txt>
+          <Eyebrow label={t('onboarding:maintenanceLabel')} />
           <View style={styles.estimateRow}>
-            <Txt variant="title" color="accent" tabular>
+            <Txt variant="title" color="accent" tabular numberOfLines={1}>
               {formatCount(maintenance)}
             </Txt>
-            <Txt variant="label" color="muted">
-              calories a day
+            <Txt variant="label" color="muted" numberOfLines={1}>
+              {t('onboarding:caloriesPerDay')}
             </Txt>
           </View>
           <Txt variant="label" color="muted">
-            What you burn on a normal day at this activity level. Your goal then
-            moves the daily target up or down from here.
+            {t('onboarding:maintenanceNote')}
           </Txt>
         </View>
       </Card>
 
-      <Section title="Goal" hint="What the daily target should aim at." />
+      <Section title={t('onboarding:goalTitle')} hint={t('onboarding:goalHint')} />
       <View style={styles.options}>
         {GOAL_ORDER.map((option) => (
           <OptionRow
-            key={option}
-            title={GOAL_LABELS[option]}
-            subtitle={GOAL_HINTS[option]}
-            icon={GOAL_ICONS[option]}
-            selected={goal === option}
-            onPress={() => setGoal(option)}
+            key={option.value}
+            title={t(option.labelKey)}
+            subtitle={goalHint(option.value)}
+            icon={option.icon}
+            selected={goal === option.value}
+            onPress={() => setGoal(option.value)}
           />
         ))}
       </View>
@@ -176,12 +208,12 @@ export default function GoalsStep() {
       <View style={styles.spacer} />
 
       <Button
-        label="Continue"
-        iconRight="arrow-forward"
+        label={t('common:continue')}
+        iconRight={mirrorIcon('arrow-forward', isRTL)}
         size="lg"
         fullWidth
         onPress={handleContinue}
-        accessibilityHint="Works out your calorie and macro plan"
+        accessibilityHint={t('onboarding:goalsContinueHint')}
         style={styles.continue}
       />
     </Screen>
@@ -192,9 +224,6 @@ const styles = StyleSheet.create({
   section: {
     marginBottom: spacing.md,
     marginTop: spacing.xl,
-  },
-  sectionLabel: {
-    letterSpacing: 0.8,
   },
   sectionHint: {
     marginTop: 2,

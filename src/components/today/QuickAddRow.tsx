@@ -1,5 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Platform,
   ScrollView,
@@ -9,11 +10,11 @@ import {
   type ViewStyle,
 } from 'react-native';
 
+import { useFoodLabels } from '@/components/meal/useFoodLabels';
 import { Chip, Txt } from '@/components/ui';
 import { defaultServing, entryFromFood, popularFoods } from '@/data/foodSearch';
 import { currentSlot } from '@/domain/date';
 import { makeId } from '@/domain/id';
-import { SLOT_LABELS } from '@/domain/totals';
 import { useApp } from '@/state/AppStore';
 import { spacing, useTheme } from '@/theme';
 import type { FoodItem, Meal } from '@/types';
@@ -35,6 +36,8 @@ interface Feedback {
 export function QuickAddRow({ date, style }: QuickAddRowProps) {
   const { addMeal, customFoods } = useApp();
   const { colors } = useTheme();
+  const { t } = useTranslation('today');
+  const labels = useFoodLabels();
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -91,16 +94,14 @@ export function QuickAddRow({ date, style }: QuickAddRowProps) {
 
   if (foods.length === 0) return null;
 
-  const slotLabel = SLOT_LABELS[slot];
-
   return (
     <View style={style}>
       <View style={styles.heading}>
         <Txt variant="caption" color="faint" weight="semibold">
-          QUICK ADD
+          {t('quickAddTitle')}
         </Txt>
         <Txt variant="label" color="muted" style={styles.hint}>
-          {`One tap logs a standard serving to ${slotLabel}`}
+          {t('quickAddHint', { slot: labels.slot(slot) })}
         </Txt>
       </View>
 
@@ -113,7 +114,11 @@ export function QuickAddRow({ date, style }: QuickAddRowProps) {
           const state = feedback?.foodId === food.id ? feedback : null;
           // The chip carries its own result for a beat: the list is long and a
           // toast somewhere else would not say which food landed.
-          const label = state ? (state.ok ? 'Added' : 'Try again') : food.name;
+          const label = state
+            ? state.ok
+              ? t('quickAddDone')
+              : t('quickAddFailed')
+            : labels.name(food);
           const icon = state
             ? state.ok
               ? 'checkmark-circle'

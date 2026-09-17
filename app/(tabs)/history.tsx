@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   KeyboardAvoidingView,
   Modal,
@@ -14,6 +15,7 @@ import {
 import { CalorieChart } from '@/components/history/CalorieChart';
 import { DaySummaryRow } from '@/components/history/DaySummaryRow';
 import { WeightChart } from '@/components/history/WeightChart';
+import { useDayText } from '@/components/history/dayText';
 import {
   AppHeader,
   Badge,
@@ -31,21 +33,16 @@ import {
   type TxtColor,
 } from '@/components/ui';
 import { latestScan, scanChange } from '@/domain/bodyScan';
-import { formatShortDay, lastNDays, todayKey } from '@/domain/date';
+import { lastNDays, todayKey } from '@/domain/date';
+import { formatAmount, formatCount, formatDelta } from '@/domain/format';
 import { LIMITS, kgToLb, lbToKg } from '@/domain/nutrition';
 import { averageCalories, loggingStreak, totalMacros } from '@/domain/totals';
-import {
-  SESSION_ICONS,
-  SESSION_LABELS,
-  dayForDate,
-  isSessionComplete,
-} from '@/domain/training';
+import { SESSION_ICONS, dayForDate, isSessionComplete } from '@/domain/training';
+import { mirrorIcon, useDirection } from '@/i18n';
 import { useApp } from '@/state/AppStore';
 import { getMealsForDates, getWorkoutsForDates } from '@/storage/repository';
 import { radius, spacing, useTheme } from '@/theme';
-import type { Macros, Meal, SessionType, WorkoutSession } from '@/types';
-
-import { formatCount } from '../onboarding/_layout';
+import type { Macros, Meal, Program, SessionType, WorkoutSession } from '@/types';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -60,14 +57,19 @@ const DECORATIVE: AccessibilityProps = Platform.select<AccessibilityProps>({
 
 type RangeKey = '7' | '14' | '30';
 
-const RANGE_OPTIONS: { value: RangeKey; label: string }[] = [
-  { value: '7', label: '7 days' },
-  { value: '14', label: '14 days' },
-  { value: '30', label: '30 days' },
-];
-
 /** Adherence at or above this share of the scheduled days reads as on plan. */
 const ON_PLAN_PERCENT = 80;
+
+/** Session types, mapped to the copy that names them in the reader's language. */
+const TYPE_KEYS = {
+  push: 'typePush',
+  pull: 'typePull',
+  legs: 'typeLegs',
+  upper: 'typeUpper',
+  lower: 'typeLower',
+  full: 'typeFull',
+  cardio: 'typeCardio',
+} as const satisfies Record<SessionType, string>;
 
 interface DayRow {
   date: string;
@@ -92,20 +94,30 @@ interface TypeRowData {
 }
 
 /** The three numbers a scan card leads with, in kilograms and percent. */
-const SCAN_CARD_METRICS: {
+const SCAN_CARD_METRICS = [
+  { key: 'weightKg', labelKey: 'metricWeight', unit: 'kg', decimals: 1, higherIsBetter: null },
+  {
+    key: 'skeletalMuscleKg',
+    labelKey: 'metricMuscle',
+    unit: 'kg',
+    decimals: 1,
+    higherIsBetter: true,
+  },
+  {
+    key: 'bodyFatPercent',
+    labelKey: 'metricFat',
+    unit: 'percent',
+    decimals: 1,
+    higherIsBetter: false,
+  },
+] as const satisfies readonly {
   key: 'weightKg' | 'skeletalMuscleKg' | 'bodyFatPercent';
-  label: string;
-  unit: string;
+  labelKey: 'metricWeight' | 'metricMuscle' | 'metricFat';
+  unit: 'kg' | 'percent';
   decimals: number;
   /** Direction of a good change, null when it depends on the goal. */
   higherIsBetter: boolean | null;
-}[] = [
-  { key: 'weightKg', label: 'Weight', unit: 'kg', decimals: 1, higherIsBetter: null },
-  { key: 'skeletalMuscleKg', label: 'Muscle', unit: 'kg', decimals: 1, higherIsBetter: true },
-  { key: 'bodyFatPercent', label: 'Body fat', unit: '%', decimals: 1, higherIsBetter: false },
-];
-
-const plural = (count: number, one: string, many: string) => (count === 1 ? one : many);
+}[];
 
 /** Sets ticked off across a set of sessions. */
 function completedSets(sessions: WorkoutSession[]): number {
@@ -116,10 +128,6 @@ function completedSets(sessions: WorkoutSession[]): number {
     }
   }
   return total;
-}
-
-function sessionLabel(session: WorkoutSession): string {
-  return session.dayLabel ?? SESSION_LABELS[session.type];
 }
 
 /** Section title with an optional caption or action on the trailing edge. */
@@ -137,11 +145,18 @@ function SectionHeader({
       <Txt variant="heading" numberOfLines={1} style={styles.sectionTitle} accessibilityRole="header">
         {title}
       </Txt>
-      {right ?? (hint ? (
-        <Txt variant="caption" color="faint" numberOfLines={1}>
-          {hint}
-        </Txt>
-      ) : null)}
+      {right ??
+        (hint ? (
+          <Txt
+            variant="caption"
+            color="faint"
+            align="end"
+            numberOfLines={2}
+            style={styles.sectionHint}
+          >
+            {hint}
+          </Txt>
+        ) : null)}
     </View>
   );
 }
@@ -153,21 +168,23 @@ function SectionHeader({
  */
 function TypeRow({ data }: { data: TypeRowData }) {
   const { colors } = useTheme();
+  const { t } = useTranslation('history');
   const { type, done, scheduled } = data;
   const behind = scheduled > 0 && done < scheduled;
   const share = scheduled > 0 ? Math.min(1, done / scheduled) : done > 0 ? 1 : 0;
+  const label = t(TYPE_KEYS[type]);
 
   return (
     <View
       accessible
       accessibilityLabel={
         scheduled > 0
-          ? `${SESSION_LABELS[type]}: ${done} of ${scheduled} scheduled ${plural(
-              scheduled,
-              'session',
-              'sessions',
-            )} done`
-          : `${SESSION_LABELS[type]}: ${done} ${plural(done, 'session', 'sessions')}`
+          ? t('typeSpoken', {
+              type: label,
+              done: formatCount(done),
+              scheduled: formatCount(scheduled),
+            })
+          : t('typeSpokenPlain', { type: label, done: formatCount(done) })
       }
       style={styles.typeRow}
     >
@@ -178,15 +195,12 @@ function TypeRow({ data }: { data: TypeRowData }) {
       <View style={styles.typeBody}>
         <View style={styles.typeHead}>
           <Txt weight="medium" numberOfLines={1} style={styles.typeLabel}>
-            {SESSION_LABELS[type]}
+            {label}
           </Txt>
-          <Txt
-            variant="label"
-            color={behind ? 'warning' : 'muted'}
-            tabular
-            numberOfLines={1}
-          >
-            {scheduled > 0 ? `${done} / ${scheduled}` : `${done}`}
+          <Txt variant="label" color={behind ? 'warning' : 'muted'} tabular numberOfLines={1}>
+            {scheduled > 0
+              ? `${formatCount(done)} / ${formatCount(scheduled)}`
+              : formatCount(done)}
           </Txt>
         </View>
 
@@ -209,19 +223,23 @@ function TypeRow({ data }: { data: TypeRowData }) {
 /** The training line under a day row: what was logged, or what was missed. */
 function DayTrainingNote({ data }: { data: DayTraining }) {
   const { colors } = useTheme();
+  const { t } = useTranslation('history');
   const logged = data.kind === 'logged';
 
   const text =
     data.kind === 'logged'
       ? data.sets > 0
-        ? `${data.label} · ${data.sets} ${plural(data.sets, 'set', 'sets')}`
+        ? t(data.sets === 1 ? 'daySetsOne' : 'daySets', {
+            label: data.label,
+            sets: formatCount(data.sets),
+          })
         : data.label
-      : `${data.label} scheduled, not logged`;
+      : t('dayMissed', { label: data.label });
 
   return (
     <View
       accessible
-      accessibilityLabel={logged ? `Workout logged. ${text}` : text}
+      accessibilityLabel={logged ? t('daySpoken', { text }) : text}
       style={styles.dayNote}
     >
       <Ionicons
@@ -240,6 +258,9 @@ function DayTrainingNote({ data }: { data: DayTraining }) {
 export default function HistoryScreen() {
   const { colors } = useTheme();
   const router = useRouter();
+  const { t } = useTranslation(['history', 'units', 'common']);
+  const { language, isRTL } = useDirection();
+  const dayText = useDayText();
   const {
     ready,
     profile,
@@ -267,6 +288,15 @@ export default function HistoryScreen() {
   const rangeDays = Number(range);
   const dates = useMemo(() => lastNDays(rangeDays, today), [rangeDays, today]);
   const startDate = dates[0] ?? today;
+
+  const rangeOptions = useMemo(
+    () => [
+      { value: '7' as RangeKey, label: t('range7') },
+      { value: '14' as RangeKey, label: t('range14') },
+      { value: '30' as RangeKey, label: t('range30') },
+    ],
+    [t],
+  );
 
   useEffect(() => {
     let active = true;
@@ -347,6 +377,20 @@ export default function HistoryScreen() {
     [weights, startDate, today],
   );
 
+  /**
+   * A program day carries its own Arabic label; a logged session only kept the
+   * label it was saved with, so Arabic falls back to the day type rather than
+   * printing English back at the reader.
+   */
+  const labelForDay = useCallback(
+    (dayId: string | undefined, type: SessionType, saved: string | undefined): string => {
+      const day = dayId ? program?.days.find((entry) => entry.id === dayId) : undefined;
+      if (language === 'ar') return day?.labelAr ?? t(TYPE_KEYS[type]);
+      return day?.label ?? saved ?? t(TYPE_KEYS[type]);
+    },
+    [program, language, t],
+  );
+
   const training = useMemo(() => {
     const sessions = dates.flatMap((date) => workoutsByDate[date] ?? []);
     const trainedDays = dates.filter((date) => (workoutsByDate[date] ?? []).length > 0).length;
@@ -398,7 +442,9 @@ export default function HistoryScreen() {
       if (first) {
         map[date] = {
           kind: 'logged',
-          label: sessions.map((session) => sessionLabel(session)).join(' + '),
+          label: sessions
+            .map((session) => labelForDay(session.dayId, session.type, session.dayLabel))
+            .join(' + '),
           sets: completedSets(sessions),
           icon: SESSION_ICONS[first.type],
         };
@@ -407,10 +453,15 @@ export default function HistoryScreen() {
       // Today is still open, so a scheduled day is not yet a missed one.
       if (date === today) continue;
       const scheduled = program ? dayForDate(program, date) : null;
-      if (scheduled) map[date] = { kind: 'missed', label: scheduled.label };
+      if (scheduled) {
+        map[date] = {
+          kind: 'missed',
+          label: labelForDay(scheduled.id, scheduled.type, scheduled.label),
+        };
+      }
     }
     return map;
-  }, [dates, workoutsByDate, program, today]);
+  }, [dates, workoutsByDate, program, today, labelForDay]);
 
   const body = useMemo(() => {
     const latest = latestScan(bodyScans);
@@ -425,7 +476,7 @@ export default function HistoryScreen() {
 
   const targetCalories = targets?.calories ?? 0;
   const units = profile?.units ?? 'metric';
-  const unitLabel = units === 'imperial' ? 'lb' : 'kg';
+  const unitLabel = units === 'imperial' ? t('units:lb') : t('units:kg');
   const minDisplay =
     units === 'imperial' ? Math.round(kgToLb(LIMITS.weightKg.min)) : LIMITS.weightKg.min;
   const maxDisplay =
@@ -481,25 +532,31 @@ export default function HistoryScreen() {
     <>
       <Screen scroll refreshing={refreshing} onRefresh={handleRefresh}>
         <AppHeader
-          title="History"
-          subtitle={`${summary.loggedCount} of ${rangeDays} days logged`}
+          title={t('title')}
+          subtitle={t('subtitle', {
+            logged: formatCount(summary.loggedCount),
+            total: formatCount(rangeDays),
+          })}
           large
         />
 
         <SegmentedControl<RangeKey>
-          options={RANGE_OPTIONS}
+          options={rangeOptions}
           value={range}
           onChange={setRange}
           style={styles.range}
         />
 
         {busy ? (
-          <LoadingView message="Reading your log" />
+          <LoadingView message={t('loading')} />
         ) : (
           <>
             <SectionHeader
-              title="Calories"
-              hint={`${formatShortDay(startDate)} to ${formatShortDay(today)}`}
+              title={t('caloriesTitle')}
+              hint={t('span', {
+                from: dayText.shortDay(startDate),
+                to: dayText.shortDay(today),
+              })}
             />
             <Card style={styles.block}>
               <CalorieChart days={summary.chart} target={targetCalories} />
@@ -507,43 +564,43 @@ export default function HistoryScreen() {
 
             <View style={styles.tiles}>
               <StatTile
-                label="Avg calories"
+                label={t('avgCalories')}
                 value={formatCount(summary.avgCalories)}
-                unit="kcal"
+                unit={t('units:kcal')}
                 icon="flame-outline"
                 tone="accent"
-                hint="Across days you logged"
+                hint={t('avgCaloriesHint')}
               />
               <StatTile
-                label="Days logged"
-                value={`${summary.loggedCount}/${rangeDays}`}
+                label={t('daysLogged')}
+                value={`${formatCount(summary.loggedCount)}/${formatCount(rangeDays)}`}
                 icon="calendar-outline"
-                hint="In this range"
+                hint={t('daysLoggedHint')}
               />
               <StatTile
-                label="Streak"
+                label={t('streak')}
                 value={formatCount(streak)}
-                unit={streak === 1 ? 'day' : 'days'}
+                unit={streak === 1 ? t('dayUnitOne') : t('dayUnit')}
                 icon="flash-outline"
-                hint="Consecutive days"
+                hint={t('streakHint')}
               />
               <StatTile
-                label="Avg protein"
+                label={t('avgProtein')}
                 value={formatCount(summary.avgProtein)}
-                unit="g"
+                unit={t('units:gram')}
                 icon="barbell-outline"
-                hint="Per logged day"
+                hint={t('avgProteinHint')}
               />
             </View>
 
-            <SectionHeader title="Training" hint={program?.name} />
+            <SectionHeader title={t('trainingTitle')} hint={programName(program, language)} />
             <Card style={styles.block}>
               {training.count === 0 && training.scheduledDays === 0 ? (
                 <EmptyState
                   icon="barbell-outline"
-                  title="No training yet"
-                  message="Sessions you log show up here with how they compare to your weekly schedule."
-                  actionLabel="Go to Training"
+                  title={t('trainingEmptyTitle')}
+                  message={t('trainingEmptyMessage')}
+                  actionLabel={t('trainingEmptyAction')}
                   onAction={() => router.navigate('/(tabs)/training')}
                 />
               ) : (
@@ -551,32 +608,31 @@ export default function HistoryScreen() {
                   <View style={styles.trainingHead}>
                     <View
                       accessible
-                      accessibilityLabel={`${training.count} ${plural(
-                        training.count,
-                        'session',
-                        'sessions',
-                      )} logged in the last ${rangeDays} days, ${training.sets} ${plural(
-                        training.sets,
-                        'set',
-                        'sets',
-                      )} completed`}
+                      accessibilityLabel={t('trainingSpoken', {
+                        sessions: formatCount(training.count),
+                        days: formatCount(rangeDays),
+                        sets: formatCount(training.sets),
+                      })}
                       style={styles.trainingCount}
                     >
                       <Txt variant="title" tabular>
                         {formatCount(training.count)}
                       </Txt>
-                      <Txt variant="label" color="muted" style={styles.trainingUnit}>
-                        {`${plural(training.count, 'session', 'sessions')}, ${formatCount(
-                          training.sets,
-                        )} ${plural(training.sets, 'set', 'sets')}`}
+                      <Txt
+                        variant="label"
+                        color="muted"
+                        numberOfLines={2}
+                        style={styles.trainingUnit}
+                      >
+                        {t('trainingUnit', { sets: formatCount(training.sets) })}
                       </Txt>
                     </View>
 
                     {training.adherence === null ? (
-                      <Badge label="No schedule" />
+                      <Badge label={t('noSchedule')} />
                     ) : (
                       <Badge
-                        label={`${training.adherence}% of plan`}
+                        label={t('adherence', { percent: formatCount(training.adherence) })}
                         tone={training.adherence >= ON_PLAN_PERCENT ? 'accent' : 'default'}
                       />
                     )}
@@ -601,26 +657,21 @@ export default function HistoryScreen() {
                         />
                       </View>
                       <Txt variant="label" color="muted" style={styles.trainingHint}>
-                        {`${training.trainedDays} of ${training.scheduledDays} scheduled ${plural(
-                          training.scheduledDays,
-                          'day',
-                          'days',
-                        )} trained`}
+                        {t('trainedDays', {
+                          done: formatCount(training.trainedDays),
+                          planned: formatCount(training.scheduledDays),
+                        })}
                       </Txt>
                     </>
                   ) : (
                     <Txt variant="label" color="muted" style={styles.trainingHint}>
-                      Set a weekly schedule in Training to follow adherence here.
+                      {t('scheduleHint')}
                     </Txt>
                   )}
 
                   {training.unfinished > 0 ? (
                     <Txt variant="caption" color="faint" style={styles.trainingNote}>
-                      {`${training.unfinished} ${plural(
-                        training.unfinished,
-                        'session is',
-                        'sessions are',
-                      )} still unfinished.`}
+                      {t('unfinished', { sessions: formatCount(training.unfinished) })}
                     </Txt>
                   ) : null}
 
@@ -639,12 +690,12 @@ export default function HistoryScreen() {
             </Card>
 
             <SectionHeader
-              title="Weight"
+              title={t('weightTitle')}
               right={
                 <IconButton
                   icon="add"
                   onPress={openWeightSheet}
-                  accessibilityLabel="Log weight"
+                  accessibilityLabel={t('logWeight')}
                   variant="surface"
                   size={20}
                 />
@@ -661,16 +712,16 @@ export default function HistoryScreen() {
             </Card>
 
             <SectionHeader
-              title="Body composition"
-              hint={body.latest ? formatShortDay(body.latest.date) : undefined}
+              title={t('bodyTitle')}
+              hint={body.latest ? dayText.shortDay(body.latest.date) : undefined}
             />
             {body.latest === null ? (
               <Card style={styles.block}>
                 <EmptyState
                   icon="body-outline"
-                  title="No scan yet"
-                  message="Add a body-composition reading to see muscle and fat move alongside your weight."
-                  actionLabel="Add a scan"
+                  title={t('bodyEmptyTitle')}
+                  message={t('bodyEmptyMessage')}
+                  actionLabel={t('bodyEmptyAction')}
                   onAction={() => router.push('/body/import')}
                 />
               </Card>
@@ -678,25 +729,24 @@ export default function HistoryScreen() {
               <Card
                 style={styles.block}
                 onPress={() => router.push('/body')}
-                accessibilityLabel="Body composition history"
+                accessibilityLabel={t('bodyOpen')}
               >
                 <View style={styles.bodyHead}>
                   <View style={styles.bodyHeadText}>
                     <Txt weight="semibold" numberOfLines={1}>
-                      {body.latest.device ?? 'Latest reading'}
+                      {body.latest.device ?? t('bodyLatest')}
                     </Txt>
-                    <Txt variant="label" color="muted" numberOfLines={1} style={styles.bodySub}>
+                    <Txt variant="label" color="muted" numberOfLines={2} style={styles.bodySub}>
                       {body.change
-                        ? `Change over ${body.change.days} ${plural(
-                            body.change.days,
-                            'day',
-                            'days',
-                          )}, since ${formatShortDay(body.change.fromDate)}`
-                        : 'First reading, nothing to compare yet'}
+                        ? t('bodyChange', {
+                            days: formatCount(body.change.days),
+                            date: dayText.shortDay(body.change.fromDate),
+                          })
+                        : t('bodyFirst')}
                     </Txt>
                   </View>
                   <Ionicons
-                    name="chevron-forward"
+                    name={mirrorIcon('chevron-forward', isRTL) as IconName}
                     size={16}
                     color={colors.textFaint}
                     {...DECORATIVE}
@@ -714,6 +764,17 @@ export default function HistoryScreen() {
                         : delta > 0 === metric.higherIsBetter;
                     const deltaColor: TxtColor =
                       better === null ? 'faint' : better ? colors.accent : colors.warning;
+                    const label = t(metric.labelKey);
+                    const unit = metric.unit === 'kg' ? t('units:kg') : t('units:percent');
+
+                    const spokenChange =
+                      delta === undefined
+                        ? ''
+                        : delta === 0
+                          ? `. ${t('deltaFlat')}`
+                          : `. ${t(delta > 0 ? 'deltaUp' : 'deltaDown', {
+                              amount: formatAmount(Math.abs(delta), metric.decimals),
+                            })}`;
 
                     return (
                       <View
@@ -721,34 +782,28 @@ export default function HistoryScreen() {
                         accessible
                         accessibilityLabel={
                           value === undefined
-                            ? `${metric.label}: not measured`
-                            : `${metric.label}: ${value.toFixed(metric.decimals)} ${
-                                metric.unit === '%' ? 'percent' : metric.unit
-                              }${
-                                delta === undefined
-                                  ? ''
-                                  : `, ${delta > 0 ? 'up' : delta < 0 ? 'down' : 'level at'} ${Math.abs(
-                                      delta,
-                                    ).toFixed(metric.decimals)} since the previous reading`
-                              }`
+                            ? t('metricMissing', { label })
+                            : `${t('metricSpoken', {
+                                label,
+                                value: formatAmount(value, metric.decimals),
+                                unit,
+                              })}${spokenChange}`
                         }
                         style={styles.bodyMetric}
                       >
                         <Txt variant="caption" color="faint" numberOfLines={1}>
-                          {metric.label}
+                          {label}
                         </Txt>
                         <View style={styles.bodyValue}>
-                          <Txt variant="heading" weight="bold" tabular>
-                            {value === undefined ? '—' : value.toFixed(metric.decimals)}
+                          <Txt variant="heading" weight="bold" tabular numberOfLines={1}>
+                            {value === undefined ? '—' : formatAmount(value, metric.decimals)}
                           </Txt>
                           <Txt variant="caption" color="faint">
-                            {metric.unit}
+                            {unit}
                           </Txt>
                         </View>
                         <Txt variant="label" color={deltaColor} tabular numberOfLines={1}>
-                          {delta === undefined
-                            ? '—'
-                            : `${delta > 0 ? '+' : ''}${delta.toFixed(metric.decimals)}`}
+                          {delta === undefined ? '—' : formatDelta(delta, metric.decimals)}
                         </Txt>
                       </View>
                     );
@@ -758,17 +813,17 @@ export default function HistoryScreen() {
             )}
 
             <SectionHeader
-              title="Day by day"
-              hint={summary.recent.length > 0 ? 'Newest first' : undefined}
+              title={t('dayByDay')}
+              hint={summary.recent.length > 0 ? t('newestFirst') : undefined}
             />
 
             {summary.recent.length === 0 ? (
               <Card style={styles.block}>
                 <EmptyState
                   icon="restaurant-outline"
-                  title="Nothing logged yet"
-                  message="Days you log show up here, newest first, with how each one compared to your target."
-                  actionLabel="Go to Today"
+                  title={t('daysEmptyTitle')}
+                  message={t('daysEmptyMessage')}
+                  actionLabel={t('daysEmptyAction')}
                   onAction={() => router.navigate('/(tabs)')}
                 />
               </Card>
@@ -809,7 +864,7 @@ export default function HistoryScreen() {
             style={[StyleSheet.absoluteFill, { backgroundColor: colors.overlay }]}
             onPress={closeWeightSheet}
             accessibilityRole="button"
-            accessibilityLabel="Close"
+            accessibilityLabel={t('common:close')}
           />
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -822,31 +877,35 @@ export default function HistoryScreen() {
                 { backgroundColor: colors.surface, borderColor: colors.border },
               ]}
             >
-              <Txt variant="heading">Log weight</Txt>
+              <Txt variant="heading">{t('logWeight')}</Txt>
               <Txt variant="label" color="muted" style={styles.sheetHint}>
-                {`Saved against today, ${unitLabel === 'lb' ? 'in pounds' : 'in kilograms'}.`}
+                {units === 'imperial' ? t('weightSheetHintLb') : t('weightSheetHintKg')}
               </Txt>
 
               <NumberField
-                label={`Weight (${unitLabel})`}
+                label={t('weightField', { unit: unitLabel })}
                 value={draft}
                 onChange={setDraft}
                 suffix={unitLabel}
-                placeholder={unitLabel === 'lb' ? '165' : '75'}
+                placeholder={units === 'imperial' ? '165' : '75'}
                 min={minDisplay}
                 max={maxDisplay}
                 error={
                   draft !== null && !draftValid
-                    ? `Enter a value between ${minDisplay} and ${maxDisplay} ${unitLabel}`
+                    ? t('weightRangeError', {
+                        min: formatCount(minDisplay),
+                        max: formatCount(maxDisplay),
+                        unit: unitLabel,
+                      })
                     : undefined
                 }
                 style={styles.sheetField}
               />
 
               <View style={styles.sheetActions}>
-                <Button label="Cancel" onPress={closeWeightSheet} variant="ghost" />
+                <Button label={t('common:cancel')} onPress={closeWeightSheet} variant="ghost" />
                 <Button
-                  label="Save"
+                  label={t('common:save')}
                   onPress={saveWeight}
                   disabled={!draftValid}
                   loading={saving}
@@ -858,6 +917,12 @@ export default function HistoryScreen() {
       </Modal>
     </>
   );
+}
+
+/** The program's own name, which is the user's data rather than app copy. */
+function programName(program: Program | null, language: string): string | undefined {
+  if (!program) return undefined;
+  return language === 'ar' ? (program.nameAr ?? program.name) : program.name;
 }
 
 const styles = StyleSheet.create({
@@ -884,6 +949,10 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     flexShrink: 1,
+  },
+  sectionHint: {
+    flexShrink: 1,
+    maxWidth: '55%',
   },
 
   /* training */

@@ -1,8 +1,10 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { StyleSheet, View } from 'react-native';
 
-import { ExerciseRow, exerciseMeta, plannedLabel } from '@/components/training/ExerciseRow';
+import { ExerciseRow } from '@/components/training/ExerciseRow';
+import { useTrainingText } from '@/components/training/useTrainingText';
 import {
   AppHeader,
   Badge,
@@ -14,15 +16,10 @@ import {
   Txt,
 } from '@/components/ui';
 import { exerciseById } from '@/data/exercises';
-import { formatDayLabel, todayKey } from '@/domain/date';
+import { todayKey } from '@/domain/date';
+import { formatCount, formatPercent } from '@/domain/format';
 import { makeId } from '@/domain/id';
-import {
-  SESSION_LABELS,
-  SESSION_MUSCLES,
-  dayForDate,
-  fallbackExerciseName,
-  sessionFromDay,
-} from '@/domain/training';
+import { dayForDate, fallbackExerciseName, sessionFromDay } from '@/domain/training';
 import { useApp } from '@/state/AppStore';
 import * as repo from '@/storage/repository';
 import { radius, spacing, useTheme } from '@/theme';
@@ -41,7 +38,6 @@ const WRITE_DELAY_MS = 600;
 /** Sets an exercise added mid-session starts with. */
 const DEFAULT_SETS = 3;
 const NOTE_MAX = 300;
-const EXTRA_SESSION_LABEL = 'Extra session';
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
@@ -58,7 +54,11 @@ function findDay(program: Program | null, dayId: string | undefined, date: strin
   return dayForDate(program, date);
 }
 
-/** A session with no program day behind it: whatever the user adds to it. */
+/**
+ * A session with no program day behind it: whatever the user adds to it. It
+ * carries no dayLabel, because a label written now would be stuck in the
+ * language it was written in.
+ */
 function emptySession(date: string, programId?: string): WorkoutSession {
   return {
     id: makeId('ws'),
@@ -66,7 +66,6 @@ function emptySession(date: string, programId?: string): WorkoutSession {
     startedAt: new Date().toISOString(),
     type: 'full',
     programId,
-    dayLabel: EXTRA_SESSION_LABEL,
     exercises: [],
   };
 }
@@ -100,6 +99,8 @@ export default function SessionScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { colors } = useTheme();
+  const { t } = useTranslation('training');
+  const text = useTrainingText();
   const { ready, program, customExercises, addWorkout, updateWorkout } = useApp();
 
   const date = readDate(firstParam(params.date));
@@ -145,10 +146,10 @@ export default function SessionScreen() {
         .catch((cause: unknown) => {
           console.warn('[session] save failed', cause);
           failedRef.current = true;
-          setError('Could not save this session. Please try again.');
+          setError(t('sessionSaveFailed'));
         });
     },
-    [addWorkout, updateWorkout],
+    [addWorkout, updateWorkout, t],
   );
 
   // The unmount cleanup must see the latest writer, not the one from mount.
@@ -367,13 +368,13 @@ export default function SessionScreen() {
     void queueRef.current.then(() => {
       setLeaving(false);
       if (failedRef.current) {
-        setError('Could not save this session. Please try again.');
+        setError(t('sessionSaveFailed'));
         return;
       }
       if (router.canGoBack()) router.back();
       else router.replace('/(tabs)/training');
     });
-  }, [leaving, flushPending, router]);
+  }, [leaving, flushPending, router, t]);
 
   const openPicker = useCallback(() => {
     const next: Record<string, string> = { returnTo: 'session', date };
@@ -390,7 +391,7 @@ export default function SessionScreen() {
   const finish = useCallback(() => {
     if (!session) return;
     if (doneCount === 0) {
-      setError('Tick at least one exercise to finish.');
+      setError(t('needOneExercise'));
       return;
     }
     const next: WorkoutSession = {
@@ -400,42 +401,50 @@ export default function SessionScreen() {
     setSession(next);
     commit(next);
     close();
-  }, [session, doneCount, commit, close]);
+  }, [session, doneCount, commit, close, t]);
 
   if (!ready || loading || !session) {
     return (
       <Screen>
-        <LoadingView message="Opening your session" />
+        <LoadingView message={t('sessionLoading')} />
       </Screen>
     );
   }
 
-  const title = session.dayLabel ?? SESSION_LABELS[session.type];
-  const muscles = day ? SESSION_MUSCLES[day.type] : SESSION_MUSCLES[session.type];
+  const title = day ? text.day(day) : (session.dayLabel ?? t('extraSession'));
+  const muscles = text.muscles(day ? day.type : session.type);
 
   return (
     <Screen scroll keyboardAvoiding edges={['top', 'bottom']}>
       <AppHeader
         title={title}
-        subtitle={`${formatDayLabel(date)} · ${muscles}`}
+        subtitle={`${text.date(date)} · ${muscles}`}
         onBack={close}
-        right={completed ? <Badge label="Done" tone="success" /> : undefined}
+        right={completed ? <Badge label={t('statusDone')} tone="success" /> : undefined}
       />
 
       <Card>
         <View style={styles.progressTop}>
-          <Txt variant="label" color="muted" weight="semibold">
-            {total > 0 ? `${doneCount} of ${total} exercises done` : 'No exercises yet'}
+          <Txt
+            variant="label"
+            color="muted"
+            weight="semibold"
+            numberOfLines={1}
+            style={styles.progressLabel}
+          >
+            {total > 0
+              ? t('progressDone', { done: formatCount(doneCount), total: formatCount(total) })
+              : t('progressEmpty')}
           </Txt>
           <Txt variant="label" color="muted" tabular>
-            {`${Math.round(ratio * 100)}%`}
+            {formatPercent(ratio)}
           </Txt>
         </View>
         <View
           style={[styles.track, { backgroundColor: colors.track }]}
           accessibilityRole="progressbar"
           accessibilityValue={{ min: 0, max: total, now: doneCount }}
-          accessibilityLabel="Session progress"
+          accessibilityLabel={t('progressSpoken')}
         >
           <View
             style={[
@@ -453,10 +462,11 @@ export default function SessionScreen() {
           return (
             <ExerciseRow
               key={`${exercise.exerciseId}-${index}`}
-              name={exercise.name}
-              nameAr={catalogue?.nameAr}
-              meta={catalogue ? exerciseMeta(catalogue) : undefined}
-              planned={planned ? plannedLabel(planned) : undefined}
+              name={catalogue ? text.name(catalogue) : exercise.name}
+              altName={catalogue ? text.altName(catalogue) : undefined}
+              meta={catalogue ? text.meta(catalogue) : undefined}
+              planned={planned ? text.planned(planned) : undefined}
+              cue={catalogue ? text.cue(catalogue) : undefined}
               done={exercise.done}
               onToggleDone={() => toggleDone(index)}
               sets={exercise.sets}
@@ -473,7 +483,7 @@ export default function SessionScreen() {
       </View>
 
       <Button
-        label="Add exercise"
+        label={t('addExercise')}
         icon="add"
         onPress={openPicker}
         variant="secondary"
@@ -482,10 +492,10 @@ export default function SessionScreen() {
       />
 
       <TextField
-        label="Session note"
+        label={t('noteLabel')}
         value={session.note ?? ''}
         onChangeText={changeNote}
-        placeholder="How it felt, what to change next time"
+        placeholder={t('notePlaceholder')}
         multiline
         maxLength={NOTE_MAX}
         style={styles.note}
@@ -498,16 +508,12 @@ export default function SessionScreen() {
       ) : null}
 
       <Button
-        label={completed ? 'Save changes' : 'Finish session'}
+        label={completed ? t('saveChanges') : t('finishSession')}
         icon="checkmark"
         onPress={finish}
         loading={leaving}
         fullWidth
-        accessibilityHint={
-          completed
-            ? 'Keeps this session marked done'
-            : 'Marks the session done and returns to training'
-        }
+        accessibilityHint={completed ? t('saveChangesHint') : t('finishHint')}
         style={styles.finish}
       />
     </Screen>
@@ -521,6 +527,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: spacing.sm,
+  },
+  progressLabel: {
+    flexShrink: 1,
   },
   track: {
     borderRadius: radius.pill,

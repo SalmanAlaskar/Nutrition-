@@ -1,10 +1,13 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Badge, IconButton, Txt } from '@/components/ui';
-import { formatDayLabel } from '@/domain/date';
+import { formatAmount } from '@/domain/format';
 import { spacing, useTheme } from '@/theme';
 import type { BodyScan, ScanSource } from '@/types';
+
+import { useScanDate } from './useScanDate';
 
 export interface ScanRowProps {
   scan: BodyScan;
@@ -15,29 +18,17 @@ export interface ScanRowProps {
   style?: StyleProp<ViewStyle>;
 }
 
-const SOURCE_LABELS: Record<ScanSource, string> = {
-  manual: 'Typed in',
-  qr: 'QR code',
-  photo: 'Photo',
-  document: 'PDF',
-};
+const SOURCE_KEYS = {
+  manual: 'sourceManual',
+  qr: 'sourceQr',
+  photo: 'sourcePhoto',
+  document: 'sourceDocument',
+} as const satisfies Record<ScanSource, string>;
 
 interface Figure {
+  key: string;
   label: string;
   text: string;
-}
-
-function figures(scan: BodyScan): Figure[] {
-  const list: Figure[] = [{ label: 'Weight', text: `${scan.weightKg.toFixed(1)} kg` }];
-  if (scan.skeletalMuscleKg !== undefined) {
-    list.push({ label: 'Muscle', text: `${scan.skeletalMuscleKg.toFixed(1)} kg` });
-  }
-  if (scan.bodyFatPercent !== undefined) {
-    list.push({ label: 'Body fat', text: `${scan.bodyFatPercent.toFixed(1)} %` });
-  } else if (scan.bodyFatKg !== undefined) {
-    list.push({ label: 'Body fat', text: `${scan.bodyFatKg.toFixed(1)} kg` });
-  }
-  return list;
 }
 
 /**
@@ -45,10 +36,47 @@ function figures(scan: BodyScan): Figure[] {
  * inside it, so the browser never renders a button within a button.
  */
 export function ScanRow({ scan, onPress, onDelete, style }: ScanRowProps) {
+  const { t } = useTranslation(['body', 'units']);
   const { colors } = useTheme();
-  const stats = figures(scan);
-  const day = formatDayLabel(scan.date);
-  const spoken = `${day}. ${stats.map((figure) => `${figure.label} ${figure.text}`).join(', ')}.`;
+  const { dayLabel } = useScanDate();
+
+  const kg = t('units:kg');
+  const day = dayLabel(scan.date);
+
+  const stats: Figure[] = [
+    {
+      key: 'weight',
+      label: t('shortWeight'),
+      text: `${formatAmount(scan.weightKg, 1)} ${kg}`,
+    },
+  ];
+  if (scan.skeletalMuscleKg !== undefined) {
+    stats.push({
+      key: 'muscle',
+      label: t('shortMuscle'),
+      text: `${formatAmount(scan.skeletalMuscleKg, 1)} ${kg}`,
+    });
+  }
+  if (scan.bodyFatPercent !== undefined) {
+    stats.push({
+      key: 'fat',
+      label: t('shortFat'),
+      text: `${formatAmount(scan.bodyFatPercent, 1)} ${t('units:percent')}`,
+    });
+  } else if (scan.bodyFatKg !== undefined) {
+    stats.push({
+      key: 'fat',
+      label: t('shortFat'),
+      text: `${formatAmount(scan.bodyFatKg, 1)} ${kg}`,
+    });
+  }
+
+  const spoken = t('rowSpoken', {
+    day,
+    figures: stats
+      .map((figure) => t('figureSpoken', { label: figure.label, value: figure.text }))
+      .join(t('listSeparator')),
+  });
 
   return (
     <View style={[styles.row, style]}>
@@ -56,7 +84,7 @@ export function ScanRow({ scan, onPress, onDelete, style }: ScanRowProps) {
         onPress={onPress}
         accessibilityRole="button"
         accessibilityLabel={spoken}
-        accessibilityHint="Opens this reading for editing"
+        accessibilityHint={t('rowHint')}
         style={({ pressed }) => [
           styles.tapTarget,
           pressed ? { backgroundColor: colors.surfaceAlt } : null,
@@ -66,12 +94,12 @@ export function ScanRow({ scan, onPress, onDelete, style }: ScanRowProps) {
           <Txt weight="semibold" numberOfLines={1} style={styles.day}>
             {day}
           </Txt>
-          <Badge label={SOURCE_LABELS[scan.source]} />
+          <Badge label={t(SOURCE_KEYS[scan.source])} />
         </View>
 
         <View style={styles.stats}>
           {stats.map((figure) => (
-            <View key={figure.label} style={styles.stat}>
+            <View key={figure.key} style={styles.stat}>
               <Txt variant="caption" color="faint" weight="semibold" numberOfLines={1}>
                 {figure.label.toUpperCase()}
               </Txt>
@@ -94,7 +122,7 @@ export function ScanRow({ scan, onPress, onDelete, style }: ScanRowProps) {
         variant="plain"
         size={18}
         onPress={onDelete}
-        accessibilityLabel={`Delete the reading from ${day}`}
+        accessibilityLabel={t('rowDelete', { day })}
         style={styles.delete}
       />
     </View>
@@ -106,7 +134,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     minHeight: 72,
-    paddingRight: spacing.sm,
+    paddingEnd: spacing.sm,
   },
   tapTarget: {
     alignSelf: 'stretch',
@@ -137,6 +165,6 @@ const styles = StyleSheet.create({
     marginTop: -spacing.xs,
   },
   delete: {
-    marginLeft: spacing.xs,
+    marginStart: spacing.xs,
   },
 });

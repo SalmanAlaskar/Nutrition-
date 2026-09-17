@@ -7,6 +7,7 @@
  * module never has to load the exercise database.
  */
 
+import type { LanguageCode } from '@/i18n';
 import type {
   PlannedExercise,
   Program,
@@ -19,6 +20,11 @@ import { addDays, parseDateKey } from './date';
 import { makeId } from './id';
 import { loggingStreak } from './totals';
 
+/**
+ * English day-type names. They are the fallback and the value stored with a
+ * logged session; anything on screen goes through `SESSION_LABEL_KEYS` and
+ * t() instead.
+ */
 export const SESSION_LABELS: Record<SessionType, string> = {
   push: 'Push',
   pull: 'Pull',
@@ -28,6 +34,91 @@ export const SESSION_LABELS: Record<SessionType, string> = {
   full: 'Full body',
   cardio: 'Cardio',
 };
+
+/**
+ * Translation keys, fully qualified so a caller only has to load the two
+ * namespaces. One per day type.
+ */
+export const SESSION_LABEL_KEYS = {
+  push: 'training:typePush',
+  pull: 'training:typePull',
+  legs: 'training:typeLegs',
+  upper: 'training:typeUpper',
+  lower: 'training:typeLower',
+  full: 'training:typeFull',
+  cardio: 'training:typeCardio',
+} as const satisfies Record<SessionType, string>;
+
+/** Translation keys for the muscles line that sits under a day type. */
+export const SESSION_MUSCLE_KEYS = {
+  push: 'training:musclesPush',
+  pull: 'training:musclesPull',
+  legs: 'training:musclesLegs',
+  upper: 'training:musclesUpper',
+  lower: 'training:musclesLower',
+  full: 'training:musclesFull',
+  cardio: 'training:musclesCardio',
+} as const satisfies Record<SessionType, string>;
+
+/** Weekday keys, Sunday first, the way the week runs here. */
+export const WEEKDAY_LETTER_KEYS = [
+  'training:letterSun',
+  'training:letterMon',
+  'training:letterTue',
+  'training:letterWed',
+  'training:letterThu',
+  'training:letterFri',
+  'training:letterSat',
+] as const;
+
+export const WEEKDAY_SHORT_KEYS = [
+  'training:dayShortSun',
+  'training:dayShortMon',
+  'training:dayShortTue',
+  'training:dayShortWed',
+  'training:dayShortThu',
+  'training:dayShortFri',
+  'training:dayShortSat',
+] as const;
+
+/** Full weekday and month names are shared app-wide, so they live in `common`. */
+export const WEEKDAY_LONG_KEYS = [
+  'common:weekdaySunday',
+  'common:weekdayMonday',
+  'common:weekdayTuesday',
+  'common:weekdayWednesday',
+  'common:weekdayThursday',
+  'common:weekdayFriday',
+  'common:weekdaySaturday',
+] as const;
+
+export const MONTH_KEYS = [
+  'common:monthJan',
+  'common:monthFeb',
+  'common:monthMar',
+  'common:monthApr',
+  'common:monthMay',
+  'common:monthJun',
+  'common:monthJul',
+  'common:monthAug',
+  'common:monthSep',
+  'common:monthOct',
+  'common:monthNov',
+  'common:monthDec',
+] as const;
+
+/**
+ * A program day carries its own label, which the user can have renamed, so it
+ * is his data rather than copy: the Arabic one is shown when there is one.
+ */
+export function programDayLabel(day: ProgramDay, language: LanguageCode): string {
+  return language === 'ar' && day.labelAr ? day.labelAr : day.label;
+}
+
+/** Same rule as `programDayLabel`, for the name of the program itself. */
+export function programTitle(program: Program, language: LanguageCode): string {
+  return language === 'ar' && program.nameAr ? program.nameAr : program.name;
+}
 
 /** Ionicons glyphs, one per session type. */
 export const SESSION_ICONS: Record<SessionType, string> = {
@@ -40,7 +131,10 @@ export const SESSION_ICONS: Record<SessionType, string> = {
   cardio: 'heart-outline',
 };
 
-/** The muscles each session type is built around, for a subtitle line. */
+/**
+ * The muscles each session type is built around, for a subtitle line. English
+ * fallback only: on screen this goes through `SESSION_MUSCLE_KEYS` and t().
+ */
 export const SESSION_MUSCLES: Record<SessionType, string> = {
   push: 'Chest, shoulders, triceps',
   pull: 'Back, rear delts, biceps',

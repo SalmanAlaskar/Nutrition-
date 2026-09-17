@@ -23,5 +23,46 @@ export const common = {
   optional: 'Optional',
   more: 'More',
   notLoggedYet: 'Nothing logged yet',
-  seeAll: 'See all'
+  seeAll: 'See all',
+
+  /* Default empty state, used when a screen does not supply its own. */
+  emptyTitle: 'Nothing here yet',
+  emptyMessage: 'This fills in as soon as there is something to show.',
+
+  /* Progress bars and rings. */
+  progressOf: '{{label}}: {{value}} of {{target}} {{unit}}',
+  progressOver: '{{label}}: {{value}} of {{target}} {{unit}}, over target',
+  overTarget: 'over target',
+  overBy: '{{amount}} over',
+
+  /* Number fields. Spoken, not printed, so the field keeps its height. */
+  rangeBetween: 'Between {{min}} and {{max}}',
+  rangeMin: 'At least {{min}}',
+  rangeMax: 'At most {{max}}',
+
+  /* Joining a short list inside a sentence. */
+  joinPair: '{{a}} and {{b}}',
+  joinList: '{{a}}, {{b}}',
+
+  /* The week starts on Sunday. */
+  weekdaySunday: 'Sunday',
+  weekdayMonday: 'Monday',
+  weekdayTuesday: 'Tuesday',
+  weekdayWednesday: 'Wednesday',
+  weekdayThursday: 'Thursday',
+  weekdayFriday: 'Friday',
+  weekdaySaturday: 'Saturday',
+
+  monthJan: 'Jan',
+  monthFeb: 'Feb',
+  monthMar: 'Mar',
+  monthApr: 'Apr',
+  monthMay: 'May',
+  monthJun: 'Jun',
+  monthJul: 'Jul',
+  monthAug: 'Aug',
+  monthSep: 'Sep',
+  monthOct: 'Oct',
+  monthNov: 'Nov',
+  monthDec: 'Dec'
 } as const;

@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Platform,
   StyleSheet,
@@ -10,10 +11,11 @@ import {
 import Svg, { Line, Rect, Text as SvgText } from 'react-native-svg';
 
 import { Txt } from '@/components/ui';
-import { weekdayInitial } from '@/domain/date';
+import { formatCount } from '@/domain/format';
+import { useDirection } from '@/i18n';
 import { fontSize, spacing, useTheme } from '@/theme';
 
-import { formatCount } from '../../../app/onboarding/_layout';
+import { useDayText } from './dayText';
 
 export interface CalorieChartDay {
   /** Local calendar day, 'YYYY-MM-DD'. */
@@ -59,6 +61,9 @@ const DECORATIVE = Platform.select({
  */
 export function CalorieChart({ days, target, style }: CalorieChartProps) {
   const { colors } = useTheme();
+  const { t } = useTranslation('history');
+  const { isRTL } = useDirection();
+  const dayText = useDayText();
   const [width, setWidth] = useState(0);
 
   const handleLayout = useCallback((event: LayoutChangeEvent) => {
@@ -110,15 +115,19 @@ export function CalorieChart({ days, target, style }: CalorieChartProps) {
 
   const summary = useMemo(() => {
     if (loggedCount === 0) {
-      return `Daily calories over the last ${count} days. Nothing logged in this range.`;
+      return t('chartSpokenEmpty', { days: formatCount(count) });
     }
     const total = days.reduce((sum, day) => sum + (day.logged ? day.calories : 0), 0);
     const mean = Math.round(total / loggedCount);
-    const goal = target > 0 ? `, against a target of ${formatCount(target)}` : '';
-    return `Daily calories over the last ${count} days. ${loggedCount} ${
-      loggedCount === 1 ? 'day' : 'days'
-    } logged, averaging ${formatCount(mean)} kilocalories${goal}.`;
-  }, [days, count, loggedCount, target]);
+    const shared = {
+      days: formatCount(count),
+      logged: formatCount(loggedCount),
+      average: formatCount(mean),
+    };
+    return target > 0
+      ? t('chartSpokenTarget', { ...shared, target: formatCount(target) })
+      : t('chartSpoken', shared);
+  }, [days, count, loggedCount, target, t]);
 
   return (
     <View style={style}>
@@ -206,13 +215,21 @@ export function CalorieChart({ days, target, style }: CalorieChartProps) {
         {loggedCount === 0 && count > 0 ? (
           <View style={styles.blank} pointerEvents="none" {...DECORATIVE}>
             <Txt variant="label" color="faint" align="center">
-              No meals logged in this range
+              {t('chartEmpty')}
             </Txt>
           </View>
         ) : null}
       </View>
 
-      <View style={styles.labels} pointerEvents="none" {...DECORATIVE}>
+      {/*
+        The bars are drawn oldest on the left in both languages, the way a time
+        axis reads everywhere, so the label row must not mirror with the page.
+      */}
+      <View
+        style={[styles.labels, isRTL ? styles.labelsRtl : null]}
+        pointerEvents="none"
+        {...DECORATIVE}
+      >
         {days.map((day, index) => {
           const show = (count - 1 - index) % geometry.labelStep === 0;
           const last = index === count - 1;
@@ -226,7 +243,7 @@ export function CalorieChart({ days, target, style }: CalorieChartProps) {
                   align="center"
                   numberOfLines={1}
                 >
-                  {weekdayInitial(day.date)}
+                  {dayText.initial(day.date)}
                 </Txt>
               ) : null}
             </View>
@@ -250,8 +267,8 @@ export function CalorieChart({ days, target, style }: CalorieChartProps) {
                 />
               </Svg>
             </View>
-            <Txt variant="caption" color="faint" tabular>
-              {`Target ${formatCount(target)} kcal`}
+            <Txt variant="caption" color="faint" tabular numberOfLines={1}>
+              {t('legendTarget', { value: formatCount(target) })}
             </Txt>
           </View>
         ) : null}
@@ -262,8 +279,8 @@ export function CalorieChart({ days, target, style }: CalorieChartProps) {
               style={[styles.stubSwatch, { backgroundColor: colors.border }]}
               {...DECORATIVE}
             />
-            <Txt variant="caption" color="faint">
-              Not logged
+            <Txt variant="caption" color="faint" numberOfLines={1}>
+              {t('legendNotLogged')}
             </Txt>
           </View>
         ) : null}
@@ -290,6 +307,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     marginTop: spacing.sm - 2,
     width: '100%',
+  },
+  /* Pins the labels to the bars underneath, which never mirror. */
+  labelsRtl: {
+    flexDirection: 'row-reverse',
   },
   labelCell: {
     flexBasis: 0,

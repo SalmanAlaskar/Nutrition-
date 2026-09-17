@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Platform,
   Pressable,
@@ -10,11 +11,14 @@ import {
 } from 'react-native';
 
 import { Txt } from '@/components/ui';
-import { formatDayLabel } from '@/domain/date';
+import { formatCount } from '@/domain/format';
+import { mirrorIcon, useDirection } from '@/i18n';
 import { radius, spacing, useTheme } from '@/theme';
 import type { Macros } from '@/types';
 
-import { formatCount } from '../../../app/onboarding/_layout';
+import { useDayText } from './dayText';
+
+type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
 export interface DaySummaryRowProps {
   /** Local calendar day, 'YYYY-MM-DD'. */
@@ -36,7 +40,17 @@ const DECORATIVE = Platform.select({
   },
 });
 
-function MacroPart({ letter, grams, color }: { letter: string; grams: number; color: string }) {
+function MacroPart({
+  letter,
+  grams,
+  unit,
+  color,
+}: {
+  letter: string;
+  grams: number;
+  unit: string;
+  color: string;
+}) {
   return (
     <View style={styles.macroPart}>
       <Txt variant="caption" weight="bold" color={color}>
@@ -46,7 +60,7 @@ function MacroPart({ letter, grams, color }: { letter: string; grams: number; co
         {formatCount(grams)}
       </Txt>
       <Txt variant="caption" color="faint" style={styles.macroUnit}>
-        g
+        {unit}
       </Txt>
     </View>
   );
@@ -62,6 +76,9 @@ export function DaySummaryRow({
   style,
 }: DaySummaryRowProps) {
   const { colors } = useTheme();
+  const { t } = useTranslation(['history', 'units']);
+  const { isRTL } = useDirection();
+  const dayText = useDayText();
 
   const calories = Math.round(macros.calories);
   const hasTarget = targetCalories > 0;
@@ -74,27 +91,33 @@ export function DaySummaryRow({
   const underShare = Math.min(calories, targetCalories) / denominator;
   const overShare = over ? (calories - targetCalories) / denominator : 0;
 
-  const meals = `${mealCount} ${mealCount === 1 ? 'meal' : 'meals'}`;
+  const gramUnit = t('units:gram');
+  const day = dayText.dayLabel(date);
+  const meals = mealCount === 1 ? t('mealsOne') : t('meals', { value: formatCount(mealCount) });
   const comparison = !hasTarget
     ? ''
     : over
-      ? `${formatCount(difference)} over target`
+      ? t('overTarget', { amount: formatCount(difference) })
       : difference === 0
-        ? 'on target'
-        : `${formatCount(difference)} under target`;
+        ? t('onTarget')
+        : t('underTarget', { amount: formatCount(difference) });
 
   const label = hasTarget
-    ? `${formatDayLabel(date)}: ${formatCount(calories)} of ${formatCount(
-        targetCalories,
-      )} kilocalories, ${comparison}. ${meals}.`
-    : `${formatDayLabel(date)}: ${formatCount(calories)} kilocalories. ${meals}.`;
+    ? t('daySpokenRow', {
+        day,
+        eaten: formatCount(calories),
+        target: formatCount(targetCalories),
+        comparison,
+        meals,
+      })
+    : t('daySpokenRowPlain', { day, eaten: formatCount(calories), meals });
 
   return (
     <Pressable
       onPress={() => onPress(date)}
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityHint="Opens this day on the Today tab"
+      accessibilityHint={t('openDay')}
       style={({ pressed }) => [
         styles.row,
         pressed ? { backgroundColor: colors.surfaceAlt } : null,
@@ -105,7 +128,7 @@ export function DaySummaryRow({
         <View style={styles.head}>
           <View style={styles.dayBlock}>
             <Txt weight="semibold" numberOfLines={1}>
-              {formatDayLabel(date)}
+              {day}
             </Txt>
             <Txt variant="caption" color="faint" numberOfLines={1} style={styles.meals}>
               {meals}
@@ -117,7 +140,9 @@ export function DaySummaryRow({
               {formatCount(calories)}
             </Txt>
             <Txt variant="label" color="faint" tabular style={styles.caloriesUnit}>
-              {hasTarget ? `/ ${formatCount(targetCalories)} kcal` : 'kcal'}
+              {hasTarget
+                ? t('targetSuffix', { target: formatCount(targetCalories) })
+                : t('units:kcal')}
             </Txt>
           </View>
         </View>
@@ -137,7 +162,7 @@ export function DaySummaryRow({
                   styles.overflow,
                   {
                     backgroundColor: colors.warning,
-                    borderLeftColor: colors.surface,
+                    borderStartColor: colors.surface,
                     width: `${overShare * 100}%`,
                   },
                 ]}
@@ -148,9 +173,24 @@ export function DaySummaryRow({
 
         <View style={styles.foot}>
           <View style={styles.macros}>
-            <MacroPart letter="P" grams={macros.protein} color={colors.protein} />
-            <MacroPart letter="C" grams={macros.carbs} color={colors.carbs} />
-            <MacroPart letter="F" grams={macros.fat} color={colors.fat} />
+            <MacroPart
+              letter={t('macroInitialProtein')}
+              grams={macros.protein}
+              unit={gramUnit}
+              color={colors.protein}
+            />
+            <MacroPart
+              letter={t('macroInitialCarbs')}
+              grams={macros.carbs}
+              unit={gramUnit}
+              color={colors.carbs}
+            />
+            <MacroPart
+              letter={t('macroInitialFat')}
+              grams={macros.fat}
+              unit={gramUnit}
+              color={colors.fat}
+            />
           </View>
           {comparison ? (
             <Txt
@@ -166,7 +206,7 @@ export function DaySummaryRow({
       </View>
 
       <Ionicons
-        name="chevron-forward"
+        name={mirrorIcon('chevron-forward', isRTL) as IconName}
         size={16}
         color={colors.textFaint}
         style={styles.chevron}
@@ -221,7 +261,8 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   overflow: {
-    borderLeftWidth: 1.5,
+    // The track fills from the reading edge, so the seam is a logical border.
+    borderStartWidth: 1.5,
   },
   foot: {
     alignItems: 'center',

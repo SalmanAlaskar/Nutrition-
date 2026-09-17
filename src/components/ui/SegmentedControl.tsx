@@ -1,13 +1,30 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import React from 'react';
-import { Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+  type AccessibilityProps,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 
 import { radius, spacing, useTheme } from '@/theme';
 
 import { Txt } from './Txt';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
+
+/** Decoration is hidden from assistive tech; the DOM only understands aria-hidden. */
+const DECORATIVE: AccessibilityProps = Platform.select<AccessibilityProps>({
+  web: { 'aria-hidden': true },
+  default: {
+    accessibilityElementsHidden: true,
+    importantForAccessibility: 'no-hide-descendants',
+  },
+});
 
 export interface SegmentedOption<T extends string> {
   value: T;
@@ -66,15 +83,17 @@ export function SegmentedControl<T extends string>({
               selected
                 ? { backgroundColor: raisedColor, borderColor: colors.border }
                 : styles.segmentIdle,
-              pressed && !selected ? styles.pressed : null,
+              pressed ? (selected ? styles.pressedSelected : styles.pressed) : null,
             ]}
           >
             {option.icon ? (
-              <Ionicons
-                name={option.icon as IconName}
-                size={16}
-                color={selected ? colors.accent : colors.textFaint}
-              />
+              <View {...DECORATIVE}>
+                <Ionicons
+                  name={option.icon as IconName}
+                  size={16}
+                  color={selected ? colors.accent : colors.textFaint}
+                />
+              </View>
             ) : null}
             <Txt
               variant="label"
@@ -117,5 +136,9 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.6,
+  },
+  // The raised segment is already the current one, so it only dips a little.
+  pressedSelected: {
+    opacity: 0.9,
   },
 });

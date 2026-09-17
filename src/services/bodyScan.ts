@@ -18,8 +18,6 @@ import { DEFAULT_SETTINGS } from '@/storage/repository';
 import { getApiKey } from '@/storage/secrets';
 import type { SegmentalValues, Settings } from '@/types';
 
-import { describeVisionError, VisionError, type VisionErrorDescription } from './vision';
-
 /** Everything a sheet can contribute, before the user confirms any of it. */
 export interface ScanDraft {
   /** Local calendar day, 'YYYY-MM-DD'. */
@@ -53,22 +51,104 @@ export interface ScanExtraction {
   partial: boolean;
 }
 
-/** QR-side failures. API failures keep using VisionError, as vision.ts defines it. */
-export type ScanErrorCode = 'bad-url' | 'blocked' | 'network' | 'not-found' | 'unreadable';
+/**
+ * Everything that can stop an import, from the link to the model's reply. The
+ * code is the whole message: nothing here carries a finished sentence, because
+ * the sentence depends on the reader's language.
+ */
+export type ScanErrorCode =
+  | 'url-empty'
+  | 'url-shape'
+  | 'url-host'
+  | 'blocked'
+  | 'network'
+  | 'timeout-page'
+  | 'timeout-read'
+  | 'not-found'
+  | 'page-status'
+  | 'ai-off'
+  | 'no-key'
+  | 'file-unreadable'
+  | 'file-web'
+  | 'file-format'
+  | 'too-large'
+  | 'rate-limit'
+  | 'service'
+  | 'key-rejected'
+  | 'request-rejected'
+  | 'refused'
+  | 'cut-off'
+  | 'bad-shape';
 
-/** Every message on a ScanError is written to be shown to the user as-is. */
+/** Interpolations a failure carries, such as the host that was refused. */
+export type ScanErrorParams = Record<string, string | number>;
+
+/** Every line of failure copy this module can ask for, in the body namespace. */
+export type ScanCopyKey =
+  | 'body:errLinkTitle'
+  | 'body:errLinkEmpty'
+  | 'body:errLinkShape'
+  | 'body:errLinkHost'
+  | 'body:errBlockedTitle'
+  | 'body:errBlockedBody'
+  | 'body:errNetworkTitle'
+  | 'body:errNetworkBody'
+  | 'body:errTimeoutTitle'
+  | 'body:errTimeoutPage'
+  | 'body:errTimeoutRead'
+  | 'body:errNotFoundTitle'
+  | 'body:errNotFoundBody'
+  | 'body:errPageTitle'
+  | 'body:errPageBody'
+  | 'body:errAiOffTitle'
+  | 'body:errAiOffBody'
+  | 'body:errNoKeyTitle'
+  | 'body:errNoKeyBody'
+  | 'body:errFileTitle'
+  | 'body:errFileBody'
+  | 'body:errFileWebBody'
+  | 'body:errFileFormatBody'
+  | 'body:errTooLargeTitle'
+  | 'body:errTooLargeBody'
+  | 'body:errBusyTitle'
+  | 'body:errBusyBody'
+  | 'body:errServiceTitle'
+  | 'body:errServiceBody'
+  | 'body:errKeyTitle'
+  | 'body:errKeyBody'
+  | 'body:errKeyBodyDetail'
+  | 'body:errRequestTitle'
+  | 'body:errRequestBody'
+  | 'body:errRequestBodyDetail'
+  | 'body:errRefusedTitle'
+  | 'body:errRefusedBody'
+  | 'body:errCutOffTitle'
+  | 'body:errCutOffBody'
+  | 'body:errShapeTitle'
+  | 'body:errShapeBody'
+  | 'body:errUnknownTitle'
+  | 'body:errUnknownBody';
+
+/** The message is the code, for logs alone. Screens read `code` and `params`. */
 export class ScanError extends Error {
   readonly code: ScanErrorCode;
+  readonly params?: ScanErrorParams;
 
-  constructor(code: ScanErrorCode, message: string) {
-    super(message);
+  constructor(code: ScanErrorCode, params?: ScanErrorParams) {
+    super(code);
     this.name = 'ScanError';
     this.code = code;
+    if (params) this.params = params;
     Object.setPrototypeOf(this, ScanError.prototype);
   }
 }
 
-export type ScanErrorDescription = VisionErrorDescription;
+/** Two translation keys, plus whatever they interpolate. */
+export interface ScanErrorDescription {
+  headlineKey: ScanCopyKey;
+  suggestionKey: ScanCopyKey;
+  params?: ScanErrorParams;
+}
 
 export type ScanDocumentKind = 'image' | 'pdf';
 
@@ -143,7 +223,13 @@ const SEGMENT_RANGE: readonly [number, number] = [0.1, 60];
 const QR_LABELS: { key: NumericDraftKey; aliases: string[] }[] = [
   {
     key: 'targetWeightKg',
-    aliases: ['target weight', 'الوزن المستهدف', 'الوزن المثالي', '적정체중'],
+    aliases: [
+      'target weight',
+      'الوزن المطلوب تحقيقه',
+      'الوزن المستهدف',
+      'الوزن المثالي',
+      '적정체중',
+    ],
   },
   {
     key: 'skeletalMuscleKg',
@@ -151,6 +237,7 @@ const QR_LABELS: { key: NumericDraftKey; aliases: string[] }[] = [
       'skeletal muscle mass',
       'skeletal muscle',
       'smm',
+      'كتلة الهيكل العضلي',
       'كتلة العضلات الهيكلية',
       'العضلات الهيكلية',
       'كتلة العضلات',
@@ -159,7 +246,15 @@ const QR_LABELS: { key: NumericDraftKey; aliases: string[] }[] = [
   },
   {
     key: 'bodyFatKg',
-    aliases: ['body fat mass', 'fat mass', 'bfm', 'كتلة الدهون', 'كتلة دهون الجسم', '체지방량'],
+    aliases: [
+      'body fat mass',
+      'fat mass',
+      'bfm',
+      'كتلة الدهون في الجسم',
+      'كتلة دهون الجسم',
+      'كتلة الدهون',
+      '체지방량',
+    ],
   },
   {
     key: 'bodyFatPercent',
@@ -168,9 +263,10 @@ const QR_LABELS: { key: NumericDraftKey; aliases: string[] }[] = [
       'body fat percentage',
       'body fat percent',
       'pbf',
-      'نسبة الدهون',
-      'نسبة دهون الجسم',
+      'النسبة المئوية للدهون بالجسم',
       'النسبة المئوية للدهون',
+      'نسبة دهون الجسم',
+      'نسبة الدهون',
       '체지방률',
     ],
   },
@@ -190,6 +286,7 @@ const QR_LABELS: { key: NumericDraftKey; aliases: string[] }[] = [
     aliases: [
       'total body water',
       'tbw',
+      'إجمالي المياه بالجسم',
       'إجمالي مياه الجسم',
       'اجمالي مياه الجسم',
       'الماء الكلي',
@@ -218,6 +315,7 @@ const QR_LABELS: { key: NumericDraftKey; aliases: string[] }[] = [
       'waist hip ratio',
       'waist to hip ratio',
       'whr',
+      'معدل حجم الخصر - الورك',
       'نسبة الخصر إلى الورك',
       'نسبة الخصر الى الورك',
       'نسبة الخصر للورك',
@@ -226,7 +324,15 @@ const QR_LABELS: { key: NumericDraftKey; aliases: string[] }[] = [
   },
   {
     key: 'inBodyScore',
-    aliases: ['inbody score', 'total score', 'نقاط إنبادي', 'نقاط انبادي', 'التقييم الكلي', '인바디점수'],
+    aliases: [
+      'inbody score',
+      'total score',
+      'درجة اختبار inbody',
+      'نقاط إنبادي',
+      'نقاط انبادي',
+      'التقييم الكلي',
+      '인바디점수',
+    ],
   },
   {
     key: 'bmrKcal',
@@ -258,32 +364,20 @@ export async function analyzeScanDocument(
   const { settings } = input;
 
   if (settings.photoAnalysis !== 'ai') {
-    throw new VisionError(
-      'unsupported',
-      'Reading sheets automatically is switched off. Turn photo analysis on in Settings, or type the numbers in.',
-    );
+    throw new ScanError('ai-off');
   }
 
   const apiKey = await getApiKey();
   if (!apiKey) {
-    throw new VisionError(
-      'no-key',
-      'No API key is saved yet. Add an Anthropic API key in Settings, or type the numbers in.',
-    );
+    throw new ScanError('no-key');
   }
 
   const base64 = input.base64 ?? (await readBase64(input.uri));
   if (!base64) {
-    throw new VisionError(
-      'unsupported',
-      'That file could not be read from this device. Pick it again, or type the numbers in.',
-    );
+    throw new ScanError('file-unreadable');
   }
   if (base64.length > MAX_BASE64_CHARS) {
-    throw new VisionError(
-      'too-large',
-      'That file is too large to send. Use a smaller photo or a shorter PDF, or type the numbers in.',
-    );
+    throw new ScanError('too-large');
   }
 
   const source =
@@ -323,34 +417,62 @@ export async function fetchInBodyQr(input: FetchInBodyQrInput): Promise<ScanExtr
   return extractionFrom(parseInBodyHtml(html));
 }
 
-const SCAN_HEADLINES: Record<ScanErrorCode, string> = {
-  'bad-url': 'That link is not an InBody page',
-  blocked: 'The browser blocked the page',
-  network: 'Connection problem',
-  'not-found': 'Page not available',
-  unreadable: 'Sheet could not be read',
+interface ScanErrorCopy {
+  headlineKey: ScanCopyKey;
+  suggestionKey: ScanCopyKey;
+  /** Used instead when the service sent words of its own worth quoting. */
+  detailKey?: ScanCopyKey;
+}
+
+/** Which two lines of copy each failure shows, as keys the screen resolves. */
+const SCAN_COPY: Record<ScanErrorCode, ScanErrorCopy> = {
+  'url-empty': { headlineKey: 'body:errLinkTitle', suggestionKey: 'body:errLinkEmpty' },
+  'url-shape': { headlineKey: 'body:errLinkTitle', suggestionKey: 'body:errLinkShape' },
+  'url-host': { headlineKey: 'body:errLinkTitle', suggestionKey: 'body:errLinkHost' },
+  blocked: { headlineKey: 'body:errBlockedTitle', suggestionKey: 'body:errBlockedBody' },
+  network: { headlineKey: 'body:errNetworkTitle', suggestionKey: 'body:errNetworkBody' },
+  'timeout-page': { headlineKey: 'body:errTimeoutTitle', suggestionKey: 'body:errTimeoutPage' },
+  'timeout-read': { headlineKey: 'body:errTimeoutTitle', suggestionKey: 'body:errTimeoutRead' },
+  'not-found': { headlineKey: 'body:errNotFoundTitle', suggestionKey: 'body:errNotFoundBody' },
+  'page-status': { headlineKey: 'body:errPageTitle', suggestionKey: 'body:errPageBody' },
+  'ai-off': { headlineKey: 'body:errAiOffTitle', suggestionKey: 'body:errAiOffBody' },
+  'no-key': { headlineKey: 'body:errNoKeyTitle', suggestionKey: 'body:errNoKeyBody' },
+  'file-unreadable': { headlineKey: 'body:errFileTitle', suggestionKey: 'body:errFileBody' },
+  'file-web': { headlineKey: 'body:errFileTitle', suggestionKey: 'body:errFileWebBody' },
+  'file-format': { headlineKey: 'body:errFileTitle', suggestionKey: 'body:errFileFormatBody' },
+  'too-large': { headlineKey: 'body:errTooLargeTitle', suggestionKey: 'body:errTooLargeBody' },
+  'rate-limit': { headlineKey: 'body:errBusyTitle', suggestionKey: 'body:errBusyBody' },
+  service: { headlineKey: 'body:errServiceTitle', suggestionKey: 'body:errServiceBody' },
+  'key-rejected': {
+    headlineKey: 'body:errKeyTitle',
+    suggestionKey: 'body:errKeyBody',
+    detailKey: 'body:errKeyBodyDetail',
+  },
+  'request-rejected': {
+    headlineKey: 'body:errRequestTitle',
+    suggestionKey: 'body:errRequestBody',
+    detailKey: 'body:errRequestBodyDetail',
+  },
+  refused: { headlineKey: 'body:errRefusedTitle', suggestionKey: 'body:errRefusedBody' },
+  'cut-off': { headlineKey: 'body:errCutOffTitle', suggestionKey: 'body:errCutOffBody' },
+  'bad-shape': { headlineKey: 'body:errShapeTitle', suggestionKey: 'body:errShapeBody' },
 };
 
-const SCAN_FALLBACKS: Record<ScanErrorCode, string> = {
-  'bad-url': 'Scan the QR code on the printout again, or type the numbers in.',
-  blocked: 'Open the link in a browser tab and type the numbers in.',
-  network: 'Check your connection and try again, or type the numbers in.',
-  'not-found': 'The result may have expired. Type the numbers in instead.',
-  unreadable: 'Type the numbers in instead.',
-};
-
-/** Ready-made copy for the import screen, so it never switches on codes itself. */
+/**
+ * Which keys the import screen should show, so it never switches on codes
+ * itself. A failure that carries the service's own words gets the variant of the
+ * suggestion that has room for them.
+ */
 export function describeScanError(error: unknown): ScanErrorDescription {
   const code = scanErrorCode(error);
-  if (code) {
-    const message = error instanceof Error ? error.message.trim() : '';
-    return { headline: SCAN_HEADLINES[code], suggestion: message || SCAN_FALLBACKS[code] };
+  if (!code) {
+    return { headlineKey: 'body:errUnknownTitle', suggestionKey: 'body:errUnknownBody' };
   }
-  if (isVisionError(error)) return describeVisionError(error);
-  return {
-    headline: 'Import failed',
-    suggestion: 'That sheet could not be read. Try again, or type the numbers in.',
-  };
+  const { headlineKey, suggestionKey, detailKey } = SCAN_COPY[code];
+  const params = scanErrorParams(error);
+  const detail = params && typeof params.detail === 'string' ? params.detail : '';
+  const key = detailKey && detail !== '' ? detailKey : suggestionKey;
+  return params ? { headlineKey, suggestionKey: key, params } : { headlineKey, suggestionKey: key };
 }
 
 /** Draft -> route param. Kept next to the reader so the two never drift. */
@@ -377,12 +499,16 @@ const SYSTEM_PROMPT = [
   'and never calculate, estimate or guess a value the sheet does not show.',
   'Use these units: mass in kilograms, total body water in litres, energy in kilocalories.',
   'Convert pounds to kilograms when the sheet is imperial.',
-  'Arabic labels you will meet: الوزن weight, كتلة العضلات الهيكلية skeletal muscle mass,',
-  'كتلة الدهون body fat mass, نسبة الدهون percent body fat, الكتلة الخالية من الدهون fat free mass,',
-  'إجمالي مياه الجسم total body water, البروتين protein, المعادن minerals, مؤشر كتلة الجسم BMI,',
-  'معدل الأيض الأساسي basal metabolic rate, مستوى الدهون الحشوية visceral fat level,',
-  'نسبة الخصر إلى الورك waist-hip ratio, الوزن المستهدف target weight,',
-  'and for the segmental analysis الذراع اليمنى right arm, الذراع اليسرى left arm, الجذع trunk,',
+  'Arabic labels you will meet, in the wording these sheets print:',
+  'الوزن weight, كتلة الهيكل العضلي skeletal muscle mass, كتلة الدهون في الجسم body fat mass,',
+  'النسبة المئوية للدهون بالجسم percent body fat, الكتلة الخالية من الدهون fat free mass,',
+  'إجمالي المياه بالجسم total body water, البروتين protein, المعادن minerals,',
+  'مؤشر كتلة الجسم BMI, معدل الأيض الأساسي basal metabolic rate,',
+  'مستوى الدهون الحشوية visceral fat level, مساحة الدهون الحشوية visceral fat area,',
+  'معدل حجم الخصر - الورك waist-hip ratio, درجة اختبار InBody the InBody score,',
+  'الوزن المطلوب تحقيقه target weight, تحليل العضلات بشكل مقطعي segmental lean mass,',
+  'تحليل الدهون بشكل مقطعي segmental fat mass,',
+  'and within those two charts الذراع اليمنى right arm, الذراع اليسرى left arm, الجذع trunk,',
   'الساق اليمنى right leg, الساق اليسرى left leg.',
   'Do not interpret the reading, do not comment on the body it describes, and do not give medical,',
   'dietary or training advice.',
@@ -470,27 +596,18 @@ async function readBase64(uri: string): Promise<string> {
   if (uri.startsWith('data:')) {
     const marker = uri.indexOf(';base64,');
     if (marker === -1) {
-      throw new VisionError(
-        'unsupported',
-        'That file is in a format the app cannot send. Pick another one, or type the numbers in.',
-      );
+      throw new ScanError('file-format');
     }
     return uri.slice(marker + ';base64,'.length);
   }
   if (Platform.OS === 'web') {
     // Browsers cannot read a local path; the pickers hand over base64 instead.
-    throw new VisionError(
-      'unsupported',
-      'This file could not be read in the browser. Choose it again so the app can attach the data.',
-    );
+    throw new ScanError('file-web');
   }
   try {
     return await new FsFile(uri).base64();
   } catch {
-    throw new VisionError(
-      'unsupported',
-      'That file could not be read from this device. Pick it again, or type the numbers in.',
-    );
+    throw new ScanError('file-unreadable');
   }
 }
 
@@ -533,57 +650,27 @@ async function postMessage(
     try {
       return JSON.parse(raw) as unknown;
     } catch {
-      throw new VisionError(
-        'bad-response',
-        'The service sent a reply the app could not read. Try again in a moment.',
-      );
+      throw new ScanError('bad-shape');
     }
   } catch (error) {
-    if (error instanceof VisionError) throw error;
+    if (error instanceof ScanError) throw error;
     // A caller-driven cancellation is not a failure worth dressing up.
     if (signal?.aborted) throw error;
-    if (timedOut) {
-      throw new VisionError(
-        'network',
-        'Reading the sheet took longer than a minute. Try again on a stronger connection.',
-      );
-    }
-    throw new VisionError(
-      'network',
-      'Could not reach the analysis service. Check your connection and try again.',
-    );
+    if (timedOut) throw new ScanError('timeout-read');
+    throw new ScanError('network');
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener('abort', forwardAbort);
   }
 }
 
-function statusError(status: number, raw: string): VisionError {
-  if (status === 429) {
-    return new VisionError(
-      'rate-limit',
-      'The analysis service is busy with this key right now. Wait a minute and try again.',
-    );
-  }
-  if (status >= 500) {
-    return new VisionError(
-      'network',
-      'The analysis service is having trouble right now. Try again in a moment.',
-    );
-  }
+function statusError(status: number, raw: string): ScanError {
+  if (status === 429) return new ScanError('rate-limit');
+  if (status >= 500) return new ScanError('service');
   const detail = apiErrorDetail(raw);
-  if (status === 401 || status === 403) {
-    return new VisionError(
-      'bad-response',
-      `The saved API key was rejected${detail ? ` (${detail})` : ''}. Check it in Settings.`,
-    );
-  }
-  return new VisionError(
-    'bad-response',
-    detail
-      ? `The analysis service rejected the request: ${detail}`
-      : 'The analysis service rejected the request. Try again, or type the numbers in.',
-  );
+  const params = detail ? { detail } : undefined;
+  if (status === 401 || status === 403) return new ScanError('key-rejected', params);
+  return new ScanError('request-rejected', params);
 }
 
 /** Pulls the API's own error sentence out of the body, when there is one. */
@@ -603,13 +690,10 @@ function apiErrorDetail(raw: string): string {
 
 function toolInputFrom(payload: unknown): Record<string, unknown> {
   if (!isRecord(payload)) {
-    throw new VisionError('bad-response', 'The reply came back empty. Try again in a moment.');
+    throw new ScanError('bad-shape');
   }
   if (payload.stop_reason === 'refusal') {
-    throw new VisionError(
-      'bad-response',
-      'The model declined to read this sheet. Type the numbers in instead.',
-    );
+    throw new ScanError('refused');
   }
   const content = payload.content;
   if (Array.isArray(content)) {
@@ -625,15 +709,9 @@ function toolInputFrom(payload: unknown): Record<string, unknown> {
     }
   }
   if (payload.stop_reason === 'max_tokens') {
-    throw new VisionError(
-      'bad-response',
-      'The reading was cut off before it finished. Try again, or type the numbers in.',
-    );
+    throw new ScanError('cut-off');
   }
-  throw new VisionError(
-    'bad-response',
-    'The analysis service replied in an unexpected shape. Try again, or type the numbers in.',
-  );
+  throw new ScanError('bad-shape');
 }
 
 /** Builds a draft out of one record of loose values, dropping what cannot hold. */
@@ -708,25 +786,19 @@ const INBODY_HOSTS = ['inbody.com', 'lookinbody.com'];
 function inBodyUrl(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) {
-    throw new ScanError('bad-url', 'Paste the link from the QR code first.');
+    throw new ScanError('url-empty');
   }
 
   const match = /^(https?):\/\/([^/?#\s]+)/i.exec(trimmed);
   if (!match) {
-    throw new ScanError(
-      'bad-url',
-      'That is not a web link. Scan the QR code on the printout, or type the numbers in.',
-    );
+    throw new ScanError('url-shape');
   }
 
   const authority = match[2] ?? '';
   const host = (authority.split('@').pop() ?? '').split(':')[0]?.toLowerCase() ?? '';
   const allowed = INBODY_HOSTS.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
   if (!allowed) {
-    throw new ScanError(
-      'bad-url',
-      `${host || 'That address'} is not an InBody result page, so the app will not open it. Type the numbers in instead.`,
-    );
+    throw new ScanError('url-host', host ? { host } : undefined);
   }
 
   return trimmed;
@@ -754,16 +826,10 @@ async function getHtml(url: string, signal: AbortSignal | undefined): Promise<st
     });
 
     if (response.status === 404 || response.status === 410) {
-      throw new ScanError(
-        'not-found',
-        'That result page is gone. InBody links expire, so type the numbers in instead.',
-      );
+      throw new ScanError('not-found');
     }
     if (!response.ok) {
-      throw new ScanError(
-        'network',
-        `The result page answered with an error (${response.status}). Try again, or type the numbers in.`,
-      );
+      throw new ScanError('page-status', { status: response.status });
     }
 
     const text = await response.text();
@@ -772,23 +838,14 @@ async function getHtml(url: string, signal: AbortSignal | undefined): Promise<st
     if (error instanceof ScanError) throw error;
     if (signal?.aborted) throw error;
     if (timedOut) {
-      throw new ScanError(
-        'network',
-        'The result page took too long to answer. Try again, or type the numbers in.',
-      );
+      throw new ScanError('timeout-page');
     }
     // In a browser a cross-site page that sends no CORS header fails exactly here,
     // as a TypeError with no status, and no request can fix it from this side.
     if (Platform.OS === 'web') {
-      throw new ScanError(
-        'blocked',
-        'This browser will not let the app read a page from inbody.com, so the sheet cannot be fetched here. Open the link yourself and type the numbers in.',
-      );
+      throw new ScanError('blocked');
     }
-    throw new ScanError(
-      'network',
-      'Could not reach the result page. Check your connection and try again.',
-    );
+    throw new ScanError('network');
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener('abort', forwardAbort);
@@ -991,12 +1048,18 @@ function scanErrorCode(error: unknown): ScanErrorCode | null {
   // Survives a class identity mismatch across bundles.
   if (isRecord(error) && error.name === 'ScanError' && typeof error.code === 'string') {
     const code = error.code as ScanErrorCode;
-    if (code in SCAN_HEADLINES) return code;
+    if (code in SCAN_COPY) return code;
   }
   return null;
 }
 
-function isVisionError(error: unknown): boolean {
-  if (error instanceof VisionError) return true;
-  return isRecord(error) && error.name === 'VisionError' && typeof error.code === 'string';
+/** The interpolations a failure carries, read defensively for the same reason. */
+function scanErrorParams(error: unknown): ScanErrorParams | undefined {
+  const raw = isRecord(error) ? error.params : undefined;
+  if (!isRecord(raw)) return undefined;
+  const params: ScanErrorParams = {};
+  for (const [name, value] of Object.entries(raw)) {
+    if (typeof value === 'string' || typeof value === 'number') params[name] = value;
+  }
+  return Object.keys(params).length > 0 ? params : undefined;
 }

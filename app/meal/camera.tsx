@@ -4,6 +4,7 @@ import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Linking,
   Platform,
@@ -14,9 +15,11 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useFoodLabels } from '@/components/meal/useFoodLabels';
+import { useDayLabels } from '@/components/today/useDayLabels';
 import { AppHeader, Button, Card, IconButton, Screen, Txt } from '@/components/ui';
-import { currentSlot, formatDayLabel, todayKey } from '@/domain/date';
-import { MEAL_SLOTS, SLOT_LABELS } from '@/domain/totals';
+import { currentSlot, todayKey } from '@/domain/date';
+import { MEAL_SLOTS } from '@/domain/totals';
 import { setPendingPhotoMeal } from '@/state/pendingMeal';
 import { darkPalette, radius, spacing, useTheme } from '@/theme';
 import type { MealSlot } from '@/types';
@@ -74,6 +77,9 @@ export default function CameraScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ slot?: string; date?: string }>();
   const { colors } = useTheme();
+  const { t } = useTranslation(['meals', 'common']);
+  const labels = useFoodLabels();
+  const dayLabels = useDayLabels();
   const insets = useSafeAreaInsets();
 
   const slot = readSlot(params.slot);
@@ -126,17 +132,17 @@ export default function CameraScreen() {
     try {
       const photo = await camera.takePictureAsync(CAPTURE_OPTIONS);
       if (!photo?.uri) {
-        setError('The photo came back empty. Try again, or pick one from your library.');
+        setError(t('meals:cameraErrorEmpty'));
         setBusy(false);
         return;
       }
       setTorch(false);
       handoff(photo.uri, photo.base64 ?? undefined, `image/${photo.format === 'png' ? 'png' : 'jpeg'}`);
     } catch {
-      setError('The camera could not take that shot. Try again, or pick one from your library.');
+      setError(t('meals:cameraErrorCapture'));
       setBusy(false);
     }
-  }, [busy, ready, handoff]);
+  }, [busy, ready, handoff, t]);
 
   const pickFromLibrary = useCallback(async () => {
     if (busy) return;
@@ -152,35 +158,37 @@ export default function CameraScreen() {
       setTorch(false);
       handoff(asset.uri, asset.base64 ?? undefined, asset.mimeType);
     } catch {
-      setError('That image could not be opened. Pick another one.');
+      setError(t('meals:cameraErrorPick'));
       setBusy(false);
     }
-  }, [busy, handoff]);
+  }, [busy, handoff, t]);
 
   const openSettings = useCallback(() => {
     Linking.openSettings().catch(() => {
-      setError('Open the Settings app and allow camera access for Nutrition.');
+      setError(t('meals:cameraErrorSettings', { app: t('common:appName') }));
     });
-  }, []);
+  }, [t]);
 
   /* ------------------------------------------------- picker-only fallback -- */
 
   if (previewUnavailable || (permission && !permission.granted)) {
     const denied = !previewUnavailable;
-    const title = denied ? 'Camera is blocked' : 'Camera preview unavailable';
+    const title = denied
+      ? t('meals:cameraBlockedTitle')
+      : t('meals:cameraNoPreviewTitle');
     const message = denied
       ? permission?.canAskAgain
-        ? 'Nutrition needs the camera to photograph your plate. Allow access, or pick a photo you already have.'
-        : 'Camera access is switched off for Nutrition. Turn it on in your device settings, or pick a photo you already have.'
+        ? t('meals:cameraBlockedAsk', { app: t('common:appName') })
+        : t('meals:cameraBlockedSettings', { app: t('common:appName') })
       : Platform.OS === 'web'
-        ? 'This browser build cannot show a live preview, so pick a photo of your meal instead.'
-        : 'This device cannot start the camera right now, so pick a photo of your meal instead.';
+        ? t('meals:cameraNoPreviewWeb')
+        : t('meals:cameraNoPreviewDevice');
 
     return (
       <Screen scroll edges={['top', 'bottom']} keyboardAvoiding={false}>
         <AppHeader
-          title="Photograph a meal"
-          subtitle={`${SLOT_LABELS[slot]} · ${formatDayLabel(date)}`}
+          title={t('meals:cameraTitle')}
+          subtitle={`${labels.slot(slot)} · ${dayLabels.day(date)}`}
           onBack={leave}
         />
 
@@ -204,7 +212,7 @@ export default function CameraScreen() {
 
           <View style={styles.fallbackActions}>
             <Button
-              label="Choose from library"
+              label={t('meals:cameraLibrary')}
               icon="images-outline"
               onPress={() => void pickFromLibrary()}
               loading={busy}
@@ -212,7 +220,7 @@ export default function CameraScreen() {
             />
             {denied && permission?.canAskAgain ? (
               <Button
-                label="Allow camera"
+                label={t('meals:cameraAllow')}
                 icon="camera-outline"
                 variant="secondary"
                 onPress={() => void requestPermission()}
@@ -221,7 +229,7 @@ export default function CameraScreen() {
             ) : null}
             {denied && !permission?.canAskAgain && Platform.OS !== 'web' ? (
               <Button
-                label="Open Settings"
+                label={t('meals:openSettings')}
                 icon="settings-outline"
                 variant="secondary"
                 onPress={openSettings}
@@ -230,7 +238,7 @@ export default function CameraScreen() {
             ) : null}
             {mountFailed ? (
               <Button
-                label="Try the camera again"
+                label={t('meals:cameraRetry')}
                 icon="refresh-outline"
                 variant="ghost"
                 onPress={() => {
@@ -249,7 +257,7 @@ export default function CameraScreen() {
             </Txt>
           ) : (
             <Txt variant="caption" color="faint" align="center" style={styles.fallbackError}>
-              You check and correct every item on the next screen before anything is logged.
+              {t('meals:cameraReviewNote')}
             </Txt>
           )}
         </Card>
@@ -286,20 +294,24 @@ export default function CameraScreen() {
       >
         <IconButton
           icon="close"
-          accessibilityLabel="Close the camera"
+          accessibilityLabel={t('meals:cameraClose')}
           onPress={leave}
           color={CHROME.text}
         />
         <View
           style={styles.topText}
           accessible
-          accessibilityLabel={`${SLOT_LABELS[slot]}, ${formatDayLabel(date)}. Fill the frame with your plate.`}
+          accessibilityLabel={t('meals:cameraTopSpoken', {
+            slot: labels.slot(slot),
+            day: dayLabels.day(date),
+            hint: t('meals:cameraFrameHint'),
+          })}
         >
           <Txt weight="semibold" color={CHROME.text} align="center" numberOfLines={1}>
-            {`${SLOT_LABELS[slot]} · ${formatDayLabel(date)}`}
+            {`${labels.slot(slot)} · ${dayLabels.day(date)}`}
           </Txt>
           <Txt variant="caption" color={CHROME.muted} align="center" numberOfLines={1}>
-            Fill the frame with your plate
+            {t('meals:cameraFrameHint')}
           </Txt>
         </View>
         {Platform.OS === 'web' ? (
@@ -307,7 +319,7 @@ export default function CameraScreen() {
         ) : (
           <IconButton
             icon={torch ? 'flashlight' : 'flashlight-outline'}
-            accessibilityLabel={torch ? 'Turn the torch off' : 'Turn the torch on'}
+            accessibilityLabel={torch ? t('meals:cameraTorchOff') : t('meals:cameraTorchOn')}
             onPress={() => setTorch((on) => !on)}
             color={torch ? darkPalette.warning : CHROME.text}
           />
@@ -331,13 +343,13 @@ export default function CameraScreen() {
             onPress={() => void pickFromLibrary()}
             disabled={busy}
             accessibilityRole="button"
-            accessibilityLabel="Choose from library"
+            accessibilityLabel={t('meals:cameraLibrary')}
             accessibilityState={{ disabled: busy }}
             style={({ pressed }) => [styles.sideAction, pressed ? styles.pressed : null]}
           >
             <Ionicons name="images-outline" size={22} color={CHROME.text} {...DECORATIVE} />
             <Txt variant="caption" color={CHROME.muted} align="center">
-              Library
+              {t('meals:cameraLibraryShort')}
             </Txt>
           </Pressable>
 
@@ -345,7 +357,7 @@ export default function CameraScreen() {
             onPress={() => void capture()}
             disabled={busy || !ready}
             accessibilityRole="button"
-            accessibilityLabel="Take a photo of this meal"
+            accessibilityLabel={t('meals:cameraShutter')}
             accessibilityState={{ disabled: busy || !ready, busy }}
             style={({ pressed }) => [
               styles.shutter,
@@ -361,9 +373,7 @@ export default function CameraScreen() {
         </View>
 
         <Txt variant="caption" color={CHROME.muted} align="center" style={styles.hint}>
-          {ready
-            ? 'You check every item on the next screen before it is logged.'
-            : 'Starting the camera…'}
+          {ready ? t('meals:cameraReviewNote') : `${t('meals:cameraStarting')}…`}
         </Txt>
       </View>
     </View>

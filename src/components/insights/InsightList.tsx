@@ -1,16 +1,18 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Badge, EmptyState, Txt } from '@/components/ui';
+import { formatCount } from '@/domain/format';
+import type { Insight } from '@/domain/insights';
 import { spacing } from '@/theme';
-import type { Insight } from '@/types';
 
 import { InsightCard } from './InsightCard';
 
 export interface InsightListProps {
   /** Already sorted and capped by the engine; rendered in the order given. */
   insights: Insight[];
-  /** Heading above the list. */
+  /** Heading above the list. Defaults to the translated section name. */
   title?: string;
   /** One line under the heading. */
   subtitle?: string;
@@ -19,25 +21,19 @@ export interface InsightListProps {
   style?: StyleProp<ViewStyle>;
 }
 
-const DEFAULT_EMPTY =
-  'Log a few days of meals, a session and a body scan, and this list fills in with numbers ' +
-  'from your own days.';
-
 /** The heading, the cards, and an honest empty state when nothing fired. */
-export function InsightList({
-  insights,
-  title = 'Insights',
-  subtitle,
-  emptyMessage,
-  style,
-}: InsightListProps) {
+export function InsightList({ insights, title, subtitle, emptyMessage, style }: InsightListProps) {
+  const { t } = useTranslation('insights');
+
   return (
     <View style={style}>
       <View style={styles.header}>
         <Txt variant="heading" accessibilityRole="header" style={styles.title}>
-          {title}
+          {title ?? t('listTitle')}
         </Txt>
-        {insights.length > 0 ? <Badge label={String(insights.length)} tone="accent" /> : null}
+        {insights.length > 0 ? (
+          <Badge label={formatCount(insights.length)} tone="accent" />
+        ) : null}
       </View>
 
       {subtitle ? (
@@ -49,8 +45,8 @@ export function InsightList({
       {insights.length === 0 ? (
         <EmptyState
           icon="bulb-outline"
-          title="Nothing to flag yet"
-          message={emptyMessage ?? DEFAULT_EMPTY}
+          title={t('emptyTitle')}
+          message={emptyMessage ?? t('emptyMessage')}
           style={styles.empty}
         />
       ) : (

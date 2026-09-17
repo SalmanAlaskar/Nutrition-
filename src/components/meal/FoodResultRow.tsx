@@ -1,14 +1,15 @@
 import React, { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Badge, Txt } from '@/components/ui';
 import { defaultServing } from '@/data/foodSearch';
-import { CATEGORY_LABELS } from '@/data/foods';
+import { formatCount } from '@/domain/format';
 import { macrosForGrams } from '@/domain/nutrition';
 import { spacing, useTheme } from '@/theme';
 import type { FoodItem } from '@/types';
 
-import { formatCount } from '../../../app/onboarding/_layout';
+import { useFoodLabels } from './useFoodLabels';
 
 export interface FoodResultRowProps {
   food: FoodItem;
@@ -21,6 +22,8 @@ export interface FoodResultRowProps {
 /** One search hit: what the food is called, and what a normal portion costs. */
 export function FoodResultRow({ food, onPress, custom = false, style }: FoodResultRowProps) {
   const { colors } = useTheme();
+  const { t } = useTranslation(['meals', 'units']);
+  const labels = useFoodLabels();
 
   const serving = useMemo(() => defaultServing(food), [food]);
   const calories = useMemo(
@@ -28,18 +31,24 @@ export function FoodResultRow({ food, onPress, custom = false, style }: FoodResu
     [food, serving],
   );
 
-  const meta = [food.brand, CATEGORY_LABELS[food.category], serving.label]
+  const portion = labels.portion(serving.label, serving.grams, food.liquid);
+  const secondary = labels.secondaryName(food);
+  const meta = [food.brand, labels.category(food.category), portion]
     .filter((part): part is string => Boolean(part))
     .join(' · ');
+
+  const spoken = t('meals:resultSpoken', {
+    name: labels.name(food),
+    value: formatCount(calories),
+    portion,
+  });
 
   return (
     <Pressable
       onPress={() => onPress(food)}
       accessibilityRole="button"
-      accessibilityLabel={`${food.name}, ${formatCount(calories)} kilocalories per ${serving.label}${
-        custom ? ', your own food' : ''
-      }`}
-      accessibilityHint="Opens portion options"
+      accessibilityLabel={custom ? `${spoken}. ${t('meals:yoursSpoken')}` : spoken}
+      accessibilityHint={t('meals:resultHint')}
       style={({ pressed }) => [
         styles.row,
         pressed ? { backgroundColor: colors.surfaceAlt } : null,
@@ -49,14 +58,14 @@ export function FoodResultRow({ food, onPress, custom = false, style }: FoodResu
       <View style={styles.text}>
         <View style={styles.titleRow}>
           <Txt weight="semibold" numberOfLines={1} style={styles.title}>
-            {food.name}
+            {labels.name(food)}
           </Txt>
-          {custom ? <Badge label="Yours" tone="accent" /> : null}
+          {custom ? <Badge label={t('meals:yours')} tone="accent" /> : null}
         </View>
 
-        {food.nameAr ? (
-          <Txt variant="label" color="muted" numberOfLines={1} style={styles.arabic}>
-            {food.nameAr}
+        {secondary ? (
+          <Txt variant="label" color="muted" numberOfLines={1} style={styles.secondary}>
+            {secondary}
           </Txt>
         ) : null}
 
@@ -70,7 +79,7 @@ export function FoodResultRow({ food, onPress, custom = false, style }: FoodResu
           {formatCount(calories)}
         </Txt>
         <Txt variant="caption" color="faint" style={styles.unit}>
-          kcal
+          {t('units:kcal')}
         </Txt>
       </View>
     </Pressable>
@@ -97,7 +106,7 @@ const styles = StyleSheet.create({
   title: {
     flexShrink: 1,
   },
-  arabic: {
+  secondary: {
     marginTop: 2,
   },
   meta: {

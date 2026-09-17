@@ -18,11 +18,35 @@ export type ScanMetricKey = {
   [K in keyof BodyScan]-?: BodyScan[K] extends number | undefined ? K : never;
 }[keyof BodyScan];
 
+/**
+ * Every label here is a translation key, namespaced for `t()`. The sheet is
+ * printed in Arabic or English depending on the machine, so nothing in this file
+ * carries finished copy: the screen resolves the key in the reader's language.
+ */
+export type ScanMetricLabelKey =
+  | 'body:fieldWeight'
+  | 'body:fieldMuscle'
+  | 'body:fieldFatMass'
+  | 'body:fieldFatPercent'
+  | 'body:fieldLeanMass'
+  | 'body:fieldWater'
+  | 'body:fieldProtein'
+  | 'body:fieldMinerals'
+  | 'body:fieldBmi'
+  | 'body:fieldBmr'
+  | 'body:fieldVisceralLevel'
+  | 'body:fieldVisceralArea'
+  | 'body:fieldWaistHip'
+  | 'body:fieldScore'
+  | 'body:fieldTargetWeight';
+
+/** Unit keys, absent for a bare index such as BMI or the InBody score. */
+export type ScanUnitKey = 'units:kg' | 'units:percent' | 'units:litre' | 'units:kcal' | 'body:unitCm2';
+
 export interface ScanMetricDef {
   key: ScanMetricKey;
-  label: string;
-  /** Display unit, empty for a bare index such as BMI or the InBody score. */
-  unit: string;
+  labelKey: ScanMetricLabelKey;
+  unitKey?: ScanUnitKey;
   /** Decimal places to show. */
   decimals: number;
   /**
@@ -34,20 +58,20 @@ export interface ScanMetricDef {
 
 /** The measured metrics, in the order a summary should list them. */
 export const SCAN_METRICS: ScanMetricDef[] = [
-  { key: 'weightKg', label: 'Weight', unit: 'kg', decimals: 1, higherIsBetter: null },
-  { key: 'skeletalMuscleKg', label: 'Skeletal muscle', unit: 'kg', decimals: 1, higherIsBetter: true },
-  { key: 'bodyFatKg', label: 'Body fat mass', unit: 'kg', decimals: 1, higherIsBetter: false },
-  { key: 'bodyFatPercent', label: 'Body fat', unit: '%', decimals: 1, higherIsBetter: false },
-  { key: 'fatFreeMassKg', label: 'Fat free mass', unit: 'kg', decimals: 1, higherIsBetter: true },
-  { key: 'totalBodyWaterL', label: 'Total body water', unit: 'L', decimals: 1, higherIsBetter: null },
-  { key: 'proteinKg', label: 'Protein', unit: 'kg', decimals: 1, higherIsBetter: true },
-  { key: 'mineralsKg', label: 'Minerals', unit: 'kg', decimals: 2, higherIsBetter: true },
-  { key: 'bmi', label: 'BMI', unit: '', decimals: 1, higherIsBetter: null },
-  { key: 'bmrKcal', label: 'BMR', unit: 'kcal', decimals: 0, higherIsBetter: true },
-  { key: 'visceralFatLevel', label: 'Visceral fat level', unit: '', decimals: 0, higherIsBetter: false },
-  { key: 'visceralFatAreaCm2', label: 'Visceral fat area', unit: 'cm²', decimals: 1, higherIsBetter: false },
-  { key: 'waistHipRatio', label: 'Waist-hip ratio', unit: '', decimals: 2, higherIsBetter: false },
-  { key: 'inBodyScore', label: 'InBody score', unit: '', decimals: 0, higherIsBetter: true },
+  { key: 'weightKg', labelKey: 'body:fieldWeight', unitKey: 'units:kg', decimals: 1, higherIsBetter: null },
+  { key: 'skeletalMuscleKg', labelKey: 'body:fieldMuscle', unitKey: 'units:kg', decimals: 1, higherIsBetter: true },
+  { key: 'bodyFatKg', labelKey: 'body:fieldFatMass', unitKey: 'units:kg', decimals: 1, higherIsBetter: false },
+  { key: 'bodyFatPercent', labelKey: 'body:fieldFatPercent', unitKey: 'units:percent', decimals: 1, higherIsBetter: false },
+  { key: 'fatFreeMassKg', labelKey: 'body:fieldLeanMass', unitKey: 'units:kg', decimals: 1, higherIsBetter: true },
+  { key: 'totalBodyWaterL', labelKey: 'body:fieldWater', unitKey: 'units:litre', decimals: 1, higherIsBetter: null },
+  { key: 'proteinKg', labelKey: 'body:fieldProtein', unitKey: 'units:kg', decimals: 1, higherIsBetter: true },
+  { key: 'mineralsKg', labelKey: 'body:fieldMinerals', unitKey: 'units:kg', decimals: 2, higherIsBetter: true },
+  { key: 'bmi', labelKey: 'body:fieldBmi', decimals: 1, higherIsBetter: null },
+  { key: 'bmrKcal', labelKey: 'body:fieldBmr', unitKey: 'units:kcal', decimals: 0, higherIsBetter: true },
+  { key: 'visceralFatLevel', labelKey: 'body:fieldVisceralLevel', decimals: 0, higherIsBetter: false },
+  { key: 'visceralFatAreaCm2', labelKey: 'body:fieldVisceralArea', unitKey: 'body:unitCm2', decimals: 1, higherIsBetter: false },
+  { key: 'waistHipRatio', labelKey: 'body:fieldWaistHip', decimals: 2, higherIsBetter: false },
+  { key: 'inBodyScore', labelKey: 'body:fieldScore', decimals: 0, higherIsBetter: true },
 ];
 
 /** Signed differences between two scans. A metric is absent unless both have it. */
@@ -152,53 +176,92 @@ const MAX_BODY_FAT_PERCENT = 70;
 /** How far body fat mass may sit from weight x percent before it is suspect. */
 const FAT_MASS_TOLERANCE = 0.05;
 
-const SEGMENT_LABELS: Record<keyof SegmentalValues, string> = {
-  rightArm: 'right arm',
-  leftArm: 'left arm',
-  trunk: 'trunk',
-  rightLeg: 'right leg',
-  leftLeg: 'left leg',
+/** Segment labels, as translation keys. */
+export type ScanSegmentLabelKey =
+  | 'body:segmentRightArm'
+  | 'body:segmentLeftArm'
+  | 'body:segmentTrunk'
+  | 'body:segmentRightLeg'
+  | 'body:segmentLeftLeg';
+
+export const SEGMENT_LABEL_KEYS: Record<keyof SegmentalValues, ScanSegmentLabelKey> = {
+  rightArm: 'body:segmentRightArm',
+  leftArm: 'body:segmentLeftArm',
+  trunk: 'body:segmentTrunk',
+  rightLeg: 'body:segmentRightLeg',
+  leftLeg: 'body:segmentLeftLeg',
 };
 
-function segmentProblems(values: SegmentalValues | undefined, what: string): string[] {
+/** Anything this file can name inside a problem sentence. */
+export type ScanLabelKey = ScanMetricLabelKey | ScanSegmentLabelKey | 'body:leanMass' | 'body:fatMass';
+
+export type ScanProblemKey =
+  | 'body:problemWeightRequired'
+  | 'body:problemNotNumber'
+  | 'body:problemNegative'
+  | 'body:problemSegmentNegative'
+  | 'body:problemFatRange'
+  | 'body:problemMuscleOverLean'
+  | 'body:problemLeanOverWeight'
+  | 'body:problemFatMismatch';
+
+/**
+ * One thing worth checking, as a key and its parts rather than a sentence, so
+ * the screen can say it in the reader's language.
+ */
+export interface ScanProblem {
+  key: ScanProblemKey;
+  /** Interpolations whose value is itself a translation key. */
+  labels?: Record<string, ScanLabelKey>;
+  /** Interpolations that are numbers, for the screen to format. */
+  values?: Record<string, number>;
+}
+
+function segmentProblems(
+  values: SegmentalValues | undefined,
+  kind: 'body:leanMass' | 'body:fatMass',
+): ScanProblem[] {
   if (!values) return [];
-  const problems: string[] = [];
-  for (const key of Object.keys(SEGMENT_LABELS) as (keyof SegmentalValues)[]) {
+  const problems: ScanProblem[] = [];
+  for (const key of Object.keys(SEGMENT_LABEL_KEYS) as (keyof SegmentalValues)[]) {
     const value = values[key];
     if (value !== undefined && value < 0) {
-      problems.push(`Segmental ${what} for the ${SEGMENT_LABELS[key]} cannot be negative.`);
+      problems.push({
+        key: 'body:problemSegmentNegative',
+        labels: { kind, part: SEGMENT_LABEL_KEYS[key] },
+      });
     }
   }
   return problems;
 }
 
 /**
- * Everything wrong with a reading, phrased for the person fixing it. An empty
- * list means the numbers are internally consistent, not that they are correct.
+ * Everything worth a second look on a reading. An empty list means the numbers
+ * are internally consistent, not that they are correct.
  */
-export function validateScan(scan: BodyScan): string[] {
-  const problems: string[] = [];
+export function validateScan(scan: BodyScan): ScanProblem[] {
+  const problems: ScanProblem[] = [];
 
   if (!Number.isFinite(scan.weightKg) || scan.weightKg <= 0) {
-    problems.push('Weight is required and must be greater than zero.');
+    problems.push({ key: 'body:problemWeightRequired' });
   }
 
   for (const metric of SCAN_METRICS) {
     const value = scan[metric.key];
     if (value === undefined) continue;
     if (!Number.isFinite(value)) {
-      problems.push(`${metric.label} is not a number.`);
+      problems.push({ key: 'body:problemNotNumber', labels: { label: metric.labelKey } });
     } else if (value < 0) {
-      problems.push(`${metric.label} cannot be negative.`);
+      problems.push({ key: 'body:problemNegative', labels: { label: metric.labelKey } });
     }
   }
 
   if (scan.targetWeightKg !== undefined && scan.targetWeightKg < 0) {
-    problems.push('Target weight cannot be negative.');
+    problems.push({ key: 'body:problemNegative', labels: { label: 'body:fieldTargetWeight' } });
   }
 
-  problems.push(...segmentProblems(scan.segmentalLeanKg, 'lean mass'));
-  problems.push(...segmentProblems(scan.segmentalFatKg, 'fat mass'));
+  problems.push(...segmentProblems(scan.segmentalLeanKg, 'body:leanMass'));
+  problems.push(...segmentProblems(scan.segmentalFatKg, 'body:fatMass'));
 
   const { bodyFatPercent, bodyFatKg, fatFreeMassKg, skeletalMuscleKg, weightKg } = scan;
 
@@ -207,10 +270,14 @@ export function validateScan(scan: BodyScan): string[] {
     Number.isFinite(bodyFatPercent) &&
     (bodyFatPercent < MIN_BODY_FAT_PERCENT || bodyFatPercent > MAX_BODY_FAT_PERCENT)
   ) {
-    problems.push(
-      `Percent body fat of ${round(bodyFatPercent, 1)}% is outside the readable ` +
-        `${MIN_BODY_FAT_PERCENT}-${MAX_BODY_FAT_PERCENT}% range.`,
-    );
+    problems.push({
+      key: 'body:problemFatRange',
+      values: {
+        value: round(bodyFatPercent, 1),
+        min: MIN_BODY_FAT_PERCENT,
+        max: MAX_BODY_FAT_PERCENT,
+      },
+    });
   }
 
   if (
@@ -218,27 +285,31 @@ export function validateScan(scan: BodyScan): string[] {
     fatFreeMassKg !== undefined &&
     skeletalMuscleKg > fatFreeMassKg
   ) {
-    problems.push(
-      `Skeletal muscle (${round(skeletalMuscleKg, 1)} kg) cannot be more than ` +
-        `fat free mass (${round(fatFreeMassKg, 1)} kg).`,
-    );
+    problems.push({
+      key: 'body:problemMuscleOverLean',
+      values: { muscle: round(skeletalMuscleKg, 1), lean: round(fatFreeMassKg, 1) },
+    });
   }
 
   if (fatFreeMassKg !== undefined && weightKg > 0 && fatFreeMassKg > weightKg) {
-    problems.push(
-      `Fat free mass (${round(fatFreeMassKg, 1)} kg) cannot be more than ` +
-        `weight (${round(weightKg, 1)} kg).`,
-    );
+    problems.push({
+      key: 'body:problemLeanOverWeight',
+      values: { lean: round(fatFreeMassKg, 1), weight: round(weightKg, 1) },
+    });
   }
 
   if (bodyFatKg !== undefined && bodyFatPercent !== undefined && weightKg > 0) {
     const expected = (weightKg * bodyFatPercent) / 100;
     if (expected > 0 && Math.abs(bodyFatKg - expected) / expected > FAT_MASS_TOLERANCE) {
-      problems.push(
-        `Body fat mass of ${round(bodyFatKg, 1)} kg does not match ` +
-          `${round(bodyFatPercent, 1)}% of ${round(weightKg, 1)} kg ` +
-          `(${round(expected, 1)} kg).`,
-      );
+      problems.push({
+        key: 'body:problemFatMismatch',
+        values: {
+          fat: round(bodyFatKg, 1),
+          percent: round(bodyFatPercent, 1),
+          weight: round(weightKg, 1),
+          expected: round(expected, 1),
+        },
+      });
     }
   }
 

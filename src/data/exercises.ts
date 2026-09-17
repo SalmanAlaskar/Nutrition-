@@ -11,9 +11,23 @@
  * load and cached, so a keystroke only scans pre-lowered strings. The helper is
  * copied rather than imported because it is private to that module.
  */
+import type { LanguageCode } from '@/i18n';
 import type { Equipment, Exercise, SessionType } from '@/types';
 
-/** Muscle keys used in `Exercise.muscles`, with their display labels. */
+/**
+ * A bundled row. `Exercise` lives in `@/types` and carries no Arabic cue, so
+ * the catalogue widens it here rather than changing the shared type: every
+ * bundled lift has both cues, a custom one the user adds has neither.
+ */
+export interface CatalogueExercise extends Exercise {
+  cue: string;
+  cueAr: string;
+}
+
+/**
+ * Muscle keys used in `Exercise.muscles`, with their English labels. These feed
+ * the search index; on screen a muscle goes through `MUSCLE_KEYS` and t().
+ */
 export const MUSCLE_LABELS: Record<string, string> = {
   chest: 'Chest',
   upper_chest: 'Upper chest',
@@ -39,6 +53,42 @@ export const MUSCLE_LABELS: Record<string, string> = {
   conditioning: 'Heart and lungs',
 };
 
+/** Translation keys for the same muscles, in the `training` namespace. */
+export const MUSCLE_KEYS = {
+  chest: 'training:muscleChest',
+  upper_chest: 'training:muscleUpperChest',
+  front_delts: 'training:muscleFrontDelts',
+  side_delts: 'training:muscleSideDelts',
+  rear_delts: 'training:muscleRearDelts',
+  triceps: 'training:muscleTriceps',
+  biceps: 'training:muscleBiceps',
+  forearms: 'training:muscleForearms',
+  lats: 'training:muscleLats',
+  upper_back: 'training:muscleUpperBack',
+  traps: 'training:muscleTraps',
+  lower_back: 'training:muscleLowerBack',
+  quads: 'training:muscleQuads',
+  hamstrings: 'training:muscleHamstrings',
+  glutes: 'training:muscleGlutes',
+  adductors: 'training:muscleAdductors',
+  calves: 'training:muscleCalves',
+  abs: 'training:muscleAbs',
+  obliques: 'training:muscleObliques',
+  hip_flexors: 'training:muscleHipFlexors',
+  core: 'training:muscleCore',
+  conditioning: 'training:muscleConditioning',
+} as const;
+
+/** Translation keys for the kit an exercise needs, in picker order. */
+export const EQUIPMENT_KEYS = {
+  barbell: 'training:equipBarbell',
+  dumbbell: 'training:equipDumbbell',
+  machine: 'training:equipMachine',
+  cable: 'training:equipCable',
+  bodyweight: 'training:equipBodyweight',
+  other: 'training:equipOther',
+} as const satisfies Record<Equipment, string>;
+
 /** Equipment words folded into the search index so "cable" finds cable work. */
 const EQUIPMENT_TERMS: Record<Equipment, string> = {
   barbell: 'barbell bar',
@@ -60,87 +110,103 @@ const LEG_ISOLATION: SessionType[] = ['legs', 'lower'];
 const CORE_DAYS: SessionType[] = ['push', 'pull', 'legs', 'upper', 'lower', 'full'];
 const CARDIO_DAYS: SessionType[] = ['cardio'];
 
-export const EXERCISES: Exercise[] = [
+export const EXERCISES: CatalogueExercise[] = [
   /* --------------------------------------------------------------- push -- */
   {
     id: 'ex_bench_press', name: 'Barbell bench press', nameAr: 'ضغط الصدر بالبار',
     types: PUSH_COMPOUND, muscles: ['chest', 'front_delts', 'triceps'], equipment: 'barbell',
     cue: 'Keep the shoulder blades pulled back and down against the bench instead of letting them roll forward as you press.',
+    cueAr: 'اسحب لوحي الكتف للخلف وللأسفل وثبّتهما على المقعد بدل أن يتقدما مع الدفع.',
   },
   {
     id: 'ex_incline_barbell_press', name: 'Incline barbell press', nameAr: 'ضغط الصدر المائل بالبار',
     types: PUSH_COMPOUND, muscles: ['upper_chest', 'front_delts', 'triceps'], equipment: 'barbell',
     cue: 'Set the bench near 30 degrees; steeper than that turns it into a shoulder press.',
+    cueAr: 'اضبط ميل المقعد قرب 30 درجة؛ الأعلى من ذلك يحوّله إلى ضغط كتف.',
   },
   {
     id: 'ex_incline_db_press', name: 'Incline dumbbell press', nameAr: 'ضغط الصدر المائل بالدمبل',
     types: PUSH_COMPOUND, muscles: ['upper_chest', 'front_delts', 'triceps'], equipment: 'dumbbell',
     cue: 'Stop the dumbbells above the chest rather than clanging them together, which drops the tension at the top.',
+    cueAr: 'أوقف الدمبل فوق الصدر ولا تصدمهما ببعض، فذلك يفقد الشد في الأعلى.',
   },
   {
     id: 'ex_flat_db_press', name: 'Flat dumbbell press', nameAr: 'ضغط الصدر بالدمبل',
     types: PUSH_COMPOUND, muscles: ['chest', 'front_delts', 'triceps'], equipment: 'dumbbell',
     cue: 'Lower until the elbows are level with the torso; going deeper only strains the shoulder.',
+    cueAr: 'انزل حتى يصير المرفقان بمستوى الجذع؛ الأعمق من ذلك يرهق الكتف فقط.',
   },
   {
     id: 'ex_machine_chest_press', name: 'Machine chest press', nameAr: 'ضغط الصدر بالجهاز',
     types: PUSH_COMPOUND, muscles: ['chest', 'front_delts', 'triceps'], equipment: 'machine',
     cue: 'Set the seat so the handles sit at mid-chest, not at the collarbone.',
+    cueAr: 'اضبط ارتفاع الكرسي حتى تكون المقابض بمنتصف الصدر لا عند الترقوة.',
   },
   {
     id: 'ex_close_grip_bench', name: 'Close-grip bench press', nameAr: 'ضغط الصدر بقبضة ضيقة',
     types: PUSH_COMPOUND, muscles: ['triceps', 'chest', 'front_delts'], equipment: 'barbell',
     cue: 'Shoulder-width hands and elbows tucked near the ribs; a narrower grip just irritates the wrists.',
+    cueAr: 'باعد بين يديك بعرض الكتفين وأبقِ المرفقين قرب الجسم؛ القبضة الأضيق ترهق الرسغ.',
   },
   {
     id: 'ex_dip', name: 'Chest dip', nameAr: 'غطس على المتوازي',
     types: PUSH_COMPOUND, muscles: ['chest', 'triceps', 'front_delts'], equipment: 'bodyweight',
     cue: 'Lean the torso forward over the bars; staying upright shifts the work off the chest.',
+    cueAr: 'مِل بجذعك للأمام فوق المتوازي؛ الوقوف معتدلاً ينقل الجهد بعيداً عن الصدر.',
   },
   {
     id: 'ex_push_up', name: 'Push-up', nameAr: 'تمرين الضغط',
     types: PUSH_COMPOUND, muscles: ['chest', 'triceps', 'front_delts', 'core'], equipment: 'bodyweight',
     cue: 'Keep the hips in line with the shoulders instead of letting the lower back sag.',
+    cueAr: 'أبقِ الحوض على خط الكتفين ولا تدع أسفل الظهر يهبط.',
   },
   {
     id: 'ex_cable_fly', name: 'Cable chest fly', nameAr: 'تفتيح بالكيبل',
     types: PUSH_ISOLATION, muscles: ['chest'], equipment: 'cable',
     cue: 'Hold a slight fixed bend in the elbows so it stays a fly and does not turn into a press.',
+    cueAr: 'أبقِ انحناءة خفيفة ثابتة في المرفقين حتى يبقى تفتيحاً ولا يتحول إلى ضغط.',
   },
   {
     id: 'ex_pec_deck', name: 'Pec deck fly', nameAr: 'تفتيح بالجهاز',
     types: PUSH_ISOLATION, muscles: ['chest'], equipment: 'machine',
     cue: 'Let the arms travel back far enough to feel a stretch before squeezing in.',
+    cueAr: 'دع الذراعين ترجعان للخلف حتى تشعر بالتمدد قبل أن تضم.',
   },
   {
     id: 'ex_overhead_press', name: 'Barbell overhead press', nameAr: 'ضغط الكتف بالبار',
     types: PUSH_COMPOUND, muscles: ['front_delts', 'side_delts', 'triceps', 'core'], equipment: 'barbell',
     cue: 'Squeeze the glutes and ribs down so the press comes from the shoulders, not a leaning back.',
+    cueAr: 'شدّ المؤخرة والبطن حتى يأتي الدفع من الكتف لا من ميلان الظهر للخلف.',
   },
   {
     id: 'ex_db_shoulder_press', name: 'Seated dumbbell shoulder press', nameAr: 'ضغط الكتف بالدمبل',
     types: PUSH_COMPOUND, muscles: ['front_delts', 'side_delts', 'triceps'], equipment: 'dumbbell',
     cue: 'Press slightly in front of the ears rather than flaring the elbows straight out to the sides.',
+    cueAr: 'ادفع أمام أذنيك قليلاً بدل فتح المرفقين تماماً إلى الجانبين.',
   },
   {
     id: 'ex_lateral_raise', name: 'Dumbbell lateral raise', nameAr: 'رفرفة جانبية بالدمبل',
     types: PUSH_ISOLATION, muscles: ['side_delts'], equipment: 'dumbbell',
     cue: 'Use a weight you can raise without swinging; this one is nearly always loaded too heavy.',
+    cueAr: 'اختر وزناً ترفعه دون تأرجح؛ هذا التمرين يُحمّل أثقل من اللازم عادة.',
   },
   {
     id: 'ex_triceps_pushdown', name: 'Cable triceps pushdown', nameAr: 'دفع الترايسبس بالكيبل',
     types: PUSH_ISOLATION, muscles: ['triceps'], equipment: 'cable',
     cue: 'Pin the elbows to the sides so the shoulders stop helping on the last reps.',
+    cueAr: 'ثبّت المرفقين على جانبيك حتى لا يشارك الكتف في التكرارات الأخيرة.',
   },
   {
     id: 'ex_overhead_triceps_ext', name: 'Overhead triceps extension', nameAr: 'تمديد الترايسبس خلف الرأس',
     types: PUSH_ISOLATION, muscles: ['triceps'], equipment: 'cable',
     cue: 'Keep the upper arms still beside the head; only the forearms should move.',
+    cueAr: 'أبقِ العضدين ثابتين بجانب الرأس؛ الساعدان وحدهما يتحركان.',
   },
   {
     id: 'ex_skull_crusher', name: 'Lying triceps extension', nameAr: 'تمديد الترايسبس مستلقياً',
     types: PUSH_ISOLATION, muscles: ['triceps'], equipment: 'barbell',
     cue: 'Lower behind the head rather than to the forehead to keep tension off the elbow joint.',
+    cueAr: 'انزل خلف الرأس بدل الجبهة لتبقى الشدة بعيدة عن مفصل المرفق.',
   },
 
   /* --------------------------------------------------------------- pull -- */
@@ -148,81 +214,97 @@ export const EXERCISES: Exercise[] = [
     id: 'ex_deadlift', name: 'Conventional deadlift', nameAr: 'الرفعة الميتة',
     types: PULL_COMPOUND, muscles: ['lower_back', 'glutes', 'hamstrings', 'traps', 'forearms'], equipment: 'barbell',
     cue: 'Take the slack out of the bar and set the back flat before the weight leaves the floor.',
+    cueAr: 'أزل خلخلة البار واضبط استقامة الظهر قبل أن يفارق الوزن الأرض.',
   },
   {
     id: 'ex_pull_up', name: 'Pull-up', nameAr: 'العقلة',
     types: PULL_COMPOUND, muscles: ['lats', 'upper_back', 'biceps'], equipment: 'bodyweight',
     cue: 'Start each rep from a full hang instead of bouncing out of a half-bent position.',
+    cueAr: 'ابدأ كل تكرار من تعليق كامل بدل الانطلاق من وضع نصف مثني.',
   },
   {
     id: 'ex_chin_up', name: 'Chin-up', nameAr: 'العقلة بقبضة عكسية',
     types: PULL_COMPOUND, muscles: ['lats', 'biceps', 'upper_back'], equipment: 'bodyweight',
     cue: 'Drive the elbows down to the ribs rather than yanking the chin over the bar.',
+    cueAr: 'انزل بمرفقيك نحو أضلاعك بدل شد الذقن فوق البار.',
   },
   {
     id: 'ex_lat_pulldown', name: 'Lat pulldown', nameAr: 'السحب الأمامي بالجهاز',
     types: PULL_COMPOUND, muscles: ['lats', 'upper_back', 'biceps'], equipment: 'machine',
     cue: 'Lean back a few degrees and hold it; rocking the torso back and forth turns it into a row.',
+    cueAr: 'مِل للخلف درجات قليلة وثبّت؛ تأرجح الجذع يحوّله إلى تجديف.',
   },
   {
     id: 'ex_barbell_row', name: 'Barbell row', nameAr: 'التجديف بالبار',
     types: PULL_COMPOUND, muscles: ['lats', 'upper_back', 'rear_delts', 'biceps'], equipment: 'barbell',
     cue: 'Hold the torso angle still for the whole set instead of standing up as the reps get hard.',
+    cueAr: 'حافظ على زاوية الجذع طوال المجموعة ولا تنتصب حين تصعب التكرارات.',
   },
   {
     id: 'ex_db_row', name: 'One-arm dumbbell row', nameAr: 'التجديف بالدمبل بذراع واحدة',
     types: PULL_COMPOUND, muscles: ['lats', 'upper_back', 'biceps'], equipment: 'dumbbell',
     cue: 'Pull toward the hip and keep the shoulders square; twisting the torso adds reps, not muscle.',
+    cueAr: 'اسحب باتجاه الورك وأبقِ الكتفين متوازيين؛ لف الجذع يزيد التكرارات لا العضلة.',
   },
   {
     id: 'ex_seated_cable_row', name: 'Seated cable row', nameAr: 'التجديف بالكيبل جالساً',
     types: PULL_COMPOUND, muscles: ['lats', 'upper_back', 'rear_delts', 'biceps'], equipment: 'cable',
     cue: 'Let the shoulder blades travel forward on the way out, then pull them together on the way in.',
+    cueAr: 'دع لوحي الكتف يتقدمان مع الخروج ثم اضمهما مع السحب.',
   },
   {
     id: 'ex_chest_supported_row', name: 'Chest-supported row', nameAr: 'التجديف بدعم الصدر',
     types: PULL_COMPOUND, muscles: ['upper_back', 'lats', 'rear_delts'], equipment: 'machine',
     cue: 'Keep the chest on the pad the whole set so the lower back stays out of it.',
+    cueAr: 'أبقِ صدرك ملاصقاً للوسادة طوال المجموعة ليبقى أسفل الظهر خارج التمرين.',
   },
   {
     id: 'ex_t_bar_row', name: 'T-bar row', nameAr: 'التجديف بالتي بار',
     types: PULL_COMPOUND, muscles: ['lats', 'upper_back', 'biceps'], equipment: 'barbell',
     cue: 'Brace the midsection and hinge at the hips; rounding the back here is the usual failure.',
+    cueAr: 'شدّ وسطك واثنِ من الوركين؛ تقوّس الظهر هنا هو الخطأ المعتاد.',
   },
   {
     id: 'ex_face_pull', name: 'Cable face pull', nameAr: 'سحب الحبل للوجه',
     types: PULL_ISOLATION, muscles: ['rear_delts', 'upper_back', 'traps'], equipment: 'cable',
     cue: 'Pull the rope to the eyes with the elbows high; going heavy here just recruits the lats.',
+    cueAr: 'اسحب الحبل نحو عينيك والمرفقان مرتفعان؛ الوزن الثقيل ينقل العمل إلى الظهر.',
   },
   {
     id: 'ex_rear_delt_fly', name: 'Rear delt fly', nameAr: 'رفرفة خلفية',
     types: PULL_ISOLATION, muscles: ['rear_delts', 'upper_back'], equipment: 'dumbbell',
     cue: 'Lead with the elbows and stop at shoulder height; squeezing the shoulder blades takes over past that.',
+    cueAr: 'ابدأ الحركة من المرفقين وتوقف عند مستوى الكتف؛ بعدها يتولى ضم اللوحين العمل.',
   },
   {
     id: 'ex_shrug', name: 'Dumbbell shrug', nameAr: 'رفع الأكتاف بالدمبل',
     types: PULL_ISOLATION, muscles: ['traps'], equipment: 'dumbbell',
     cue: 'Shrug straight up, not in circles; rolling the shoulders adds nothing.',
+    cueAr: 'ارفع كتفيك للأعلى مباشرة؛ تدويرهما لا يضيف شيئاً.',
   },
   {
     id: 'ex_barbell_curl', name: 'Barbell curl', nameAr: 'مرجحة البايسبس بالبار',
     types: PULL_ISOLATION, muscles: ['biceps', 'forearms'], equipment: 'barbell',
     cue: 'Keep the elbows under the shoulders; swinging the bar up with the hips ends the set early.',
+    cueAr: 'أبقِ المرفقين تحت الكتفين؛ دفع البار بالحوض ينهي المجموعة مبكراً.',
   },
   {
     id: 'ex_incline_db_curl', name: 'Incline dumbbell curl', nameAr: 'مرجحة البايسبس على مقعد مائل',
     types: PULL_ISOLATION, muscles: ['biceps'], equipment: 'dumbbell',
     cue: 'Let the arms hang straight down behind the torso; that stretch is the whole point of the incline.',
+    cueAr: 'دع ذراعيك تتدليان خلف الجذع؛ هذا التمدد هو سبب المقعد المائل.',
   },
   {
     id: 'ex_db_hammer_curl', name: 'Dumbbell hammer curl', nameAr: 'مرجحة المطرقة بالدمبل',
     types: PULL_ISOLATION, muscles: ['biceps', 'forearms'], equipment: 'dumbbell',
     cue: 'Hold the neutral grip all the way up instead of rotating the wrists into a normal curl.',
+    cueAr: 'أبقِ القبضة محايدة إلى الأعلى بدل تدوير الرسغين إلى مرجحة عادية.',
   },
   {
     id: 'ex_cable_curl', name: 'Cable curl', nameAr: 'مرجحة البايسبس بالكيبل',
     types: PULL_ISOLATION, muscles: ['biceps'], equipment: 'cable',
     cue: 'Stand far enough from the stack that there is still tension at the bottom of each rep.',
+    cueAr: 'قف بعيداً بما يكفي عن الجهاز ليبقى هناك شد في أسفل كل تكرار.',
   },
 
   /* --------------------------------------------------------------- legs -- */
@@ -230,71 +312,85 @@ export const EXERCISES: Exercise[] = [
     id: 'ex_back_squat', name: 'Barbell back squat', nameAr: 'القرفصاء بالبار',
     types: LEG_COMPOUND, muscles: ['quads', 'glutes', 'hamstrings', 'core'], equipment: 'barbell',
     cue: 'Push the knees out over the toes on the way down; letting them cave in is the common fault.',
+    cueAr: 'ادفع ركبتيك للخارج باتجاه أصابع القدم أثناء النزول؛ دخولهما للداخل هو الخطأ الشائع.',
   },
   {
     id: 'ex_front_squat', name: 'Front squat', nameAr: 'القرفصاء الأمامي',
     types: LEG_COMPOUND, muscles: ['quads', 'glutes', 'core'], equipment: 'barbell',
     cue: 'Keep the elbows high the whole set; once they drop, the bar rolls off the shoulders.',
+    cueAr: 'أبقِ المرفقين مرتفعين طوال المجموعة؛ هبوطهما يُسقط البار عن الكتفين.',
   },
   {
     id: 'ex_goblet_squat', name: 'Goblet squat', nameAr: 'القرفصاء بالدمبل',
     types: LEG_COMPOUND, muscles: ['quads', 'glutes', 'core'], equipment: 'dumbbell',
     cue: 'Hold the weight tight to the chest; letting it drift forward pulls the torso down with it.',
+    cueAr: 'الصق الوزن بصدرك؛ ابتعاده للأمام يسحب الجذع معه.',
   },
   {
     id: 'ex_romanian_deadlift', name: 'Romanian deadlift', nameAr: 'الرفعة الميتة الرومانية',
     types: LEG_COMPOUND, muscles: ['hamstrings', 'glutes', 'lower_back'], equipment: 'barbell',
     cue: 'Push the hips back with soft knees; this is a hinge, not a squat with a straight bar.',
+    cueAr: 'ادفع الوركين للخلف والركبتان مرتخيتان قليلاً؛ هذه حركة ثني لا قرفصاء.',
   },
   {
     id: 'ex_leg_press', name: 'Leg press', nameAr: 'ضغط الأرجل بالجهاز',
     types: LEG_COMPOUND, muscles: ['quads', 'glutes', 'hamstrings'], equipment: 'machine',
     cue: 'Stop lowering the moment the hips start to curl off the pad.',
+    cueAr: 'توقف عن النزول لحظة أن يبدأ الحوض بالانفصال عن الوسادة.',
   },
   {
     id: 'ex_hack_squat', name: 'Hack squat', nameAr: 'القرفصاء بجهاز الهاك',
     types: LEG_COMPOUND, muscles: ['quads', 'glutes'], equipment: 'machine',
     cue: 'Keep the whole back flat on the pad instead of arching away from it under load.',
+    cueAr: 'أبقِ ظهرك كاملاً ملاصقاً للوسادة بدل تقوّسه بعيداً عنها تحت الحمل.',
   },
   {
     id: 'ex_bulgarian_split_squat', name: 'Bulgarian split squat', nameAr: 'القرفصاء البلغاري',
     types: LEG_COMPOUND, muscles: ['quads', 'glutes', 'hamstrings'], equipment: 'dumbbell',
     cue: 'Set the front foot far enough forward that the front shin stays close to vertical.',
+    cueAr: 'قدّم القدم الأمامية مسافة كافية ليبقى الساق الأمامي قريباً من العمودي.',
   },
   {
     id: 'ex_walking_lunge', name: 'Walking lunge', nameAr: 'الطعن المتحرك',
     types: LEG_COMPOUND, muscles: ['quads', 'glutes', 'hamstrings'], equipment: 'dumbbell',
     cue: 'Take a long step and lower straight down; short steps put it all on the front knee.',
+    cueAr: 'خذ خطوة طويلة وانزل عمودياً؛ الخطوة القصيرة تحمّل الركبة الأمامية كل شيء.',
   },
   {
     id: 'ex_step_up', name: 'Dumbbell step-up', nameAr: 'الصعود على الصندوق بالدمبل',
     types: LEG_COMPOUND, muscles: ['quads', 'glutes'], equipment: 'dumbbell',
     cue: 'Drive through the foot on the box rather than pushing off the trailing leg.',
+    cueAr: 'ادفع بالقدم التي على الصندوق بدل الاستعانة بدفعة من الرجل الخلفية.',
   },
   {
     id: 'ex_hip_thrust', name: 'Barbell hip thrust', nameAr: 'دفع الحوض بالبار',
     types: LEG_COMPOUND, muscles: ['glutes', 'hamstrings'], equipment: 'barbell',
     cue: 'Finish with the ribs down and the hips level; arching the lower back fakes the last few degrees.',
+    cueAr: 'أنهِ الحركة والأضلاع للأسفل والحوض مستوٍ؛ تقويس أسفل الظهر يزيّف آخر الحركة.',
   },
   {
     id: 'ex_leg_curl', name: 'Lying leg curl', nameAr: 'ثني الأرجل بالجهاز',
     types: LEG_ISOLATION, muscles: ['hamstrings', 'calves'], equipment: 'machine',
     cue: 'Keep the hips pressed into the pad; lifting them shortens the range of the curl.',
+    cueAr: 'اضغط بالحوض على الوسادة؛ رفعه يقصّر مدى الحركة.',
   },
   {
     id: 'ex_leg_extension', name: 'Leg extension', nameAr: 'تمديد الأرجل بالجهاز',
     types: LEG_ISOLATION, muscles: ['quads'], equipment: 'machine',
     cue: 'Line the knee joint up with the machine pivot before the first rep.',
+    cueAr: 'حاذِ مفصل الركبة مع محور دوران الجهاز قبل التكرار الأول.',
   },
   {
     id: 'ex_calf_raise', name: 'Standing calf raise', nameAr: 'رفع السمانة واقفاً',
     types: LEG_ISOLATION, muscles: ['calves'], equipment: 'machine',
     cue: 'Pause at the bottom stretch instead of bouncing, which is where most of the reps are lost.',
+    cueAr: 'توقف لحظة عند التمدد في الأسفل بدل النطّ، فهناك تضيع أغلب التكرارات.',
   },
   {
     id: 'ex_seated_calf_raise', name: 'Seated calf raise', nameAr: 'رفع السمانة جالساً',
     types: LEG_ISOLATION, muscles: ['calves'], equipment: 'machine',
     cue: 'Bent knees target the deeper calf muscle, so slow the reps down rather than adding plates.',
+    cueAr: 'الركبة المثنية تستهدف العضلة العميقة، فأبطئ التكرارات بدل زيادة الأوزان.',
   },
 
   /* --------------------------------------------------------------- core -- */
@@ -302,26 +398,31 @@ export const EXERCISES: Exercise[] = [
     id: 'ex_hanging_leg_raise', name: 'Hanging leg raise', nameAr: 'رفع الأرجل بالتعليق',
     types: CORE_DAYS, muscles: ['abs', 'hip_flexors'], equipment: 'bodyweight',
     cue: 'Curl the pelvis up at the top; swinging straight legs is mostly hip flexor work.',
+    cueAr: 'لُفّ الحوض للأعلى في نهاية الحركة؛ تأرجح الرجلين مستقيمتين عمل لقابضات الورك غالباً.',
   },
   {
     id: 'ex_cable_crunch', name: 'Cable crunch', nameAr: 'طي البطن بالكيبل',
     types: CORE_DAYS, muscles: ['abs'], equipment: 'cable',
     cue: 'Round the spine down toward the knees instead of hinging at the hips.',
+    cueAr: 'قوّس ظهرك نزولاً نحو الركبتين بدل الثني من الوركين.',
   },
   {
     id: 'ex_ab_wheel', name: 'Ab wheel rollout', nameAr: 'عجلة البطن',
     types: CORE_DAYS, muscles: ['abs', 'core', 'lats'], equipment: 'other',
     cue: 'Only roll out as far as you can keep the lower back from sagging.',
+    cueAr: 'امتد للأمام بالقدر الذي تحافظ فيه على أسفل ظهرك دون هبوط.',
   },
   {
     id: 'ex_plank', name: 'Plank', nameAr: 'البلانك',
     types: CORE_DAYS, muscles: ['core', 'abs'], equipment: 'bodyweight',
     cue: 'Squeeze the glutes and brace hard for a short hold rather than sagging through a long one.',
+    cueAr: 'شدّ المؤخرة والبطن بقوة لمدة قصيرة، أفضل من ثبات طويل مع هبوط الوسط.',
   },
   {
     id: 'ex_russian_twist', name: 'Russian twist', nameAr: 'اللف الروسي',
     types: CORE_DAYS, muscles: ['obliques', 'abs'], equipment: 'other',
     cue: 'Turn the ribs and shoulders, not just the arms holding the weight.',
+    cueAr: 'لُفّ أضلاعك وكتفيك، لا الذراعين الممسكتين بالوزن فقط.',
   },
 
   /* ------------------------------------------------------------- cardio -- */
@@ -329,41 +430,48 @@ export const EXERCISES: Exercise[] = [
     id: 'ex_treadmill_walk', name: 'Incline treadmill walk', nameAr: 'المشي على المشاية بميل',
     types: CARDIO_DAYS, muscles: ['conditioning', 'calves', 'glutes'], equipment: 'machine',
     cue: 'Let go of the handrails; holding on removes most of the work the incline adds.',
+    cueAr: 'اترك المسّاكين؛ الإمساك بهما يلغي أغلب ما يضيفه الميل.',
   },
   {
     id: 'ex_treadmill_run', name: 'Treadmill run', nameAr: 'الجري على المشاية',
     types: CARDIO_DAYS, muscles: ['conditioning', 'quads', 'calves'], equipment: 'machine',
     cue: 'Land with the foot under the hips instead of reaching out in front with each stride.',
+    cueAr: 'انزل بالقدم تحت الحوض بدل مدّها بعيداً أمامك في كل خطوة.',
   },
   {
     id: 'ex_stationary_bike', name: 'Stationary bike', nameAr: 'الدراجة الثابتة',
     types: CARDIO_DAYS, muscles: ['conditioning', 'quads', 'glutes'], equipment: 'machine',
     cue: 'Raise the seat until the knee is almost straight at the bottom of the pedal stroke.',
+    cueAr: 'ارفع الكرسي حتى تكون الركبة شبه مستقيمة في أسفل الدورة.',
   },
   {
     id: 'ex_rowing_machine', name: 'Rowing machine', nameAr: 'جهاز التجديف',
     types: CARDIO_DAYS, muscles: ['conditioning', 'upper_back', 'quads'], equipment: 'machine',
     cue: 'Drive with the legs first, then lean back and pull; arms-first is the usual mistake.',
+    cueAr: 'ادفع بالرجلين أولاً ثم مِل للخلف واسحب؛ البدء بالذراعين هو الخطأ المعتاد.',
   },
   {
     id: 'ex_elliptical', name: 'Elliptical', nameAr: 'الجهاز الإهليلجي',
     types: CARDIO_DAYS, muscles: ['conditioning', 'quads', 'glutes'], equipment: 'machine',
     cue: 'Add resistance rather than spinning the pedals faster with no load.',
+    cueAr: 'زد المقاومة بدل تدوير الدواسات بسرعة بلا حمل.',
   },
   {
     id: 'ex_stair_climber', name: 'Stair climber', nameAr: 'جهاز صعود الدرج',
     types: CARDIO_DAYS, muscles: ['conditioning', 'glutes', 'quads'], equipment: 'machine',
     cue: 'Stand tall and take full steps instead of leaning on the rails and taking small ones.',
+    cueAr: 'قف معتدلاً وخذ خطوات كاملة بدل الاتكاء على المسّاكين بخطوات قصيرة.',
   },
   {
     id: 'ex_jump_rope', name: 'Jump rope', nameAr: 'نط الحبل',
     types: CARDIO_DAYS, muscles: ['conditioning', 'calves'], equipment: 'other',
     cue: 'Turn the rope with the wrists and keep the jumps low to the floor.',
+    cueAr: 'أدر الحبل من رسغيك وأبقِ القفزات منخفضة عن الأرض.',
   },
 ];
 
-export const EXERCISE_BY_ID: Record<string, Exercise> = (() => {
-  const map: Record<string, Exercise> = {};
+export const EXERCISE_BY_ID: Record<string, CatalogueExercise> = (() => {
+  const map: Record<string, CatalogueExercise> = {};
   for (const exercise of EXERCISES) map[exercise.id] = exercise;
   return map;
 })();
@@ -636,6 +744,29 @@ export function exercisesForType(type: SessionType, extra?: Exercise[]): Exercis
   }
 
   return results;
+}
+
+/* -------------------------------------------------------------- display -- */
+
+/** The name to lead with: Arabic in Arabic, English otherwise. */
+export function exerciseName(exercise: Exercise, language: LanguageCode): string {
+  if (language === 'ar' && exercise.nameAr) return exercise.nameAr;
+  return exercise.name;
+}
+
+/** The other name, for the quiet second line. Absent when there is only one. */
+export function exerciseAltName(exercise: Exercise, language: LanguageCode): string | undefined {
+  const alt = language === 'ar' ? exercise.name : exercise.nameAr;
+  return alt && alt !== exerciseName(exercise, language) ? alt : undefined;
+}
+
+/**
+ * The one-sentence form cue in the reading language. A custom exercise has no
+ * cue at all, which is why this can come back empty.
+ */
+export function exerciseCue(exercise: Exercise, language: LanguageCode): string | undefined {
+  if (language !== 'ar') return exercise.cue;
+  return EXERCISE_BY_ID[exercise.id]?.cueAr;
 }
 
 export function exerciseById(id: string, extra?: Exercise[]): Exercise | undefined {

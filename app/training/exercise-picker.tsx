@@ -1,8 +1,9 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { FlatList, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
-import { EQUIPMENT_LABELS, exerciseMeta } from '@/components/training/ExerciseRow';
+import { useTrainingText } from '@/components/training/useTrainingText';
 import {
   AppHeader,
   Badge,
@@ -16,9 +17,9 @@ import {
   TextField,
   Txt,
 } from '@/components/ui';
-import { searchExercises } from '@/data/exercises';
+import { EQUIPMENT_KEYS, searchExercises } from '@/data/exercises';
 import { makeId } from '@/domain/id';
-import { SESSION_LABELS } from '@/domain/training';
+import { SESSION_LABEL_KEYS } from '@/domain/training';
 import { useApp } from '@/state/AppStore';
 import { spacing, useTheme } from '@/theme';
 import type { Equipment, Exercise, SessionType } from '@/types';
@@ -27,8 +28,8 @@ const SEARCH_DEBOUNCE_MS = 120;
 const RESULT_LIMIT = 40;
 const NAME_MAX = 60;
 
-const SESSION_TYPES = Object.keys(SESSION_LABELS) as SessionType[];
-const EQUIPMENT_KINDS = Object.keys(EQUIPMENT_LABELS) as Equipment[];
+const SESSION_TYPES = Object.keys(SESSION_LABEL_KEYS) as SessionType[];
+const EQUIPMENT_KINDS = Object.keys(EQUIPMENT_KEYS) as Equipment[];
 
 type TypeFilter = SessionType | 'all';
 
@@ -49,26 +50,36 @@ interface ResultRowProps {
 /** One search hit: what it is called, what it works and what it needs. */
 function ResultRow({ exercise, custom, onPress }: ResultRowProps) {
   const { colors } = useTheme();
-  const meta = exerciseMeta(exercise);
+  const { t } = useTranslation('training');
+  const text = useTrainingText();
+
+  const name = text.name(exercise);
+  const altName = text.altName(exercise);
+  const meta = text.meta(exercise);
 
   return (
     <Pressable
       onPress={() => onPress(exercise)}
       accessibilityRole="button"
-      accessibilityLabel={`${exercise.name}. ${meta}${custom ? '. Your own exercise' : ''}`}
-      accessibilityHint="Adds it and goes back"
-      style={({ pressed }) => [styles.result, pressed ? { backgroundColor: colors.surfaceAlt } : null]}
+      accessibilityLabel={
+        custom ? t('resultSpokenCustom', { name, meta }) : t('resultSpoken', { name, meta })
+      }
+      accessibilityHint={t('resultHint')}
+      style={({ pressed }) => [
+        styles.result,
+        pressed ? { backgroundColor: colors.surfaceAlt } : null,
+      ]}
     >
       <View style={styles.resultText}>
         <View style={styles.resultTitle}>
           <Txt weight="semibold" numberOfLines={1} style={styles.resultName}>
-            {exercise.name}
+            {name}
           </Txt>
-          {custom ? <Badge label="Yours" tone="accent" /> : null}
+          {custom ? <Badge label={t('badgeCustom')} tone="accent" /> : null}
         </View>
-        {exercise.nameAr ? (
+        {altName ? (
           <Txt variant="label" color="muted" numberOfLines={1} style={styles.resultLine}>
-            {exercise.nameAr}
+            {altName}
           </Txt>
         ) : null}
         <Txt variant="caption" color="faint" numberOfLines={1} style={styles.resultLine}>
@@ -83,6 +94,8 @@ function ResultRow({ exercise, custom, onPress }: ResultRowProps) {
 export default function ExercisePickerScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const { t } = useTranslation('training');
+  const text = useTrainingText();
   const { customExercises, saveCustomExercise } = useApp();
 
   const returnTo = firstParam(params.returnTo) === 'program' ? 'program' : 'session';
@@ -149,7 +162,7 @@ export default function ExercisePickerScreen() {
   const saveCustom = useCallback(async () => {
     const trimmed = name.trim();
     if (trimmed.length === 0) {
-      setNameError('Give the exercise a name.');
+      setNameError(t('nameRequired'));
       return;
     }
     setSaving(true);
@@ -171,18 +184,23 @@ export default function ExercisePickerScreen() {
       choose(exercise);
     } catch {
       setSaving(false);
-      setSaveError('Could not save this exercise. Please try again.');
+      setSaveError(t('exerciseSaveFailed'));
     }
-  }, [name, nameAr, customType, equipment, saveCustomExercise, choose]);
+  }, [name, nameAr, customType, equipment, saveCustomExercise, choose, t]);
 
   const trimmedQuery = debouncedQuery.trim();
+
+  const startCreating = useCallback(() => {
+    setName(trimmedQuery);
+    setCreating(true);
+  }, [trimmedQuery]);
 
   if (creating) {
     return (
       <Screen scroll keyboardAvoiding edges={['top', 'bottom']}>
         <AppHeader
-          title="New exercise"
-          subtitle="Saved for every future session"
+          title={t('newTitle')}
+          subtitle={t('newSubtitle')}
           onBack={() => {
             setCreating(false);
             setNameError(null);
@@ -192,34 +210,34 @@ export default function ExercisePickerScreen() {
 
         <Card>
           <TextField
-            label="Name"
+            label={t('nameEnglish')}
             value={name}
             onChangeText={setName}
-            placeholder="Cable pullover"
+            placeholder={t('nameEnglishPlaceholder')}
             maxLength={NAME_MAX}
             autoCapitalize="words"
             error={nameError ?? undefined}
           />
 
           <TextField
-            label="Arabic name"
+            label={t('nameArabic')}
             value={nameAr}
             onChangeText={setNameAr}
-            placeholder="اسم التمرين"
+            placeholder={t('nameArabicPlaceholder')}
             maxLength={NAME_MAX}
             autoCapitalize="none"
-            hint="Optional, shown under the English name."
+            hint={t('nameArabicHint')}
             style={styles.field}
           />
 
           <Txt variant="label" color="muted" weight="semibold" style={styles.groupLabel}>
-            Day type
+            {t('groupDayType')}
           </Txt>
           <View style={styles.chipWrap}>
             {SESSION_TYPES.map((type) => (
               <Chip
                 key={type}
-                label={SESSION_LABELS[type]}
+                label={text.type(type)}
                 selected={customType === type}
                 onPress={() => setCustomType(type)}
               />
@@ -227,13 +245,13 @@ export default function ExercisePickerScreen() {
           </View>
 
           <Txt variant="label" color="muted" weight="semibold" style={styles.groupLabel}>
-            Equipment
+            {t('groupEquipment')}
           </Txt>
           <View style={styles.chipWrap}>
             {EQUIPMENT_KINDS.map((kind) => (
               <Chip
                 key={kind}
-                label={EQUIPMENT_LABELS[kind]}
+                label={text.equipment(kind)}
                 selected={equipment === kind}
                 onPress={() => setEquipment(kind)}
               />
@@ -247,7 +265,7 @@ export default function ExercisePickerScreen() {
           ) : null}
 
           <Button
-            label="Save and add"
+            label={t('saveAndAdd')}
             icon="checkmark"
             onPress={() => void saveCustom()}
             loading={saving}
@@ -262,12 +280,12 @@ export default function ExercisePickerScreen() {
   return (
     <Screen padded={false} keyboardAvoiding>
       <View style={styles.top}>
-        <AppHeader title="Add exercise" onBack={goBack} />
+        <AppHeader title={t('pickerTitle')} onBack={goBack} />
 
         <TextField
           value={query}
           onChangeText={setQuery}
-          placeholder="Search exercises in English or Arabic"
+          placeholder={t('searchPlaceholder')}
           icon="search"
           autoCapitalize="none"
           returnKeyType="search"
@@ -281,11 +299,11 @@ export default function ExercisePickerScreen() {
         style={styles.filterStrip}
         contentContainerStyle={styles.filters}
       >
-        <Chip label="All" selected={filter === 'all'} onPress={() => setFilter('all')} />
+        <Chip label={t('filterAll')} selected={filter === 'all'} onPress={() => setFilter('all')} />
         {SESSION_TYPES.map((type) => (
           <Chip
             key={type}
-            label={SESSION_LABELS[type]}
+            label={text.type(type)}
             selected={filter === type}
             onPress={() => setFilter(type)}
           />
@@ -306,17 +324,12 @@ export default function ExercisePickerScreen() {
         ListEmptyComponent={
           <EmptyState
             icon={trimmedQuery ? 'search-outline' : 'barbell-outline'}
-            title={trimmedQuery ? 'No match found' : 'Nothing in this filter'}
+            title={trimmedQuery ? t('noMatchTitle') : t('emptyFilterTitle')}
             message={
-              trimmedQuery
-                ? `Nothing in the catalogue matches “${trimmedQuery}”. Add it once and it stays searchable.`
-                : 'Pick another day type, or add your own exercise.'
+              trimmedQuery ? t('noMatchMessage', { query: trimmedQuery }) : t('emptyFilterMessage')
             }
-            actionLabel="Create an exercise"
-            onAction={() => {
-              setName(trimmedQuery);
-              setCreating(true);
-            }}
+            actionLabel={t('createExercise')}
+            onAction={startCreating}
             style={styles.empty}
           />
         }
@@ -324,17 +337,12 @@ export default function ExercisePickerScreen() {
           results.length > 0 ? (
             <Card padded={false} style={styles.customCard}>
               <ListRow
-                title="Create an exercise"
+                title={t('createExercise')}
                 subtitle={
-                  trimmedQuery
-                    ? `Add “${trimmedQuery}” with your own name`
-                    : 'Add something the catalogue does not have'
+                  trimmedQuery ? t('createWithQuery', { query: trimmedQuery }) : t('createSubtitle')
                 }
                 icon="add-circle-outline"
-                onPress={() => {
-                  setName(trimmedQuery);
-                  setCreating(true);
-                }}
+                onPress={startCreating}
                 chevron
               />
             </Card>

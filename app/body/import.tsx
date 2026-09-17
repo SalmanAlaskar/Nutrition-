@@ -4,6 +4,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Platform,
   StyleSheet,
@@ -12,13 +13,16 @@ import {
 } from 'react-native';
 
 import { AppHeader, Button, Card, LoadingView, Screen, TextField, Txt } from '@/components/ui';
+import { formatCount } from '@/domain/format';
 import {
   analyzeScanDocument,
   describeScanError,
   fetchInBodyQr,
   serializeScanDraft,
+  type ScanCopyKey,
   type ScanDraft,
   type ScanDocumentKind,
+  type ScanErrorParams,
 } from '@/services/bodyScan';
 import { useApp } from '@/state/AppStore';
 import { hasApiKey } from '@/storage/secrets';
@@ -35,9 +39,14 @@ const DECORATIVE: AccessibilityProps =
 
 type Phase = 'idle' | 'scanning' | 'consent' | 'fetching' | 'analyzing';
 
+/** Failures this screen raises itself, alongside the ones the service reports. */
+type LocalTitleKey = 'body:cameraBlockedTitle' | 'body:photoFailedTitle' | 'body:pdfFailedTitle';
+type LocalBodyKey = 'body:cameraBlockedBody' | 'body:photoFailedBody' | 'body:pdfFailedBody';
+
 interface Failure {
-  headline: string;
-  suggestion: string;
+  headlineKey: ScanCopyKey | LocalTitleKey;
+  suggestionKey: ScanCopyKey | LocalBodyKey;
+  params?: ScanErrorParams;
 }
 
 /** A file that is picked but not yet sent, while the upload is confirmed. */
@@ -69,11 +78,12 @@ const CAMERA_HEIGHT = 260;
 function apiHost(baseUrl: string): string {
   const trimmed = baseUrl.trim().replace(/\/+$/, '');
   const withoutScheme = trimmed.replace(/^https?:\/\//, '');
-  return withoutScheme.split('/')[0] || 'the analysis service';
+  return withoutScheme.split('/')[0] ?? '';
 }
 
 export default function ImportBodyScanScreen() {
   const router = useRouter();
+  const { t } = useTranslation(['body', 'common']);
   const { colors } = useTheme();
   const { settings } = useApp();
 
@@ -183,9 +193,8 @@ export default function ImportBodyScanScreen() {
       if (next.granted) setPhase('scanning');
       else {
         setFailure({
-          headline: 'Camera is blocked',
-          suggestion:
-            'Allow camera access to scan the code, or open the link yourself and paste it below.',
+          headlineKey: 'body:cameraBlockedTitle',
+          suggestionKey: 'body:cameraBlockedBody',
         });
       }
     });
@@ -256,16 +265,16 @@ export default function ImportBodyScanScreen() {
           base64: asset.base64 ?? undefined,
           mimeType: asset.mimeType,
           kind: 'image',
-          name: asset.fileName ?? 'Photo of the sheet',
+          name: asset.fileName ?? t('sourcePhoto'),
         });
       })
       .catch(() => {
         setFailure({
-          headline: 'Photo could not be opened',
-          suggestion: 'Pick another image, or type the numbers in.',
+          headlineKey: 'body:photoFailedTitle',
+          suggestionKey: 'body:photoFailedBody',
         });
       });
-  }, [busy, offer]);
+  }, [busy, offer, t]);
 
   const pickPdf = useCallback(() => {
     if (busy) return;
@@ -288,8 +297,8 @@ export default function ImportBodyScanScreen() {
       })
       .catch(() => {
         setFailure({
-          headline: 'PDF could not be opened',
-          suggestion: 'Pick another file, or type the numbers in.',
+          headlineKey: 'body:pdfFailedTitle',
+          suggestionKey: 'body:pdfFailedBody',
         });
       });
   }, [busy, offer]);
@@ -299,14 +308,42 @@ export default function ImportBodyScanScreen() {
     setPhase('idle');
   }, []);
 
+  /**
+   * The suggestion under a failure. Keys that interpolate are named one by one,
+   * because i18next checks the interpolations of a key it can see.
+   */
+  const suggestionOf = (problem: Failure): string => {
+    const params = problem.params ?? {};
+    switch (problem.suggestionKey) {
+      case 'body:errLinkHost':
+        return t('body:errLinkHost', {
+          host: typeof params.host === 'string' ? params.host : '',
+        });
+      case 'body:errPageBody':
+        return t('body:errPageBody', {
+          status: typeof params.status === 'number' ? formatCount(params.status) : '',
+        });
+      case 'body:errKeyBodyDetail':
+        return t('body:errKeyBodyDetail', {
+          detail: typeof params.detail === 'string' ? params.detail : '',
+        });
+      case 'body:errRequestBodyDetail':
+        return t('body:errRequestBodyDetail', {
+          detail: typeof params.detail === 'string' ? params.detail : '',
+        });
+      default:
+        return t(problem.suggestionKey);
+    }
+  };
+
   /* ----------------------------------------------------------- rendering -- */
 
   if (phase === 'scanning' && canScan) {
     return (
       <Screen edges={['top', 'bottom']}>
         <AppHeader
-          title="Scan the QR code"
-          subtitle="Point the camera at the code on your printout"
+          title={t('scanTitle')}
+          subtitle={t('scanSubtitle')}
           onBack={() => setPhase('idle')}
         />
         <View style={[styles.camera, { borderColor: colors.border }]}>
@@ -318,10 +355,10 @@ export default function ImportBodyScanScreen() {
           />
         </View>
         <Txt color="muted" style={styles.cameraHint}>
-          The code opens an InBody result page. Nothing is saved until you check the numbers.
+          {t('scanHint')}
         </Txt>
         <Button
-          label="Cancel"
+          label={t('common:cancel')}
           variant="secondary"
           onPress={() => setPhase('idle')}
           style={styles.cameraCancel}
@@ -331,25 +368,24 @@ export default function ImportBodyScanScreen() {
   }
 
   if (phase === 'consent' && pending) {
+    const host = apiHost(settings.aiBaseUrl) || t('theService');
     return (
       <Screen scroll edges={['top', 'bottom']}>
-        <AppHeader title="Send this sheet?" onBack={cancelUpload} />
+        <AppHeader title={t('consentTitle')} onBack={cancelUpload} />
         <Card>
           <Txt weight="semibold" numberOfLines={2}>
             {pending.name}
           </Txt>
           <Txt color="muted" style={styles.consentBody}>
-            {`This ${pending.kind === 'pdf' ? 'PDF' : 'photo'} is uploaded to ${apiHost(
-              settings.aiBaseUrl,
-            )} to be read. It holds your body measurements. Nothing is saved until you check every number on the next screen.`}
+            {pending.kind === 'pdf' ? t('consentPdf', { host }) : t('consentPhoto', { host })}
           </Txt>
           <View style={styles.consentActions}>
-            <Button label="Send and read it" onPress={() => analyze(pending)} fullWidth />
-            <Button label="Not now" variant="secondary" onPress={cancelUpload} fullWidth />
+            <Button label={t('consentSend')} onPress={() => analyze(pending)} fullWidth />
+            <Button label={t('consentNot')} variant="secondary" onPress={cancelUpload} fullWidth />
           </View>
         </Card>
         <Button
-          label="Type the numbers in instead"
+          label={t('consentType')}
           variant="ghost"
           onPress={typeItIn}
           style={styles.altAction}
@@ -361,25 +397,15 @@ export default function ImportBodyScanScreen() {
   if (busy) {
     return (
       <Screen edges={['top', 'bottom']}>
-        <AppHeader title="Reading the sheet" onBack={goBack} />
-        <LoadingView
-          message={
-            phase === 'fetching'
-              ? 'Opening the InBody page…'
-              : 'Reading the numbers off your sheet…'
-          }
-        />
+        <AppHeader title={t('busyTitle')} onBack={goBack} />
+        <LoadingView message={phase === 'fetching' ? t('busyFetching') : t('busyAnalyzing')} />
       </Screen>
     );
   }
 
   return (
     <Screen scroll edges={['top', 'bottom']} keyboardAvoiding>
-      <AppHeader
-        title="Import a reading"
-        subtitle="Three ways in. You confirm every number before it is saved."
-        onBack={goBack}
-      />
+      <AppHeader title={t('importTitle')} subtitle={t('importSubtitle')} onBack={goBack} />
 
       {failure ? (
         <Card style={[styles.block, { borderColor: colors.danger }]}>
@@ -387,10 +413,12 @@ export default function ImportBodyScanScreen() {
             <View {...DECORATIVE}>
               <Ionicons name="alert-circle-outline" size={18} color={colors.danger} />
             </View>
-            <Txt weight="semibold">{failure.headline}</Txt>
+            <Txt weight="semibold" style={styles.noticeTitle}>
+              {t(failure.headlineKey)}
+            </Txt>
           </View>
           <Txt color="muted" style={styles.noticeBody}>
-            {failure.suggestion}
+            {suggestionOf(failure)}
           </Txt>
         </Card>
       ) : null}
@@ -401,22 +429,26 @@ export default function ImportBodyScanScreen() {
             <View {...DECORATIVE}>
               <Ionicons name="help-circle-outline" size={18} color={colors.warning} />
             </View>
-            <Txt weight="semibold">The sheet could not be read automatically</Txt>
+            <Txt weight="semibold" style={styles.noticeTitle}>
+              {t('thinTitle')}
+            </Txt>
           </View>
           <Txt color="muted" style={styles.noticeBody}>
             {thin.fieldCount === 0
-              ? 'No numbers came back that the app could trust. Type them in from the printout.'
-              : `Only ${thin.fieldCount} ${thin.fieldCount === 1 ? 'number' : 'numbers'} came back, which is not enough to call it a reading. Carry them over and fill in the rest by hand.`}
+              ? t('thinNone')
+              : thin.fieldCount === 1
+                ? t('thinOne')
+                : t('thinFew', { n: formatCount(thin.fieldCount) })}
           </Txt>
           <View style={styles.consentActions}>
             {thin.fieldCount > 0 ? (
               <Button
-                label="Carry them over"
+                label={t('thinCarry')}
                 onPress={() => handoff(thin.draft, thin.source)}
                 fullWidth
               />
             ) : null}
-            <Button label="Type it in" variant="secondary" onPress={typeItIn} fullWidth />
+            <Button label={t('thinType')} variant="secondary" onPress={typeItIn} fullWidth />
           </View>
         </Card>
       ) : null}
@@ -427,16 +459,16 @@ export default function ImportBodyScanScreen() {
             <Ionicons name={'qr-code-outline' as IconName} size={20} color={colors.accent} />
           </View>
           <View style={styles.cardTitle}>
-            <Txt weight="semibold">The QR code on the printout</Txt>
+            <Txt weight="semibold">{t('qrTitle')}</Txt>
             <Txt variant="caption" color="faint">
-              Opens the public InBody result page for that test.
+              {t('qrBody')}
             </Txt>
           </View>
         </View>
 
         {canScan ? (
           <Button
-            label="Scan the code"
+            label={t('qrScan')}
             icon="camera-outline"
             onPress={startScanning}
             fullWidth
@@ -445,17 +477,17 @@ export default function ImportBodyScanScreen() {
         ) : null}
 
         <TextField
-          label="Or paste the link"
+          label={t('qrPaste')}
           value={url}
           onChangeText={setUrl}
-          placeholder="https://qrcode.inbody.com/..."
+          placeholder={t('qrPastePlaceholder')}
           autoCapitalize="none"
           keyboardType="url"
           icon="link-outline"
           style={styles.cardAction}
         />
         <Button
-          label="Read the page"
+          label={t('qrRead')}
           variant="secondary"
           onPress={() => readUrl(url)}
           disabled={url.trim() === ''}
@@ -463,8 +495,7 @@ export default function ImportBodyScanScreen() {
         />
         {Platform.OS === 'web' ? (
           <Txt variant="caption" color="faint" style={styles.cardFoot}>
-            In a browser, inbody.com may refuse to let this page read it. If that happens, open the
-            link yourself and type the numbers in.
+            {t('qrWebNote')}
           </Txt>
         ) : null}
       </Card>
@@ -475,9 +506,9 @@ export default function ImportBodyScanScreen() {
             <Ionicons name={'document-attach-outline' as IconName} size={20} color={colors.accent} />
           </View>
           <View style={styles.cardTitle}>
-            <Txt weight="semibold">A photo or PDF of the sheet</Txt>
+            <Txt weight="semibold">{t('fileTitle')}</Txt>
             <Txt variant="caption" color="faint">
-              Arabic, Korean and English sheets all work.
+              {t('fileBody')}
             </Txt>
           </View>
         </View>
@@ -485,14 +516,14 @@ export default function ImportBodyScanScreen() {
         {aiReady ? (
           <>
             <Button
-              label="Choose a photo"
+              label={t('choosePhoto')}
               icon="image-outline"
               onPress={pickPhoto}
               fullWidth
               style={styles.cardAction}
             />
             <Button
-              label="Choose a PDF"
+              label={t('choosePdf')}
               icon="document-outline"
               variant="secondary"
               onPress={pickPdf}
@@ -500,19 +531,16 @@ export default function ImportBodyScanScreen() {
               style={styles.cardAction}
             />
             <Txt variant="caption" color="faint" style={styles.cardFoot}>
-              The sheet is sent to the model you configured. Every number it reads lands in the form
-              for you to check.
+              {t('fileFoot')}
             </Txt>
           </>
         ) : (
           <>
             <Txt color="muted" style={styles.cardAction}>
-              {settings.photoAnalysis !== 'ai'
-                ? 'Reading sheets automatically is switched off. Turn photo analysis on in Settings to use it.'
-                : 'No API key is saved yet. Add an Anthropic API key in Settings to use it.'}
+              {settings.photoAnalysis !== 'ai' ? t('aiOff') : t('aiNoKey')}
             </Txt>
             <Button
-              label="Open Settings"
+              label={t('openSettings')}
               icon="settings-outline"
               variant="secondary"
               onPress={() => router.push('/settings')}
@@ -528,14 +556,14 @@ export default function ImportBodyScanScreen() {
             <Ionicons name={'create-outline' as IconName} size={20} color={colors.accent} />
           </View>
           <View style={styles.cardTitle}>
-            <Txt weight="semibold">Type it in</Txt>
+            <Txt weight="semibold">{t('manualTitle')}</Txt>
             <Txt variant="caption" color="faint">
-              Weight alone is enough to start. The rest is optional.
+              {t('manualBody')}
             </Txt>
           </View>
         </View>
         <Button
-          label="Enter the numbers"
+          label={t('manualAction')}
           icon="keypad-outline"
           variant="secondary"
           onPress={typeItIn}
@@ -577,6 +605,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     columnGap: spacing.sm,
     flexDirection: 'row',
+  },
+  noticeTitle: {
+    flex: 1,
   },
   noticeBody: {
     marginTop: spacing.sm,

@@ -1,5 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { StyleSheet, View } from 'react-native';
 
 import {
@@ -11,6 +12,7 @@ import {
   Txt,
   type SegmentedOption,
 } from '@/components/ui';
+import { formatCount } from '@/domain/format';
 import {
   LIMITS,
   cmToFeetInches,
@@ -19,23 +21,20 @@ import {
   kgToLb,
   lbToKg,
 } from '@/domain/nutrition';
+import { mirrorIcon, useDirection } from '@/i18n';
 import { spacing } from '@/theme';
 import type { Sex, UnitSystem } from '@/types';
 
-import { bodyDraftParams, parseBodyDraft, type BodyDraft } from './_layout';
-
-const UNIT_OPTIONS: SegmentedOption<UnitSystem>[] = [
-  { value: 'metric', label: 'cm / kg' },
-  { value: 'imperial', label: 'ft / lb' },
-];
-
-const SEX_OPTIONS: SegmentedOption<Sex>[] = [
-  { value: 'male', label: 'Male', icon: 'male' },
-  { value: 'female', label: 'Female', icon: 'female' },
-];
+import { StepProgress, bodyDraftParams, parseBodyDraft, type BodyDraft } from './_layout';
 
 const INCHES_PER_FOOT = 12;
 const CM_PER_INCH = 2.54;
+
+/**
+ * The whole difference the answer makes: Mifflin-St Jeor adds 5 for men and
+ * subtracts 161 for women, and nothing else in the formula changes.
+ */
+const SEX_CALORIE_GAP = 166;
 
 /** Imperial bounds are pulled inwards so a shown bound is always accepted. */
 const MIN_TOTAL_INCHES = Math.ceil(LIMITS.heightCm.min / CM_PER_INCH);
@@ -43,13 +42,11 @@ const MAX_TOTAL_INCHES = Math.floor(LIMITS.heightCm.max / CM_PER_INCH);
 const MIN_LB = Math.ceil(kgToLb(LIMITS.weightKg.min));
 const MAX_LB = Math.floor(kgToLb(LIMITS.weightKg.max));
 
-function formatFeetInches(totalInches: number): string {
-  return `${Math.floor(totalInches / INCHES_PER_FOOT)} ft ${totalInches % INCHES_PER_FOOT} in`;
-}
-
 export default function BodyStep() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const { isRTL } = useDirection();
+  const { t } = useTranslation(['onboarding', 'common', 'units']);
 
   // Re-entering this step (a bounce back from a later screen) restores the draft.
   const [initial] = useState(() => parseBodyDraft(params));
@@ -67,6 +64,22 @@ export default function BodyStep() {
   );
 
   const metric = units === 'metric';
+
+  const unitOptions: SegmentedOption<UnitSystem>[] = [
+    { value: 'metric', label: t('onboarding:unitsMetric') },
+    { value: 'imperial', label: t('onboarding:unitsImperial') },
+  ];
+
+  const sexOptions: SegmentedOption<Sex>[] = [
+    { value: 'male', label: t('onboarding:male'), icon: 'male' },
+    { value: 'female', label: t('onboarding:female'), icon: 'female' },
+  ];
+
+  const feetInchesText = (totalInches: number) =>
+    t('onboarding:feetInches', {
+      feet: formatCount(Math.floor(totalInches / INCHES_PER_FOOT)),
+      inches: formatCount(totalInches % INCHES_PER_FOOT),
+    });
 
   /** Switching units converts what is already typed instead of discarding it. */
   const switchUnits = (next: UnitSystem) => {
@@ -99,12 +112,15 @@ export default function BodyStep() {
 
   const ageError =
     age !== null && (age < LIMITS.age.min || age > LIMITS.age.max)
-      ? `Age must be between ${LIMITS.age.min} and ${LIMITS.age.max}`
+      ? t('onboarding:ageError', {
+          min: formatCount(LIMITS.age.min),
+          max: formatCount(LIMITS.age.max),
+        })
       : undefined;
 
   const inchesError =
     !metric && inches !== null && (inches < 0 || inches >= INCHES_PER_FOOT)
-      ? 'Use 0 to 11 inches'
+      ? t('onboarding:inchesError')
       : undefined;
 
   const heightOutOfRange =
@@ -113,8 +129,14 @@ export default function BodyStep() {
 
   const heightError = heightOutOfRange
     ? metric
-      ? `Height must be between ${LIMITS.heightCm.min} and ${LIMITS.heightCm.max} cm`
-      : `Height must be between ${formatFeetInches(MIN_TOTAL_INCHES)} and ${formatFeetInches(MAX_TOTAL_INCHES)}`
+      ? t('onboarding:heightErrorCm', {
+          min: formatCount(LIMITS.heightCm.min),
+          max: formatCount(LIMITS.heightCm.max),
+        })
+      : t('onboarding:heightErrorImperial', {
+          min: feetInchesText(MIN_TOTAL_INCHES),
+          max: feetInchesText(MAX_TOTAL_INCHES),
+        })
     : undefined;
 
   const heightHelp = inchesError ?? heightError;
@@ -125,8 +147,14 @@ export default function BodyStep() {
 
   const weightError = weightOutOfRange
     ? metric
-      ? `Weight must be between ${LIMITS.weightKg.min} and ${LIMITS.weightKg.max} kg`
-      : `Weight must be between ${MIN_LB} and ${MAX_LB} lb`
+      ? t('onboarding:weightErrorKg', {
+          min: formatCount(LIMITS.weightKg.min),
+          max: formatCount(LIMITS.weightKg.max),
+        })
+      : t('onboarding:weightErrorLb', {
+          min: formatCount(MIN_LB),
+          max: formatCount(MAX_LB),
+        })
     : undefined;
 
   const draft = useMemo<BodyDraft | null>(() => {
@@ -147,13 +175,15 @@ export default function BodyStep() {
     <Screen scroll keyboardAvoiding edges={['top', 'bottom']}>
       <AppHeader
         large
-        title="About you"
-        subtitle="Step 1 of 3 — the numbers behind your target"
+        title={t('onboarding:bodyTitle')}
+        subtitle={t('onboarding:bodySubtitle')}
         onBack={() => router.back()}
       />
 
+      <StepProgress current={1} />
+
       <SegmentedControl
-        options={UNIT_OPTIONS}
+        options={unitOptions}
         value={units}
         onChange={switchUnits}
         style={styles.units}
@@ -161,55 +191,60 @@ export default function BodyStep() {
 
       <View style={styles.fields}>
         <View>
-          <Txt variant="label" color="muted" weight="medium" style={styles.label}>
-            Sex
+          <Txt variant="label" color="muted" weight="semibold" style={styles.label}>
+            {t('onboarding:sex')}
           </Txt>
-          <SegmentedControl options={SEX_OPTIONS} value={sex} onChange={setSex} />
+          <SegmentedControl options={sexOptions} value={sex} onChange={setSex} />
           <Txt variant="caption" color="faint" style={styles.caption}>
-            Used only to pick the constant in the metabolic-rate formula, which
-            differs by about 166 calories a day.
+            {t('onboarding:sexNote', { calories: formatCount(SEX_CALORIE_GAP) })}
           </Txt>
         </View>
 
         <NumberField
-          label="Age"
+          label={t('onboarding:age')}
           value={age}
           onChange={setAge}
-          suffix="years"
+          suffix={t('units:years')}
           placeholder="30"
-          hint={`${LIMITS.age.min} to ${LIMITS.age.max}`}
+          hint={t('onboarding:ageRange', {
+            min: formatCount(LIMITS.age.min),
+            max: formatCount(LIMITS.age.max),
+          })}
           error={ageError}
         />
 
         {metric ? (
           <NumberField
-            label="Height"
+            label={t('onboarding:height')}
             value={heightCm}
             onChange={setHeightCm}
-            suffix="cm"
+            suffix={t('units:cm')}
             placeholder="175"
-            hint={`${LIMITS.heightCm.min} to ${LIMITS.heightCm.max} cm`}
+            hint={t('onboarding:heightRangeCm', {
+              min: formatCount(LIMITS.heightCm.min),
+              max: formatCount(LIMITS.heightCm.max),
+            })}
             error={heightError}
           />
         ) : (
           <View>
-            <Txt variant="label" color="muted" weight="medium" style={styles.label}>
-              Height
+            <Txt variant="label" color="muted" weight="semibold" style={styles.label}>
+              {t('onboarding:height')}
             </Txt>
             <View style={styles.row}>
               <NumberField
-                label="Feet"
+                label={t('onboarding:feet')}
                 value={feet}
                 onChange={setFeet}
-                suffix="ft"
+                suffix={t('onboarding:unitFoot')}
                 placeholder="5"
                 style={styles.rowItem}
               />
               <NumberField
-                label="Inches"
+                label={t('onboarding:inches')}
                 value={inches}
                 onChange={setInches}
-                suffix="in"
+                suffix={t('onboarding:unitInch')}
                 placeholder="9"
                 style={styles.rowItem}
               />
@@ -220,29 +255,38 @@ export default function BodyStep() {
               style={styles.caption}
             >
               {heightHelp ??
-                `${formatFeetInches(MIN_TOTAL_INCHES)} to ${formatFeetInches(MAX_TOTAL_INCHES)}`}
+                t('onboarding:heightRangeImperial', {
+                  min: feetInchesText(MIN_TOTAL_INCHES),
+                  max: feetInchesText(MAX_TOTAL_INCHES),
+                })}
             </Txt>
           </View>
         )}
 
         {metric ? (
           <NumberField
-            label="Weight"
+            label={t('onboarding:weight')}
             value={weightKg}
             onChange={setWeightKg}
-            suffix="kg"
+            suffix={t('units:kg')}
             placeholder="75"
-            hint={`${LIMITS.weightKg.min} to ${LIMITS.weightKg.max} kg`}
+            hint={t('onboarding:weightRangeKg', {
+              min: formatCount(LIMITS.weightKg.min),
+              max: formatCount(LIMITS.weightKg.max),
+            })}
             error={weightError}
           />
         ) : (
           <NumberField
-            label="Weight"
+            label={t('onboarding:weight')}
             value={weightLb}
             onChange={setWeightLb}
-            suffix="lb"
+            suffix={t('units:lb')}
             placeholder="165"
-            hint={`${MIN_LB} to ${MAX_LB} lb`}
+            hint={t('onboarding:weightRangeLb', {
+              min: formatCount(MIN_LB),
+              max: formatCount(MAX_LB),
+            })}
             error={weightError}
           />
         )}
@@ -251,13 +295,13 @@ export default function BodyStep() {
       <View style={styles.spacer} />
 
       <Button
-        label="Continue"
-        iconRight="arrow-forward"
+        label={t('common:continue')}
+        iconRight={mirrorIcon('arrow-forward', isRTL)}
         size="lg"
         fullWidth
         disabled={!draft}
         onPress={handleContinue}
-        accessibilityHint="Goes to activity level and goal"
+        accessibilityHint={t('onboarding:bodyContinueHint')}
         style={styles.continue}
       />
     </Screen>
@@ -273,9 +317,10 @@ const styles = StyleSheet.create({
   },
   label: {
     marginBottom: spacing.xs + 2,
+    marginStart: spacing.xs / 2,
   },
   caption: {
-    marginLeft: spacing.xs,
+    marginStart: spacing.xs,
     marginTop: spacing.xs + 2,
   },
   row: {

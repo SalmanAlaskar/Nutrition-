@@ -1,6 +1,7 @@
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -12,6 +13,8 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useFoodLabels } from '@/components/meal/useFoodLabels';
+import { useDayLabels } from '@/components/today/useDayLabels';
 import {
   AppHeader,
   Badge,
@@ -31,30 +34,18 @@ import {
   Txt,
 } from '@/components/ui';
 import { defaultServing, entryFromFood, searchFoods } from '@/data/foodSearch';
-import {
-  addDays,
-  formatDayLabel,
-  formatShortDay,
-  formatTime,
-  todayKey,
-} from '@/domain/date';
+import { addDays, todayKey } from '@/domain/date';
+import { formatCount } from '@/domain/format';
 import { macrosForGrams, sumMacros } from '@/domain/nutrition';
-import { MEAL_SLOTS, SLOT_LABELS } from '@/domain/totals';
+import { MEAL_SLOTS } from '@/domain/totals';
 import { useApp } from '@/state/AppStore';
 import { findMeal } from '@/storage/repository';
 import { radius, spacing, useTheme } from '@/theme';
 import type { FoodItem, Meal, MealEntry, MealSlot } from '@/types';
 
-import { formatCount } from '../onboarding/_layout';
-
 const MAX_ENTRY_GRAMS = 5000;
 const NOTE_LIMIT = 280;
 const SEARCH_RESULT_LIMIT = 6;
-
-const SLOT_OPTIONS = MEAL_SLOTS.map((slot) => ({
-  value: slot,
-  label: SLOT_LABELS[slot],
-}));
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) return value[0];
@@ -88,16 +79,6 @@ function sameEntry(a: MealEntry, b: MealEntry): boolean {
   );
 }
 
-function entrySubtitle(entry: MealEntry): string {
-  const { macros } = entry;
-  const weight = `${formatCount(round(entry.quantityGrams))} g`;
-  const portion = entry.servingLabel ? `${entry.servingLabel} · ${weight}` : weight;
-  return (
-    `${portion} · P ${formatCount(round(macros.protein))}` +
-    ` · C ${formatCount(round(macros.carbs))} · F ${formatCount(round(macros.fat))}`
-  );
-}
-
 function confidenceTone(confidence: number): 'success' | 'warning' | 'default' {
   if (confidence >= 0.8) return 'success';
   if (confidence >= 0.5) return 'default';
@@ -109,6 +90,7 @@ function confirmAction(options: {
   title: string;
   message: string;
   confirmLabel: string;
+  cancelLabel: string;
   onConfirm: () => void;
 }): void {
   if (Platform.OS === 'web') {
@@ -119,7 +101,7 @@ function confirmAction(options: {
     return;
   }
   Alert.alert(options.title, options.message, [
-    { text: 'Cancel', style: 'cancel' },
+    { text: options.cancelLabel, style: 'cancel' },
     { text: options.confirmLabel, style: 'destructive', onPress: options.onConfirm },
   ]);
 }
@@ -135,6 +117,9 @@ export default function MealDetailScreen() {
 
   const router = useRouter();
   const { colors } = useTheme();
+  const { t } = useTranslation(['meals', 'macros', 'units', 'common']);
+  const labels = useFoodLabels();
+  const dayLabels = useDayLabels();
   const insets = useSafeAreaInsets();
   const {
     meals,
@@ -230,6 +215,11 @@ export default function MealDetailScreen() {
     [searchOpen, query, customFoods],
   );
 
+  const slotOptions = useMemo(
+    () => MEAL_SLOTS.map((value) => ({ value, label: labels.slot(value) })),
+    [labels],
+  );
+
   const editorEntry = useMemo(
     () => (editor ? entries.find((entry) => entry.id === editor.entryId) ?? null : null),
     [editor, entries],
@@ -253,12 +243,13 @@ export default function MealDetailScreen() {
       return;
     }
     confirmAction({
-      title: 'Discard changes?',
-      message: 'Your edits to this meal have not been saved yet.',
-      confirmLabel: 'Discard',
+      title: t('meals:detailDiscardTitle'),
+      message: t('meals:detailDiscardBody'),
+      confirmLabel: t('meals:detailDiscardAction'),
+      cancelLabel: t('common:cancel'),
       onConfirm: goBack,
     });
-  }, [dirty, goBack]);
+  }, [dirty, goBack, t]);
 
   const markEdited = useCallback(() => {
     setSaved(false);
@@ -337,31 +328,35 @@ export default function MealDetailScreen() {
       setOriginal(next);
       setSaved(true);
     } catch {
-      setError('Could not save this meal. Try again.');
+      setError(t('meals:detailSaveError'));
     } finally {
       setSaving(false);
     }
-  }, [original, saving, dirty, entries, note, slot, date, updateMeal, setSelectedDate]);
+  }, [original, saving, dirty, entries, note, slot, date, updateMeal, setSelectedDate, t]);
 
   const handleDelete = useCallback(() => {
     if (!original) return;
     confirmAction({
-      title: 'Delete meal?',
-      message: `${SLOT_LABELS[original.slot]} on ${formatDayLabel(original.date, today)} will be removed from your log.`,
-      confirmLabel: 'Delete',
+      title: t('meals:detailDeleteTitle'),
+      message: t('meals:detailDeleteBody', {
+        slot: labels.slot(original.slot),
+        day: dayLabels.day(original.date, today),
+      }),
+      confirmLabel: t('common:delete'),
+      cancelLabel: t('common:cancel'),
       onConfirm: () => {
         void deleteMeal(original.date, original.id)
           .then(() => goBack())
-          .catch(() => setError('Could not delete this meal. Try again.'));
+          .catch(() => setError(t('meals:detailDeleteError')));
       },
     });
-  }, [original, today, deleteMeal, goBack]);
+  }, [original, today, deleteMeal, goBack, labels, dayLabels, t]);
 
   if (loading) {
     return (
       <Screen>
-        <AppHeader title="Meal" onBack={goBack} />
-        <LoadingView message="Loading meal" />
+        <AppHeader title={t('meals:detailTitle')} onBack={goBack} />
+        <LoadingView message={t('meals:detailLoading')} />
       </Screen>
     );
   }
@@ -369,12 +364,12 @@ export default function MealDetailScreen() {
   if (!original) {
     return (
       <Screen>
-        <AppHeader title="Meal" onBack={goBack} />
+        <AppHeader title={t('meals:detailTitle')} onBack={goBack} />
         <EmptyState
           icon="help-circle-outline"
-          title="Meal not found"
-          message="This meal is no longer in your log. It may have been deleted on another screen."
-          actionLabel="Go back"
+          title={t('meals:detailNotFoundTitle')}
+          message={t('meals:detailNotFoundBody')}
+          actionLabel={t('meals:detailGoBack')}
           onAction={goBack}
         />
       </Screen>
@@ -382,27 +377,28 @@ export default function MealDetailScreen() {
   }
 
   const photoUri = original.photoUri;
-  const loggedTime = formatTime(original.loggedAt);
+  const loggedTime = dayLabels.time(original.loggedAt);
+  const dayLabel = dayLabels.day(date, today);
   const canSave = dirty && entries.length > 0;
 
   return (
     <Screen scroll keyboardAvoiding edges={['top', 'bottom']}>
       <AppHeader
-        title={SLOT_LABELS[slot]}
+        title={labels.slot(slot)}
         subtitle={
           loggedTime
-            ? `${formatDayLabel(date, today)} · logged ${loggedTime}`
-            : formatDayLabel(date, today)
+            ? t('meals:detailLoggedAt', { day: dayLabel, time: loggedTime })
+            : dayLabel
         }
         onBack={handleBack}
-        right={dirty ? <Badge label="Unsaved" tone="warning" /> : undefined}
+        right={dirty ? <Badge label={t('meals:detailUnsavedBadge')} tone="warning" /> : undefined}
       />
 
       {photoUri ? (
         <Pressable
           onPress={() => setPhotoOpen(true)}
           accessibilityRole="button"
-          accessibilityLabel="Open the meal photo full screen"
+          accessibilityLabel={t('meals:detailOpenPhoto')}
           style={({ pressed }) => [
             styles.photoWrap,
             { borderColor: colors.border, backgroundColor: colors.surfaceAlt },
@@ -414,10 +410,10 @@ export default function MealDetailScreen() {
             style={styles.photo}
             contentFit="cover"
             transition={160}
-            accessibilityLabel="Meal photo"
+            accessibilityLabel={t('meals:detailPhotoAlt')}
           />
           <View style={styles.photoCorner} pointerEvents="none">
-            <Chip label="Tap to enlarge" icon="expand-outline" />
+            <Chip label={t('meals:detailEnlarge')} icon="expand-outline" />
           </View>
         </Pressable>
       ) : null}
@@ -426,56 +422,61 @@ export default function MealDetailScreen() {
         <View style={styles.summaryTop}>
           <View style={styles.summaryHeadline}>
             <Txt variant="caption" color="faint" weight="semibold">
-              MEAL TOTAL
+              {t('meals:detailTotal')}
             </Txt>
             <View style={styles.calorieRow}>
               <Txt variant="title" tabular>
                 {formatCount(round(totals.calories))}
               </Txt>
               <Txt variant="label" color="faint" weight="medium" style={styles.calorieUnit}>
-                kcal
+                {t('units:kcal')}
               </Txt>
             </View>
           </View>
-          <Badge label={entries.length === 1 ? '1 item' : `${entries.length} items`} />
+          <Badge label={labels.items(entries.length)} />
         </View>
 
         {targets ? (
           <View style={styles.bars}>
             <MacroBar
-              label="Protein"
+              label={t('macros:protein')}
               value={totals.protein}
               target={targets.protein}
               color={colors.protein}
             />
             <MacroBar
-              label="Carbs"
+              label={t('macros:carbs')}
               value={totals.carbs}
               target={targets.carbs}
               color={colors.carbs}
             />
-            <MacroBar label="Fat" value={totals.fat} target={targets.fat} color={colors.fat} />
+            <MacroBar
+              label={t('macros:fat')}
+              value={totals.fat}
+              target={targets.fat}
+              color={colors.fat}
+            />
             <Txt variant="caption" color="faint">
-              Measured against your daily targets.
+              {t('meals:detailAgainstTargets')}
             </Txt>
           </View>
         ) : (
           <View style={styles.macroRow}>
             {(
               [
-                ['Protein', totals.protein, colors.protein],
-                ['Carbs', totals.carbs, colors.carbs],
-                ['Fat', totals.fat, colors.fat],
+                ['protein', t('macros:protein'), totals.protein, colors.protein],
+                ['carbs', t('macros:carbs'), totals.carbs, colors.carbs],
+                ['fat', t('macros:fat'), totals.fat, colors.fat],
               ] as const
-            ).map(([label, value, color]) => (
-              <View key={label} style={styles.macroCell}>
-                <Txt variant="caption" color="faint" weight="semibold">
-                  {label.toUpperCase()}
+            ).map(([key, label, value, color]) => (
+              <View key={key} style={styles.macroCell}>
+                <Txt variant="caption" color="faint" weight="semibold" numberOfLines={1}>
+                  {label}
                 </Txt>
                 <Txt variant="heading" weight="bold" color={color} tabular>
                   {formatCount(round(value))}
                   <Txt variant="label" color="faint">
-                    {' g'}
+                    {` ${t('units:gram')}`}
                   </Txt>
                 </Txt>
               </View>
@@ -485,17 +486,17 @@ export default function MealDetailScreen() {
       </Card>
 
       <Txt variant="caption" color="faint" weight="semibold" style={styles.sectionTitle}>
-        WHEN
+        {t('meals:detailWhen')}
       </Txt>
 
       <Card style={styles.block}>
         <Txt variant="label" color="muted" weight="medium" style={styles.fieldLabel}>
-          Meal
+          {t('meals:detailSlotField')}
         </Txt>
-        <SegmentedControl options={SLOT_OPTIONS} value={slot} onChange={handleSlot} />
+        <SegmentedControl options={slotOptions} value={slot} onChange={handleSlot} />
 
         <Txt variant="label" color="muted" weight="medium" style={styles.fieldLabelSpaced}>
-          Day
+          {t('meals:detailDayField')}
         </Txt>
         <View style={[styles.dateRow, { borderColor: colors.border }]}>
           <IconButton
@@ -503,14 +504,14 @@ export default function MealDetailScreen() {
             variant="surface"
             size={18}
             onPress={() => shiftDate(-1)}
-            accessibilityLabel="Move this meal to the previous day"
+            accessibilityLabel={t('meals:detailPrevDay')}
           />
           <View style={styles.dateLabel}>
             <Txt weight="semibold" align="center" numberOfLines={1}>
-              {formatDayLabel(date, today)}
+              {dayLabel}
             </Txt>
             <Txt variant="caption" color="faint" align="center">
-              {formatShortDay(date)}
+              {dayLabels.shortDay(date)}
             </Txt>
           </View>
           <IconButton
@@ -519,20 +520,20 @@ export default function MealDetailScreen() {
             size={18}
             disabled={date >= today}
             onPress={() => shiftDate(1)}
-            accessibilityLabel="Move this meal to the next day"
+            accessibilityLabel={t('meals:detailNextDay')}
           />
         </View>
       </Card>
 
       <Txt variant="caption" color="faint" weight="semibold" style={styles.sectionTitle}>
-        FOODS
+        {t('meals:detailFoods')}
       </Txt>
 
       <Card padded={false} style={styles.block}>
         {entries.length === 0 ? (
           <View style={styles.emptyEntries}>
             <Txt color="muted" align="center">
-              No foods left in this meal. Add one below, or delete the meal.
+              {t('meals:detailNoFoods')}
             </Txt>
           </View>
         ) : (
@@ -541,7 +542,10 @@ export default function MealDetailScreen() {
               {index > 0 ? <Divider inset /> : null}
               <ListRow
                 title={entry.name}
-                subtitle={entrySubtitle(entry)}
+                subtitle={`${labels.portion(
+                  entry.servingLabel,
+                  entry.quantityGrams,
+                )} · ${labels.macroLine(entry.macros)}`}
                 onPress={() => openEditor(entry)}
                 chevron
                 right={
@@ -557,7 +561,7 @@ export default function MealDetailScreen() {
                         {formatCount(round(entry.macros.calories))}
                       </Txt>
                       <Txt variant="caption" color="faint">
-                        kcal
+                        {t('units:kcal')}
                       </Txt>
                     </View>
                   </View>
@@ -574,7 +578,7 @@ export default function MealDetailScreen() {
             <TextField
               value={query}
               onChangeText={setQuery}
-              placeholder="Search foods"
+              placeholder={t('meals:detailSearchPlaceholder')}
               icon="search"
               autoFocus
               autoCapitalize="none"
@@ -585,7 +589,7 @@ export default function MealDetailScreen() {
           {results.length === 0 ? (
             <View style={styles.emptyEntries}>
               <Txt color="muted" align="center">
-                Nothing matches that search. Try a shorter word.
+                {t('meals:detailNoSearchMatch')}
               </Txt>
             </View>
           ) : (
@@ -596,8 +600,12 @@ export default function MealDetailScreen() {
                 <React.Fragment key={food.id}>
                   {index > 0 ? <Divider inset /> : null}
                   <ListRow
-                    title={food.name}
-                    subtitle={`${serving.label} · ${formatCount(round(servingMacros.calories))} kcal`}
+                    title={labels.name(food)}
+                    subtitle={`${labels.portion(
+                      serving.label,
+                      serving.grams,
+                      food.liquid,
+                    )} · ${formatCount(round(servingMacros.calories))} ${t('units:kcal')}`}
                     icon="add"
                     onPress={() => addFood(food)}
                   />
@@ -609,7 +617,7 @@ export default function MealDetailScreen() {
           <Divider />
           <View style={styles.searchFoot}>
             <Button
-              label="Close search"
+              label={t('meals:detailCloseSearch')}
               variant="ghost"
               size="sm"
               onPress={() => {
@@ -621,7 +629,7 @@ export default function MealDetailScreen() {
         </Card>
       ) : (
         <Button
-          label="Add food to this meal"
+          label={t('meals:detailAddFood')}
           icon="add"
           variant="secondary"
           fullWidth
@@ -631,10 +639,10 @@ export default function MealDetailScreen() {
       )}
 
       <TextField
-        label="Note"
+        label={t('meals:reviewNote')}
         value={note}
         onChangeText={handleNote}
-        placeholder="How it was cooked, how you felt, anything worth remembering"
+        placeholder={t('meals:detailNotePlaceholder')}
         multiline
         maxLength={NOTE_LIMIT}
         hint={`${note.length}/${NOTE_LIMIT}`}
@@ -642,7 +650,7 @@ export default function MealDetailScreen() {
       />
 
       <Button
-        label="Save changes"
+        label={t('meals:detailSave')}
         icon="checkmark"
         onPress={() => {
           void handleSave();
@@ -650,7 +658,7 @@ export default function MealDetailScreen() {
         disabled={!canSave}
         loading={saving}
         accessibilityHint={
-          canSave ? 'Writes your edits to this meal' : 'Nothing to save at the moment'
+          canSave ? t('meals:detailSaveHint') : t('meals:detailSaveNothingHint')
         }
         fullWidth
         size="lg"
@@ -663,35 +671,35 @@ export default function MealDetailScreen() {
         </Txt>
       ) : entries.length === 0 ? (
         <Txt variant="label" color="muted" align="center" style={styles.status}>
-          A meal needs at least one food before it can be saved.
+          {t('meals:detailNeedFood')}
         </Txt>
       ) : dirty ? (
         <Txt variant="caption" color="warning" align="center" style={styles.status}>
-          You have unsaved changes.
+          {t('meals:detailUnsaved')}
         </Txt>
       ) : saved ? (
         <Txt variant="caption" color="success" align="center" style={styles.status}>
-          Changes saved.
+          {t('meals:detailSaved')}
         </Txt>
       ) : (
         <Txt variant="caption" color="faint" align="center" style={styles.status}>
-          Nothing has changed yet.
+          {t('meals:detailUnchanged')}
         </Txt>
       )}
 
       <Divider style={styles.deleteRule} />
 
       <Txt variant="caption" color="faint" align="center" style={styles.deleteNote}>
-        Deleting removes this meal and its entries from your log. It cannot be undone.
+        {t('meals:detailDeleteNote')}
       </Txt>
 
       <Button
-        label="Delete meal"
+        label={t('meals:detailDelete')}
         icon="trash-outline"
         variant="danger"
         fullWidth
         onPress={handleDelete}
-        accessibilityHint="Asks you to confirm, then removes this meal"
+        accessibilityHint={t('meals:detailDeleteHint')}
         style={styles.deleteButton}
       />
 
@@ -709,7 +717,7 @@ export default function MealDetailScreen() {
             style={[StyleSheet.absoluteFill, { backgroundColor: colors.overlay }]}
             onPress={() => setEditor(null)}
             accessibilityRole="button"
-            accessibilityLabel="Close the portion editor"
+            accessibilityLabel={t('meals:detailEditorClose')}
           />
           {editorEntry ? (
             <View
@@ -725,7 +733,9 @@ export default function MealDetailScreen() {
                   </Txt>
                   {editorEntry.source === 'photo' && editorEntry.confidence !== undefined ? (
                     <Badge
-                      label={`${Math.round(editorEntry.confidence * 100)}% confident`}
+                      label={t('meals:detailConfident', {
+                        value: formatCount(editorEntry.confidence * 100),
+                      })}
                       tone={confidenceTone(editorEntry.confidence)}
                       style={styles.modalBadge}
                     />
@@ -734,22 +744,24 @@ export default function MealDetailScreen() {
                 <IconButton
                   icon="close"
                   onPress={() => setEditor(null)}
-                  accessibilityLabel="Close the portion editor"
+                  accessibilityLabel={t('meals:detailEditorClose')}
                 />
               </View>
 
               <NumberField
-                label="Portion"
+                label={t('meals:reviewPortionField')}
                 value={editor?.grams ?? null}
                 onChange={(grams) =>
                   setEditor((current) => (current ? { ...current, grams } : current))
                 }
-                suffix="g"
+                suffix={t('units:gram')}
                 min={1}
                 max={MAX_ENTRY_GRAMS}
                 autoFocus
                 onSubmitEditing={applyEditor}
-                hint={`Was ${formatCount(round(editorEntry.quantityGrams))} g`}
+                hint={t('meals:detailWasGrams', {
+                  amount: formatCount(round(editorEntry.quantityGrams)),
+                })}
               />
 
               <View style={[styles.preview, { backgroundColor: colors.surfaceAlt }]}>
@@ -757,38 +769,40 @@ export default function MealDetailScreen() {
                   <>
                     <View style={styles.previewRow}>
                       <Txt variant="label" color="muted">
-                        Calories
+                        {t('macros:calories')}
                       </Txt>
                       <Txt variant="label" weight="semibold" tabular>
-                        {`${formatCount(round(editorPreview.calories))} kcal`}
+                        {`${formatCount(round(editorPreview.calories))} ${t('units:kcal')}`}
                       </Txt>
                     </View>
                     <View style={styles.previewRow}>
                       <Txt variant="label" color="muted">
-                        Protein / Carbs / Fat
+                        {t('meals:detailPreviewMacros')}
                       </Txt>
                       <Txt variant="label" weight="semibold" tabular>
-                        {`${formatCount(round(editorPreview.protein))} / ${formatCount(round(editorPreview.carbs))} / ${formatCount(round(editorPreview.fat))} g`}
+                        {`${formatCount(round(editorPreview.protein))} / ${formatCount(
+                          round(editorPreview.carbs),
+                        )} / ${formatCount(round(editorPreview.fat))} ${t('units:gram')}`}
                       </Txt>
                     </View>
                   </>
                 ) : (
                   <Txt variant="label" color="muted">
-                    Enter a portion above to see the nutrients.
+                    {t('meals:detailPreviewEmpty')}
                   </Txt>
                 )}
               </View>
 
               <View style={styles.modalActions}>
                 <Button
-                  label="Remove"
+                  label={t('common:remove')}
                   variant="danger"
                   size="sm"
                   icon="trash-outline"
                   onPress={removeEditorEntry}
                 />
                 <Button
-                  label="Update"
+                  label={t('meals:detailUpdate')}
                   size="sm"
                   onPress={applyEditor}
                   disabled={editorPreview === null}
@@ -811,14 +825,14 @@ export default function MealDetailScreen() {
             style={StyleSheet.absoluteFill}
             onPress={() => setPhotoOpen(false)}
             accessibilityRole="button"
-            accessibilityLabel="Close the photo"
+            accessibilityLabel={t('meals:detailClosePhoto')}
           />
           {photoUri ? (
             <Image
               source={{ uri: photoUri }}
               style={styles.viewerImage}
               contentFit="contain"
-              accessibilityLabel="Meal photo"
+              accessibilityLabel={t('meals:detailPhotoAlt')}
               pointerEvents="none"
             />
           ) : null}
@@ -827,7 +841,7 @@ export default function MealDetailScreen() {
               icon="close"
               variant="surface"
               onPress={() => setPhotoOpen(false)}
-              accessibilityLabel="Close the photo"
+              accessibilityLabel={t('meals:detailClosePhoto')}
             />
           </View>
         </View>
@@ -855,8 +869,8 @@ const styles = StyleSheet.create({
   },
   photoCorner: {
     bottom: spacing.sm,
+    end: spacing.sm,
     position: 'absolute',
-    right: spacing.sm,
   },
   summaryTop: {
     alignItems: 'flex-start',
@@ -872,7 +886,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   calorieUnit: {
-    marginLeft: spacing.xs + 2,
+    marginStart: spacing.xs + 2,
   },
   bars: {
     marginTop: spacing.lg,
@@ -909,7 +923,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     letterSpacing: 0.8,
     marginBottom: spacing.sm,
-    marginLeft: spacing.xs,
+    marginStart: spacing.xs,
   },
   emptyEntries: {
     paddingHorizontal: spacing.lg,
@@ -996,7 +1010,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   viewerClose: {
+    end: spacing.md,
     position: 'absolute',
-    right: spacing.md,
   },
 });

@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import React, { useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Alert,
   Platform,
@@ -12,13 +13,14 @@ import {
   type ViewStyle,
 } from 'react-native';
 
+import { useFoodLabels } from '@/components/meal/useFoodLabels';
 import { Card, Divider, IconButton, Txt } from '@/components/ui';
-import { formatTime } from '@/domain/date';
-import { SLOT_LABELS, mealMacros } from '@/domain/totals';
+import { formatCount } from '@/domain/format';
+import { mealMacros } from '@/domain/totals';
 import { radius, spacing, useTheme } from '@/theme';
 import type { Macros, Meal, MealSlot } from '@/types';
 
-import { formatCount } from '../../../app/onboarding/_layout';
+import { useDayLabels } from './useDayLabels';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -54,32 +56,24 @@ function itemCount(meals: Meal[]): number {
   return meals.reduce((count, meal) => count + meal.entries.length, 0);
 }
 
-function metaLine(meal: Meal): string {
-  const count = meal.entries.length;
-  const items = `${count} item${count === 1 ? '' : 's'}`;
-  const time = formatTime(meal.loggedAt);
-  return time ? `${time} · ${items}` : items;
-}
-
-function summarize(meal: Meal): string {
-  const names = meal.entries.map((entry) => entry.name).filter(Boolean);
-  if (names.length === 0) return 'Empty meal';
-  if (names.length <= 2) return names.join(', ');
-  return `${names[0]}, ${names[1]} +${names.length - 2} more`;
+interface DeletePrompt {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  onConfirm: () => void;
 }
 
 /** react-native-web's Alert is a no-op, so fall back to the browser dialog. */
-function confirmDelete(title: string, onConfirm: () => void): void {
-  const message = `Delete "${title}"? This cannot be undone.`;
-
+function confirmDelete(prompt: DeletePrompt): void {
   if (Platform.OS === 'web') {
-    if (typeof window === 'undefined' || window.confirm(message)) onConfirm();
+    if (typeof window === 'undefined' || window.confirm(prompt.message)) prompt.onConfirm();
     return;
   }
 
-  Alert.alert('Delete meal', message, [
-    { text: 'Cancel', style: 'cancel' },
-    { text: 'Delete', style: 'destructive', onPress: onConfirm },
+  Alert.alert(prompt.title, prompt.message, [
+    { text: prompt.cancelLabel, style: 'cancel' },
+    { text: prompt.confirmLabel, style: 'destructive', onPress: prompt.onConfirm },
   ]);
 }
 
@@ -93,13 +87,42 @@ export function MealSection({
   style,
 }: MealSectionProps) {
   const { colors } = useTheme();
-  const label = SLOT_LABELS[slot];
+  const { t } = useTranslation(['today', 'common', 'units']);
+  const foodLabels = useFoodLabels();
+  const dayLabels = useDayLabels();
+
+  const label = foodLabels.slot(slot);
   const calories = Math.round(macros.calories);
   const empty = meals.length === 0;
 
+  // Meal names come from the entries the user logged, so they are shown as
+  // they were saved rather than translated.
+  const summarize = useCallback(
+    (meal: Meal): string => {
+      const names = meal.entries.map((entry) => entry.name).filter(Boolean);
+      if (names.length === 0) return t('today:emptyMeal');
+      if (names.length <= 2) return names.join(t('today:listSeparator'));
+      return t('today:summaryMore', {
+        first: names[0],
+        second: names[1],
+        value: formatCount(names.length - 2),
+      });
+    },
+    [t],
+  );
+
   const requestDelete = useCallback(
-    (meal: Meal) => confirmDelete(summarize(meal), () => onDelete(meal)),
-    [onDelete],
+    (meal: Meal) => {
+      const name = summarize(meal);
+      confirmDelete({
+        title: t('today:deleteTitle'),
+        message: t('today:deleteMessage', { name }),
+        confirmLabel: t('common:delete'),
+        cancelLabel: t('common:cancel'),
+        onConfirm: () => onDelete(meal),
+      });
+    },
+    [onDelete, summarize, t],
   );
 
   const glyph = (
@@ -116,8 +139,8 @@ export function MealSection({
         <Pressable
           onPress={onAdd}
           accessibilityRole="button"
-          accessibilityLabel={`Log ${label.toLowerCase()}`}
-          accessibilityHint="Opens food search for this meal"
+          accessibilityLabel={t('today:logSlot', { slot: label })}
+          accessibilityHint={t('today:logSlotHint')}
           style={({ pressed }) => [
             styles.header,
             pressed ? { backgroundColor: colors.surfaceAlt } : null,
@@ -127,7 +150,7 @@ export function MealSection({
           <View style={styles.headerText}>
             <Txt weight="semibold">{label}</Txt>
             <Txt variant="label" color="faint">
-              Nothing logged yet
+              {t('common:notLoggedYet')}
             </Txt>
           </View>
           <View style={styles.addHint} {...DECORATIVE}>
@@ -148,27 +171,30 @@ export function MealSection({
         <View style={styles.headerText}>
           <Txt weight="semibold">{label}</Txt>
           <Txt variant="label" color="muted">
-            {`${items} item${items === 1 ? '' : 's'}`}
+            {foodLabels.items(items)}
           </Txt>
         </View>
 
         <View
           accessible
-          accessibilityLabel={`${label} total, ${formatCount(calories)} kilocalories`}
+          accessibilityLabel={t('today:slotTotalSpoken', {
+            slot: label,
+            value: formatCount(calories),
+          })}
           style={styles.subtotal}
         >
           <Txt variant="label" weight="bold" tabular>
             {formatCount(calories)}
           </Txt>
           <Txt variant="label" color="faint">
-            kcal
+            {t('units:kcal')}
           </Txt>
         </View>
 
         <IconButton
           icon="add"
           onPress={onAdd}
-          accessibilityLabel={`Add food to ${label}`}
+          accessibilityLabel={t('today:addToSlot', { slot: label })}
           variant="surface"
           size={18}
         />
@@ -177,7 +203,8 @@ export function MealSection({
       {meals.map((meal, index) => {
         const title = summarize(meal);
         const mealCalories = Math.round(mealMacros(meal).calories);
-        const time = formatTime(meal.loggedAt);
+        const time = dayLabels.time(meal.loggedAt);
+        const countText = foodLabels.items(meal.entries.length);
 
         return (
           <View key={meal.id}>
@@ -190,8 +217,16 @@ export function MealSection({
                 onLongPress={() => requestDelete(meal)}
                 delayLongPress={350}
                 accessibilityRole="button"
-                accessibilityLabel={`${title}, ${mealCalories} kilocalories${time ? `, ${time}` : ''}`}
-                accessibilityHint="Opens the meal"
+                accessibilityLabel={
+                  time
+                    ? t('today:mealSpokenAt', {
+                        title,
+                        value: formatCount(mealCalories),
+                        time,
+                      })
+                    : t('today:mealSpoken', { title, value: formatCount(mealCalories) })
+                }
+                accessibilityHint={t('today:openMealHint')}
                 style={({ pressed }) => [
                   styles.row,
                   pressed ? { backgroundColor: colors.surfaceAlt } : null,
@@ -219,7 +254,7 @@ export function MealSection({
                     {title}
                   </Txt>
                   <Txt variant="label" color="muted" numberOfLines={1} style={styles.rowMeta}>
-                    {metaLine(meal)}
+                    {time ? `${time} · ${countText}` : countText}
                   </Txt>
                 </View>
 
@@ -228,7 +263,7 @@ export function MealSection({
                     {formatCount(mealCalories)}
                   </Txt>
                   <Txt variant="caption" color="faint">
-                    kcal
+                    {t('units:kcal')}
                   </Txt>
                 </View>
               </Pressable>
@@ -236,7 +271,7 @@ export function MealSection({
               <IconButton
                 icon="trash-outline"
                 onPress={() => requestDelete(meal)}
-                accessibilityLabel={`Delete ${title}`}
+                accessibilityLabel={t('today:deleteLabel', { name: title })}
                 size={16}
                 color={colors.textFaint}
               />

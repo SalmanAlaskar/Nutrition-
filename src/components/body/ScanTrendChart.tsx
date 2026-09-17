@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Platform,
   StyleSheet,
@@ -11,9 +12,13 @@ import {
 import Svg, { Circle, Line, Polyline, Text as SvgText } from 'react-native-svg';
 
 import { SegmentedControl, Txt } from '@/components/ui';
-import { daysBetween, formatShortDay } from '@/domain/date';
+import { daysBetween } from '@/domain/date';
+import { formatAmount, formatCount } from '@/domain/format';
+import { useDirection } from '@/i18n';
 import { fontSize, spacing, useTheme } from '@/theme';
 import type { BodyScan } from '@/types';
+
+import { useScanDate } from './useScanDate';
 
 /** The four readings worth a line. Everything else lives in the reading list. */
 const TRENDABLE = ['weightKg', 'skeletalMuscleKg', 'bodyFatKg', 'bodyFatPercent'] as const;
@@ -22,18 +27,42 @@ export type TrendMetric = (typeof TRENDABLE)[number];
 
 interface TrendDef {
   /** Spoken in the chart summary. */
-  label: string;
+  labelKey: 'body:fieldWeight' | 'body:fieldMuscle' | 'body:fieldFatMass' | 'body:fieldFatPercent';
   /** Fits a quarter of the selector. */
-  short: string;
-  unit: string;
+  shortKey:
+    | 'body:trendShortWeight'
+    | 'body:trendShortMuscle'
+    | 'body:trendShortFatMass'
+    | 'body:trendShortFatPercent';
+  unitKey: 'units:kg' | 'units:percent';
   decimals: number;
 }
 
 const TREND_DEFS: Record<TrendMetric, TrendDef> = {
-  weightKg: { label: 'Weight', short: 'Weight', unit: 'kg', decimals: 1 },
-  skeletalMuscleKg: { label: 'Skeletal muscle', short: 'Muscle', unit: 'kg', decimals: 1 },
-  bodyFatKg: { label: 'Body fat mass', short: 'Fat kg', unit: 'kg', decimals: 1 },
-  bodyFatPercent: { label: 'Percent body fat', short: 'Fat %', unit: '%', decimals: 1 },
+  weightKg: {
+    labelKey: 'body:fieldWeight',
+    shortKey: 'body:trendShortWeight',
+    unitKey: 'units:kg',
+    decimals: 1,
+  },
+  skeletalMuscleKg: {
+    labelKey: 'body:fieldMuscle',
+    shortKey: 'body:trendShortMuscle',
+    unitKey: 'units:kg',
+    decimals: 1,
+  },
+  bodyFatKg: {
+    labelKey: 'body:fieldFatMass',
+    shortKey: 'body:trendShortFatMass',
+    unitKey: 'units:kg',
+    decimals: 1,
+  },
+  bodyFatPercent: {
+    labelKey: 'body:fieldFatPercent',
+    shortKey: 'body:trendShortFatPercent',
+    unitKey: 'units:percent',
+    decimals: 1,
+  },
 };
 
 export interface ScanTrendChartProps {
@@ -54,16 +83,17 @@ const DECORATIVE: AccessibilityProps =
     ? { 'aria-hidden': true }
     : { accessibilityElementsHidden: true, importantForAccessibility: 'no-hide-descendants' };
 
-function format(value: number, decimals: number): string {
-  return value.toFixed(decimals);
-}
-
 /**
  * One measured metric across every scan that carries it. Readings are spaced by
- * the days between them, so a long gap looks like a long gap.
+ * the days between them, so a long gap looks like a long gap. The plot itself
+ * runs oldest to newest left to right in both languages, the way a time axis is
+ * read in Arabic technical material too; only the labels change language.
  */
 export function ScanTrendChart({ scans, style }: ScanTrendChartProps) {
+  const { t } = useTranslation(['body', 'units']);
   const { colors } = useTheme();
+  const { isRTL } = useDirection();
+  const { shortDay } = useScanDate();
   const [metric, setMetric] = useState<TrendMetric>('weightKg');
   const [width, setWidth] = useState(0);
 
@@ -73,6 +103,8 @@ export function ScanTrendChart({ scans, style }: ScanTrendChartProps) {
   }, []);
 
   const def = TREND_DEFS[metric];
+  const label = t(def.labelKey);
+  const unit = t(def.unitKey);
 
   const series = useMemo(
     () =>
@@ -119,16 +151,25 @@ export function ScanTrendChart({ scans, style }: ScanTrendChartProps) {
     };
   }, [series, width]);
 
-  const options = TRENDABLE.map((value) => ({ value, label: TREND_DEFS[value].short }));
+  const options = TRENDABLE.map((value) => ({ value, label: t(TREND_DEFS[value].shortKey) }));
   const latest = series[series.length - 1];
-  const unitSuffix = def.unit ? ` ${def.unit}` : '';
 
   const summary =
     series.length > 1
-      ? `${def.label} from ${format(series[0]?.value ?? 0, def.decimals)}${unitSuffix} on ` +
-        `${formatShortDay(model.firstDate)} to ${format(latest?.value ?? 0, def.decimals)}${unitSuffix} on ` +
-        `${formatShortDay(model.lastDate)}, across ${series.length} readings.`
+      ? t('trendSummary', {
+          label,
+          first: `${formatAmount(series[0]?.value ?? 0, def.decimals)} ${unit}`,
+          firstDay: shortDay(model.firstDate),
+          last: `${formatAmount(latest?.value ?? 0, def.decimals)} ${unit}`,
+          lastDay: shortDay(model.lastDate),
+          n: formatCount(series.length),
+        })
       : '';
+
+  // The plot does not mirror, so its two end labels keep their physical order:
+  // in Arabic the row itself flips, and the children are swapped back.
+  const axisDays = [shortDay(model.firstDate), shortDay(model.lastDate)];
+  const axis = isRTL ? [...axisDays].reverse() : axisDays;
 
   return (
     <View style={style}>
@@ -136,25 +177,23 @@ export function ScanTrendChart({ scans, style }: ScanTrendChartProps) {
 
       {series.length === 0 ? (
         <Txt color="muted" style={styles.note}>
-          {`No reading has ${def.label.toLowerCase()} yet. Add it to a scan and the line appears here.`}
+          {t('trendEmpty', { label })}
         </Txt>
       ) : series.length === 1 ? (
         <View style={styles.single}>
           <Txt variant="caption" color="faint" weight="semibold">
-            {def.label.toUpperCase()}
+            {label.toUpperCase()}
           </Txt>
           <View style={styles.singleRow}>
             <Txt variant="title" tabular>
-              {format(latest?.value ?? 0, def.decimals)}
+              {formatAmount(latest?.value ?? 0, def.decimals)}
             </Txt>
-            {def.unit ? (
-              <Txt variant="label" color="faint" weight="medium" style={styles.unit}>
-                {def.unit}
-              </Txt>
-            ) : null}
+            <Txt variant="label" color="faint" weight="medium" style={styles.unit}>
+              {unit}
+            </Txt>
           </View>
           <Txt variant="caption" color="faint">
-            {`One reading, on ${formatShortDay(model.lastDate)}. A second one draws the line.`}
+            {t('trendSingle', { day: shortDay(model.lastDate) })}
           </Txt>
         </View>
       ) : (
@@ -178,7 +217,7 @@ export function ScanTrendChart({ scans, style }: ScanTrendChartProps) {
                   strokeDasharray="4 5"
                 />
                 <SvgText x={0} y={model.yHigh - 5} fill={colors.textFaint} fontSize={fontSize.xs}>
-                  {format(model.highest, def.decimals)}
+                  {formatAmount(model.highest, def.decimals)}
                 </SvgText>
 
                 {model.flat ? null : (
@@ -193,7 +232,7 @@ export function ScanTrendChart({ scans, style }: ScanTrendChartProps) {
                       strokeDasharray="4 5"
                     />
                     <SvgText x={0} y={model.yLow + 13} fill={colors.textFaint} fontSize={fontSize.xs}>
-                      {format(model.lowest, def.decimals)}
+                      {formatAmount(model.lowest, def.decimals)}
                     </SvgText>
                   </>
                 )}
@@ -226,12 +265,11 @@ export function ScanTrendChart({ scans, style }: ScanTrendChartProps) {
           </View>
 
           <View style={styles.axis} {...DECORATIVE}>
-            <Txt variant="caption" color="faint">
-              {formatShortDay(model.firstDate)}
-            </Txt>
-            <Txt variant="caption" color="faint">
-              {formatShortDay(model.lastDate)}
-            </Txt>
+            {axis.map((day, index) => (
+              <Txt key={`${day}-${index}`} variant="caption" color="faint" numberOfLines={1}>
+                {day}
+              </Txt>
+            ))}
           </View>
         </>
       )}
@@ -252,13 +290,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   unit: {
-    marginLeft: spacing.xs + 1,
+    marginStart: spacing.xs + 1,
   },
   plot: {
     marginTop: spacing.md,
     width: '100%',
   },
+  // Physical padding on purpose: it lines the labels up with a plot that does
+  // not mirror.
   axis: {
+    columnGap: spacing.sm,
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingLeft: GUTTER,
