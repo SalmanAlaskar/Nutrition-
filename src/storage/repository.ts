@@ -2,11 +2,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { todayKey } from '@/domain/date';
 import type {
+  BodyScan,
+  Exercise,
   FoodItem,
   Meal,
   Profile,
+  Program,
   Settings,
   WeightLog,
+  WorkoutSession,
 } from '@/types';
 
 import { KEYS } from './keys';
@@ -200,6 +204,163 @@ export async function deleteCustomFood(id: string): Promise<FoodItem[]> {
   return next;
 }
 
+/* -------------------------------------------------------------- program -- */
+
+/** The one active training program, or null before the first one is seeded. */
+export async function getProgram(): Promise<Program | null> {
+  return readJson<Program | null>(KEYS.program, null);
+}
+
+export async function saveProgram(program: Program): Promise<Program> {
+  const stamped: Program = { ...program, updatedAt: new Date().toISOString() };
+  await writeJson(KEYS.program, stamped);
+  return stamped;
+}
+
+/* ------------------------------------------------------------- workouts -- */
+
+async function getWorkoutIndex(): Promise<string[]> {
+  return readJson<string[]>(KEYS.workoutIndex, []);
+}
+
+async function addToWorkoutIndex(date: string): Promise<void> {
+  const index = await getWorkoutIndex();
+  if (index.includes(date)) return;
+  index.push(date);
+  index.sort();
+  await writeJson(KEYS.workoutIndex, index);
+}
+
+async function removeFromWorkoutIndex(date: string): Promise<void> {
+  const index = await getWorkoutIndex();
+  const next = index.filter((key) => key !== date);
+  if (next.length !== index.length) await writeJson(KEYS.workoutIndex, next);
+}
+
+/** Every day that has at least one workout session, oldest first. */
+export async function getWorkoutDates(): Promise<string[]> {
+  return getWorkoutIndex();
+}
+
+export async function getWorkoutsForDate(date: string): Promise<WorkoutSession[]> {
+  const sessions = await readJson<WorkoutSession[]>(KEYS.workoutsFor(date), []);
+  return sessions.sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+}
+
+async function setWorkoutsForDate(
+  date: string,
+  sessions: WorkoutSession[],
+): Promise<void> {
+  if (sessions.length === 0) {
+    await AsyncStorage.removeItem(KEYS.workoutsFor(date));
+    await removeFromWorkoutIndex(date);
+    return;
+  }
+  await writeJson(KEYS.workoutsFor(date), sessions);
+  await addToWorkoutIndex(date);
+}
+
+export async function addWorkout(session: WorkoutSession): Promise<WorkoutSession> {
+  const sessions = await getWorkoutsForDate(session.date);
+  await setWorkoutsForDate(session.date, [...sessions, session]);
+  return session;
+}
+
+/** Replaces a session in place, moving it between days if the date changed. */
+export async function updateWorkout(
+  session: WorkoutSession,
+  previousDate?: string,
+): Promise<WorkoutSession> {
+  if (previousDate && previousDate !== session.date) {
+    await deleteWorkout(previousDate, session.id);
+    return addWorkout(session);
+  }
+  const sessions = await getWorkoutsForDate(session.date);
+  const index = sessions.findIndex((item) => item.id === session.id);
+  if (index === -1) return addWorkout(session);
+  sessions[index] = session;
+  await setWorkoutsForDate(session.date, sessions);
+  return session;
+}
+
+export async function deleteWorkout(date: string, sessionId: string): Promise<void> {
+  const sessions = await getWorkoutsForDate(date);
+  await setWorkoutsForDate(
+    date,
+    sessions.filter((session) => session.id !== sessionId),
+  );
+}
+
+export async function findWorkout(sessionId: string): Promise<WorkoutSession | null> {
+  const dates = await getWorkoutIndex();
+  for (const date of [...dates].reverse()) {
+    const sessions = await getWorkoutsForDate(date);
+    const match = sessions.find((session) => session.id === sessionId);
+    if (match) return match;
+  }
+  return null;
+}
+
+/** Sessions for each day in `dates`, keyed by day. Days with none are omitted. */
+export async function getWorkoutsForDates(
+  dates: string[],
+): Promise<Record<string, WorkoutSession[]>> {
+  const pairs = await Promise.all(
+    dates.map(async (date) => [date, await getWorkoutsForDate(date)] as const),
+  );
+  const out: Record<string, WorkoutSession[]> = {};
+  for (const [date, sessions] of pairs) {
+    if (sessions.length > 0) out[date] = sessions;
+  }
+  return out;
+}
+
+/* ----------------------------------------------------- custom exercises -- */
+
+/** Exercises the user added by hand, offered alongside the bundled list. */
+export async function getCustomExercises(): Promise<Exercise[]> {
+  return readJson<Exercise[]>(KEYS.customExercises, []);
+}
+
+export async function saveCustomExercise(exercise: Exercise): Promise<Exercise[]> {
+  const exercises = await getCustomExercises();
+  const next = exercises.filter((item) => item.id !== exercise.id);
+  next.unshift(exercise);
+  await writeJson(KEYS.customExercises, next.slice(0, 200));
+  return next;
+}
+
+export async function deleteCustomExercise(id: string): Promise<Exercise[]> {
+  const exercises = await getCustomExercises();
+  const next = exercises.filter((exercise) => exercise.id !== id);
+  await writeJson(KEYS.customExercises, next);
+  return next;
+}
+
+/* ------------------------------------------------------------ body scans -- */
+
+export async function getBodyScans(): Promise<BodyScan[]> {
+  const scans = await readJson<BodyScan[]>(KEYS.scans, []);
+  return scans.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Replaces the scan carrying the same id, so re-saving an edit is safe. */
+export async function saveBodyScan(scan: BodyScan): Promise<BodyScan[]> {
+  const scans = await getBodyScans();
+  const next = scans.filter((item) => item.id !== scan.id);
+  next.push(scan);
+  next.sort((a, b) => a.date.localeCompare(b.date));
+  await writeJson(KEYS.scans, next);
+  return next;
+}
+
+export async function deleteBodyScan(id: string): Promise<BodyScan[]> {
+  const scans = await getBodyScans();
+  const next = scans.filter((scan) => scan.id !== id);
+  await writeJson(KEYS.scans, next);
+  return next;
+}
+
 /* ----------------------------------------------------------- whole store -- */
 
 export interface ExportBundle {
@@ -209,10 +370,15 @@ export interface ExportBundle {
   weights: WeightLog[];
   customFoods: FoodItem[];
   meals: Record<string, Meal[]>;
+  program: Program | null;
+  workouts: Record<string, WorkoutSession[]>;
+  customExercises: Exercise[];
+  scans: BodyScan[];
 }
 
 export async function exportAll(): Promise<ExportBundle> {
   const dates = await getMealIndex();
+  const workoutDates = await getWorkoutIndex();
   return {
     exportedAt: new Date().toISOString(),
     profile: await getProfile(),
@@ -220,12 +386,17 @@ export async function exportAll(): Promise<ExportBundle> {
     weights: await getWeightLogs(),
     customFoods: await getCustomFoods(),
     meals: await getMealsForDates(dates),
+    program: await getProgram(),
+    workouts: await getWorkoutsForDates(workoutDates),
+    customExercises: await getCustomExercises(),
+    scans: await getBodyScans(),
   };
 }
 
 /** Wipes every key this app owns. Other AsyncStorage users are untouched. */
 export async function clearAll(): Promise<void> {
   const dates = await getMealIndex();
+  const workoutDates = await getWorkoutIndex();
   const keys = [
     KEYS.profile,
     KEYS.settings,
@@ -233,6 +404,11 @@ export async function clearAll(): Promise<void> {
     KEYS.customFoods,
     KEYS.mealIndex,
     ...dates.map((date) => KEYS.mealsFor(date)),
+    KEYS.program,
+    KEYS.customExercises,
+    KEYS.workoutIndex,
+    ...workoutDates.map((date) => KEYS.workoutsFor(date)),
+    KEYS.scans,
   ];
   await AsyncStorage.multiRemove(keys);
 }

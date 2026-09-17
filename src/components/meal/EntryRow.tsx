@@ -98,8 +98,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     minHeight: 56,
-    paddingLeft: spacing.lg,
-    paddingRight: spacing.sm,
+    paddingStart: spacing.lg,
+    paddingEnd: spacing.sm,
     paddingVertical: spacing.sm,
   },
   main: {
@@ -131,6 +131,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   remove: {
-    marginRight: -spacing.xs,
+    marginEnd: -spacing.xs,
   },
 });

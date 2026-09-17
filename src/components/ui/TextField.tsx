@@ -193,7 +193,7 @@ const RING = 2;
 const styles = StyleSheet.create({
   label: {
     marginBottom: spacing.xs + 2,
-    marginLeft: spacing.xs / 2,
+    marginStart: spacing.xs / 2,
   },
   ring: {
     borderRadius: radius.md + RING,
@@ -215,7 +215,7 @@ const styles = StyleSheet.create({
   icon: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: spacing.sm,
+    marginEnd: spacing.sm,
     width: 20,
   },
   input: {
@@ -231,20 +231,20 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   suffix: {
-    marginLeft: spacing.sm,
+    marginStart: spacing.sm,
   },
   helperRow: {
     alignItems: 'center',
     columnGap: spacing.xs + 1,
     flexDirection: 'row',
     marginTop: spacing.xs + 2,
-    marginLeft: spacing.xs,
+    marginStart: spacing.xs,
   },
   helper: {
     flexShrink: 1,
   },
   helperAlone: {
     marginTop: spacing.xs + 2,
-    marginLeft: spacing.xs,
+    marginStart: spacing.xs,
   },
 });

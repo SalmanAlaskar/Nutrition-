@@ -89,14 +89,14 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   back: {
-    marginLeft: -spacing.md,
+    marginStart: -spacing.md,
   },
   inlineText: {
     flex: 1,
     justifyContent: 'center',
   },
   inlineTextWithBack: {
-    marginLeft: -spacing.xs,
+    marginStart: -spacing.xs,
   },
   largeText: {
     marginTop: spacing.xs,

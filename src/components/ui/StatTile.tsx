@@ -120,14 +120,15 @@ const styles = StyleSheet.create({
     minWidth: 120,
     overflow: 'hidden',
     paddingBottom: spacing.lg,
-    paddingLeft: spacing.lg,
-    paddingRight: spacing.md,
+    paddingStart: spacing.lg,
+    paddingEnd: spacing.md,
     paddingTop: spacing.md,
   },
   stripe: {
     bottom: 0,
-    left: 0,
     position: 'absolute',
+    // Logical inset: the accent stripe stays on the reading edge in Arabic.
+    start: 0,
     top: 0,
     width: 3,
   },
@@ -139,7 +140,7 @@ const styles = StyleSheet.create({
   },
   label: {
     flexShrink: 1,
-    marginRight: spacing.sm,
+    marginEnd: spacing.sm,
   },
   bubble: {
     alignItems: 'center',
@@ -159,7 +160,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.6,
   },
   unit: {
-    marginLeft: spacing.xs + 1,
+    marginStart: spacing.xs + 1,
   },
   hint: {
     marginTop: spacing.xs + 2,

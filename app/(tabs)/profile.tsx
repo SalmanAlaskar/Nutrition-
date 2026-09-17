@@ -20,6 +20,7 @@ import {
   Txt,
   type TxtColor,
 } from '@/components/ui';
+import { latestScan, scanChange } from '@/domain/bodyScan';
 import { formatDayLabel, formatShortDay } from '@/domain/date';
 import {
   ACTIVITY_HINTS,
@@ -118,6 +119,45 @@ const BMI_BANDS: { key: string; from: number; to: number; healthy: boolean }[] =
   { key: 'high', from: 30, to: 40, healthy: false },
 ];
 const BMI_TICKS = [18.5, 25, 30];
+
+/**
+ * The scan metrics this screen lists, in reading order. Every one of them also
+ * exists on a ScanChange, so the difference since the previous reading can be
+ * printed beside the value.
+ */
+const SCAN_ROWS: {
+  key:
+    | 'weightKg'
+    | 'skeletalMuscleKg'
+    | 'bodyFatKg'
+    | 'bodyFatPercent'
+    | 'visceralFatLevel'
+    | 'inBodyScore';
+  label: string;
+  unit: string;
+  decimals: number;
+  /** Direction of a good change, null when it depends on the goal. */
+  higherIsBetter: boolean | null;
+}[] = [
+  { key: 'weightKg', label: 'Weight', unit: 'kg', decimals: 1, higherIsBetter: null },
+  {
+    key: 'skeletalMuscleKg',
+    label: 'Skeletal muscle',
+    unit: 'kg',
+    decimals: 1,
+    higherIsBetter: true,
+  },
+  { key: 'bodyFatKg', label: 'Body fat mass', unit: 'kg', decimals: 1, higherIsBetter: false },
+  { key: 'bodyFatPercent', label: 'Body fat', unit: '%', decimals: 1, higherIsBetter: false },
+  {
+    key: 'visceralFatLevel',
+    label: 'Visceral fat level',
+    unit: '',
+    decimals: 0,
+    higherIsBetter: false,
+  },
+  { key: 'inBodyScore', label: 'Scan score', unit: '', decimals: 0, higherIsBetter: true },
+];
 
 /** Editable copy of the numeric fields, held in whatever units are on screen. */
 interface Draft {
@@ -254,7 +294,7 @@ function LabeledControl({
 }
 
 export default function ProfileScreen() {
-  const { ready, profile, targets, weights, updateProfile, logWeight } = useApp();
+  const { ready, profile, targets, weights, bodyScans, updateProfile, logWeight } = useApp();
   const { colors } = useTheme();
   const router = useRouter();
 
@@ -422,6 +462,16 @@ export default function ProfileScreen() {
       setLogging(false);
     }
   };
+
+  const latestBodyScan = latestScan(bodyScans);
+  const previousBodyScan = latestBodyScan
+    ? latestScan(bodyScans.filter((scan) => scan.id !== latestBodyScan.id))
+    : null;
+  const bodyChange =
+    latestBodyScan && previousBodyScan ? scanChange(previousBodyScan, latestBodyScan) : null;
+  const scanRows = latestBodyScan
+    ? SCAN_ROWS.filter((row) => latestBodyScan[row.key] !== undefined)
+    : [];
 
   const recentWeights = weights.slice(-5).reverse();
   const firstWeight = weights.length > 0 ? weights[0] : null;
@@ -778,6 +828,117 @@ export default function ProfileScreen() {
         </Txt>
       </Card>
 
+      {/* ----------------------------------------------- body composition -- */}
+      <SectionTitle
+        title="Body composition"
+        hint={
+          latestBodyScan
+            ? `Last reading ${formatDayLabel(latestBodyScan.date)}${
+                latestBodyScan.device ? `, ${latestBodyScan.device}` : ''
+              }.`
+            : 'Readings from a body-composition scan, when you have one.'
+        }
+      />
+      {latestBodyScan === null ? (
+        <Card style={styles.firstCard}>
+          <EmptyState
+            icon="body-outline"
+            title="No reading yet"
+            message="Add a scan to follow muscle and fat separately, instead of weight alone."
+            actionLabel="Add a reading"
+            onAction={() => router.push('/body/import')}
+          />
+        </Card>
+      ) : (
+        <Card style={styles.firstCard}>
+          {bodyChange ? (
+            <Txt variant="label" color="muted" style={styles.scanIntro}>
+              {`Change since ${formatShortDay(bodyChange.fromDate)}, ${bodyChange.days} ${
+                bodyChange.days === 1 ? 'day' : 'days'
+              } earlier.`}
+            </Txt>
+          ) : (
+            <Txt variant="label" color="muted" style={styles.scanIntro}>
+              First reading. Add another to see what moved.
+            </Txt>
+          )}
+
+          {scanRows.map((row, index) => {
+            const value = latestBodyScan[row.key];
+            const delta = bodyChange ? bodyChange[row.key] : undefined;
+            const better =
+              delta === undefined || delta === 0 || row.higherIsBetter === null
+                ? null
+                : delta > 0 === row.higherIsBetter;
+            const deltaColor: TxtColor =
+              better === null ? 'faint' : better ? colors.accent : colors.warning;
+            const shown = value === undefined ? '—' : value.toFixed(row.decimals);
+
+            return (
+              <View key={row.key}>
+                {index > 0 ? <Divider /> : null}
+                <View
+                  accessible
+                  accessibilityLabel={`${row.label}: ${shown}${
+                    row.unit ? ` ${row.unit === '%' ? 'percent' : row.unit}` : ''
+                  }${
+                    delta === undefined
+                      ? ''
+                      : `, ${delta > 0 ? 'up' : delta < 0 ? 'down' : 'level at'} ${Math.abs(
+                          delta,
+                        ).toFixed(row.decimals)} since the previous reading`
+                  }`}
+                  style={styles.scanRow}
+                >
+                  <Txt weight="medium" numberOfLines={1} style={styles.scanLabel}>
+                    {row.label}
+                  </Txt>
+                  <View style={styles.scanValue}>
+                    <Txt weight="semibold" tabular>
+                      {shown}
+                    </Txt>
+                    {row.unit ? (
+                      <Txt variant="label" color="faint">
+                        {row.unit}
+                      </Txt>
+                    ) : null}
+                  </View>
+                  <Txt
+                    variant="label"
+                    color={deltaColor}
+                    align="end"
+                    tabular
+                    style={styles.scanDelta}
+                  >
+                    {delta === undefined
+                      ? '—'
+                      : `${delta > 0 ? '+' : ''}${delta.toFixed(row.decimals)}`}
+                  </Txt>
+                </View>
+              </View>
+            );
+          })}
+        </Card>
+      )}
+
+      <Card padded={false} style={styles.card}>
+        <ListRow
+          title="Scan history"
+          subtitle="Every reading, with what changed between them"
+          icon="analytics-outline"
+          chevron
+          onPress={() => router.push('/body')}
+        />
+        <Divider inset />
+        <ListRow
+          title="Add a reading"
+          subtitle="Type the numbers in or import a sheet"
+          icon="add-circle-outline"
+          chevron
+          onPress={() => router.push('/body/import')}
+        />
+      </Card>
+
       {/* -------------------------------------------------------- weight -- */}
       <SectionTitle title="Weight log" hint="Logging today's weight also updates your plan." />
       <Card style={styles.firstCard}>
@@ -1020,6 +1181,31 @@ const styles = StyleSheet.create({
   bmiDivider: {
     marginBottom: spacing.md,
     marginTop: spacing.lg,
+  },
+
+  /* body composition */
+  scanIntro: {
+    marginBottom: spacing.sm,
+  },
+  scanRow: {
+    alignItems: 'baseline',
+    columnGap: spacing.md,
+    flexDirection: 'row',
+    minHeight: 34,
+    paddingVertical: spacing.sm,
+  },
+  scanLabel: {
+    flex: 1,
+  },
+  scanValue: {
+    alignItems: 'baseline',
+    columnGap: 3,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    minWidth: 64,
+  },
+  scanDelta: {
+    minWidth: 52,
   },
 
   /* weight */

@@ -99,17 +99,17 @@ const styles = StyleSheet.create({
   },
   label: {
     flexShrink: 1,
-    marginRight: spacing.sm,
+    marginEnd: spacing.sm,
   },
   values: {
     alignItems: 'baseline',
     flexDirection: 'row',
   },
   goal: {
-    marginLeft: spacing.xs,
+    marginStart: spacing.xs,
   },
   unit: {
-    marginLeft: spacing.xs / 2,
+    marginStart: spacing.xs / 2,
   },
   track: {
     borderRadius: radius.pill,

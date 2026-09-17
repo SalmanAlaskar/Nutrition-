@@ -1,0 +1,27 @@
+/** Arabic copy for the common area. Keys must match en/common.ts exactly. */
+export const common = {
+  appName: 'التغذية',
+  save: 'حفظ',
+  cancel: 'إلغاء',
+  delete: 'حذف',
+  edit: 'تعديل',
+  done: 'تم',
+  add: 'إضافة',
+  back: 'رجوع',
+  close: 'إغلاق',
+  retry: 'حاول مرة أخرى',
+  confirm: 'تأكيد',
+  continue: 'متابعة',
+  reset: 'إعادة تعيين',
+  remove: 'إزالة',
+  search: 'بحث',
+  today: 'اليوم',
+  yesterday: 'أمس',
+  tomorrow: 'غداً',
+  loading: 'جاري التحميل',
+  none: 'لا شيء',
+  optional: 'اختياري',
+  more: 'المزيد',
+  notLoggedYet: 'لم تسجّل شيئاً بعد',
+  seeAll: 'عرض الكل'
+} as const;

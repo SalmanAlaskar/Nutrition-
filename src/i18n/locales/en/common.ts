@@ -1,0 +1,27 @@
+/** English copy for the common area. Keys are shared with ar/common.ts. */
+export const common = {
+  appName: 'Nutrition',
+  save: 'Save',
+  cancel: 'Cancel',
+  delete: 'Delete',
+  edit: 'Edit',
+  done: 'Done',
+  add: 'Add',
+  back: 'Back',
+  close: 'Close',
+  retry: 'Try again',
+  confirm: 'Confirm',
+  continue: 'Continue',
+  reset: 'Reset',
+  remove: 'Remove',
+  search: 'Search',
+  today: 'Today',
+  yesterday: 'Yesterday',
+  tomorrow: 'Tomorrow',
+  loading: 'Loading',
+  none: 'None',
+  optional: 'Optional',
+  more: 'More',
+  notLoggedYet: 'Nothing logged yet',
+  seeAll: 'See all'
+} as const;

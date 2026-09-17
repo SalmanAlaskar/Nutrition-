@@ -394,7 +394,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   unit: {
-    marginLeft: spacing.xs + 1,
+    marginStart: spacing.xs + 1,
   },
   deltaBlock: {
     alignItems: 'flex-end',
@@ -413,8 +413,8 @@ const styles = StyleSheet.create({
   axis: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingLeft: GUTTER,
-    paddingRight: RIGHT_INSET,
+    paddingStart: GUTTER,
+    paddingEnd: RIGHT_INSET,
   },
   readings: {
     borderRadius: radius.md,

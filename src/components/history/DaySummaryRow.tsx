@@ -239,15 +239,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   macroValue: {
-    marginLeft: spacing.xs + 1,
+    marginStart: spacing.xs + 1,
   },
   macroUnit: {
-    marginLeft: 2,
+    marginStart: 2,
   },
   comparison: {
     flexShrink: 0,
   },
   chevron: {
-    marginLeft: spacing.md,
+    marginStart: spacing.md,
   },
 });

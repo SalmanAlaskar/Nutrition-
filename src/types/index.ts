@@ -180,3 +180,153 @@ export interface DailyTotals {
   entryCount: number;
   bySlot: Record<MealSlot, Macros>;
 }
+
+/* ------------------------------------------------------------- training -- */
+
+export type SessionType = 'push' | 'pull' | 'legs' | 'upper' | 'lower' | 'full' | 'cardio';
+
+export type Equipment = 'barbell' | 'dumbbell' | 'machine' | 'cable' | 'bodyweight' | 'other';
+
+/** An entry in the exercise database, or one the user added by hand. */
+export interface Exercise {
+  id: string;
+  name: string;
+  /** Arabic name, shown as a secondary label when present. */
+  nameAr?: string;
+  /** Day types this exercise belongs to by default. */
+  types: SessionType[];
+  muscles: string[];
+  equipment: Equipment;
+  /** Short cue on form, one sentence. */
+  cue?: string;
+  /** True when the user created it rather than the bundled database. */
+  custom?: boolean;
+}
+
+/** One line of a program day: what to do and how much of it. */
+export interface PlannedExercise {
+  exerciseId: string;
+  sets: number;
+  repsLow: number;
+  repsHigh: number;
+  restSeconds?: number;
+  note?: string;
+}
+
+/** A named training day inside a program, e.g. 'Push'. */
+export interface ProgramDay {
+  id: string;
+  type: SessionType;
+  label: string;
+  labelAr?: string;
+  exercises: PlannedExercise[];
+}
+
+export interface Program {
+  id: string;
+  name: string;
+  nameAr?: string;
+  days: ProgramDay[];
+  /** Weekday index 0=Sunday..6=Saturday -> ProgramDay.id, or null for a rest day. */
+  schedule: Record<number, string | null>;
+  /** ISO timestamps. */
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** One working set. Reps and load stay empty until the set is filled in. */
+export interface SetLog {
+  reps?: number;
+  weightKg?: number;
+  done: boolean;
+}
+
+export interface LoggedExercise {
+  exerciseId: string;
+  /** Captured at log time so history survives program edits. */
+  name: string;
+  done: boolean;
+  sets: SetLog[];
+  note?: string;
+}
+
+export interface WorkoutSession {
+  id: string;
+  /** Local calendar day, 'YYYY-MM-DD', same convention as Meal.date. */
+  date: string;
+  /** ISO timestamp of when the session was started. */
+  startedAt: string;
+  /** ISO timestamp, set once the session is finished. */
+  completedAt?: string;
+  type: SessionType;
+  programId?: string;
+  dayId?: string;
+  dayLabel?: string;
+  exercises: LoggedExercise[];
+  note?: string;
+}
+
+/* --------------------------------------------------------- body scans -- */
+
+/** Where a body-composition reading came from. */
+export type ScanSource = 'manual' | 'qr' | 'photo' | 'document';
+
+/** One InBody-style body-composition reading. Every metric is optional except date and weight. */
+export interface BodyScan {
+  id: string;
+  /** Local calendar day, 'YYYY-MM-DD'. */
+  date: string;
+  /** ISO timestamp of when the reading was taken. */
+  takenAt: string;
+  source: ScanSource;
+  /** Machine the reading came from, e.g. 'InBody 270'. */
+  device?: string;
+  weightKg: number;
+  skeletalMuscleKg?: number;
+  bodyFatKg?: number;
+  bodyFatPercent?: number;
+  fatFreeMassKg?: number;
+  totalBodyWaterL?: number;
+  proteinKg?: number;
+  mineralsKg?: number;
+  bmi?: number;
+  bmrKcal?: number;
+  /** Level 1-20 on mid-range machines. Never mix with visceralFatAreaCm2. */
+  visceralFatLevel?: number;
+  visceralFatAreaCm2?: number;
+  waistHipRatio?: number;
+  inBodyScore?: number;
+  targetWeightKg?: number;
+  segmentalLeanKg?: SegmentalValues;
+  segmentalFatKg?: SegmentalValues;
+  note?: string;
+  /** Local URI of the imported sheet, when there was one. */
+  sourceUri?: string;
+}
+
+/** Per-limb readings from a segmental analysis, in kilograms. */
+export interface SegmentalValues {
+  rightArm?: number;
+  leftArm?: number;
+  trunk?: number;
+  rightLeg?: number;
+  leftLeg?: number;
+}
+
+/* --------------------------------------------------------------- insights -- */
+
+/** A single actionable observation shown to the user. */
+export interface Insight {
+  id: string;
+  /** Lower sorts first. */
+  priority: number;
+  tone: 'positive' | 'neutral' | 'warning';
+  category: 'nutrition' | 'training' | 'body' | 'consistency';
+  /** Ionicons glyph. */
+  icon: string;
+  title: string;
+  detail: string;
+  /** Optional route to act on it, e.g. '/training'. */
+  actionLabel?: string;
+  actionHref?: string;
+}

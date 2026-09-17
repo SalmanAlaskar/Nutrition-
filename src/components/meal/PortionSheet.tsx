@@ -420,7 +420,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   summaryUnit: {
-    marginLeft: 2,
+    marginStart: 2,
   },
   summaryRule: {
     marginTop: spacing.md,

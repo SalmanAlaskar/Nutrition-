@@ -102,12 +102,8 @@ export function planDraftParams(draft: PlanDraft): Record<string, string> {
   };
 }
 
-/** Groups thousands without depending on the device locale or Intl digits. */
-export function formatCount(value: number): string {
-  return Math.round(value)
-    .toString()
-    .replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-}
+/** Re-exported so existing imports keep working; the implementation moved. */
+export { formatCount } from '@/domain/format';
 
 export default function OnboardingLayout() {
   const { colors } = useTheme();

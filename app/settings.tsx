@@ -30,6 +30,13 @@ import {
   Txt,
   type SegmentedOption,
 } from '@/components/ui';
+import {
+  LANGUAGES,
+  changeLanguage,
+  currentLanguage,
+  setNativeDirection,
+  type LanguageCode,
+} from '@/i18n';
 import { useApp } from '@/state/AppStore';
 import { DEFAULT_SETTINGS, deleteCustomFood, exportAll } from '@/storage/repository';
 import { clearApiKey, hasApiKey, setApiKey } from '@/storage/secrets';
@@ -236,6 +243,11 @@ function SwitchRow({
     </Pressable>
   );
 }
+
+const LANGUAGE_OPTIONS: SegmentedOption<LanguageCode>[] = LANGUAGES.map((entry) => ({
+  value: entry.code,
+  label: entry.label,
+}));
 
 /** Photo analysis, units, saved foods, export/erase and what the numbers mean. */
 export default function SettingsScreen() {
@@ -449,6 +461,23 @@ export default function SettingsScreen() {
     }
     router.replace('/(tabs)/profile');
   };
+
+  const [language, setLanguage] = useState<LanguageCode>(() => currentLanguage());
+
+  const applyLanguage = useCallback((next: LanguageCode) => {
+    setLanguage(next);
+    void (async () => {
+      await changeLanguage(next);
+      // Native layout direction only follows after a restart; say so rather
+      // than leaving a half-mirrored screen behind.
+      if (setNativeDirection(next)) {
+        Alert.alert(
+          'Restart to finish',
+          'Close and reopen the app to lay it out in the new direction.',
+        );
+      }
+    })();
+  }, []);
 
   const units: UnitSystem = profile?.units ?? 'metric';
   const aiOn = settings.photoAnalysis === 'ai';
@@ -670,6 +699,23 @@ export default function SettingsScreen() {
             </Card>
           </>
         ) : null}
+
+        {/* ---------------------------------------------------- language -- */}
+        <SectionTitle
+          title="Language"
+          hint="Changes the whole app, including the direction it reads in."
+        />
+        <Card style={styles.firstCard}>
+          <SegmentedControl<LanguageCode>
+            options={LANGUAGE_OPTIONS}
+            value={language}
+            onChange={applyLanguage}
+          />
+          <Txt variant="label" color="muted" style={styles.paragraph}>
+            Arabic lays the app out right to left. On a phone that takes effect the next time
+            the app opens; in the browser it happens straight away.
+          </Txt>
+        </Card>
 
         {/* ------------------------------------------------------- units -- */}
         <SectionTitle title="Units" hint="How heights and weights are shown throughout the app." />

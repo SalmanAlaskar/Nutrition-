@@ -31,7 +31,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   inset: {
-    marginLeft: spacing.lg,
+    marginStart: spacing.lg,
     width: 'auto',
   },
 });

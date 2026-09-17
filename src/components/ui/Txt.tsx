@@ -1,11 +1,24 @@
 import React from 'react';
-import { StyleSheet, Text, type StyleProp, type TextProps, type TextStyle } from 'react-native';
+import {
+  I18nManager,
+  Platform,
+  StyleSheet,
+  Text,
+  type StyleProp,
+  type TextProps,
+  type TextStyle,
+} from 'react-native';
 
 import { fontSize, fontWeight, useTheme, type Palette } from '@/theme';
 
 export type TxtVariant = 'display' | 'title' | 'heading' | 'body' | 'label' | 'caption';
 export type TxtWeight = 'regular' | 'medium' | 'semibold' | 'bold';
-export type TxtAlign = 'left' | 'center' | 'right';
+/**
+ * 'start' and 'end' follow the reading direction and are what screens should
+ * use. The physical 'left' and 'right' stay available for the rare case that
+ * must not mirror, such as a number column pinned beside a chart axis.
+ */
+export type TxtAlign = 'start' | 'center' | 'end' | 'left' | 'right';
 export type TxtColorName =
   | 'text'
   | 'muted'
@@ -65,6 +78,22 @@ function resolveColor(palette: Palette, value: TxtColor): string {
   return key ? palette[key] : value;
 }
 
+/**
+ * React Native's textAlign has no logical values, while react-native-web does
+ * and flips them from `dir`. So the web keeps 'start' / 'end' and native
+ * resolves them against I18nManager once, at style time.
+ */
+function alignStyle(align: TxtAlign | undefined): TextStyle | null {
+  if (!align) return null;
+  if (align !== 'start' && align !== 'end') return { textAlign: align };
+  if (Platform.OS === 'web') {
+    return { textAlign: align as unknown as TextStyle['textAlign'] };
+  }
+  const rtl = I18nManager.isRTL;
+  if (align === 'start') return { textAlign: rtl ? 'right' : 'left' };
+  return { textAlign: rtl ? 'left' : 'right' };
+}
+
 export function Txt({
   variant = 'body',
   color = 'text',
@@ -86,7 +115,7 @@ export function Txt({
         styles.base,
         VARIANT_STYLE[variant],
         { color: resolveColor(colors, color), fontWeight: fontWeight[resolvedWeight] },
-        align ? { textAlign: align } : null,
+        alignStyle(align),
         tabular ? tabularNums : null,
         style,
       ]}

@@ -165,12 +165,12 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
   },
   rowSplit: {
-    paddingRight: spacing.md,
+    paddingEnd: spacing.md,
   },
   tapTarget: {
     alignSelf: 'stretch',
     flex: 1,
-    paddingLeft: spacing.lg,
+    paddingStart: spacing.lg,
     paddingVertical: spacing.md,
   },
   bubble: {

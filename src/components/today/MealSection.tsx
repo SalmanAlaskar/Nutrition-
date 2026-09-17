@@ -254,8 +254,8 @@ const styles = StyleSheet.create({
     columnGap: spacing.md,
     flexDirection: 'row',
     minHeight: 64,
-    paddingLeft: spacing.lg,
-    paddingRight: spacing.sm,
+    paddingStart: spacing.lg,
+    paddingEnd: spacing.sm,
     paddingVertical: spacing.md,
   },
   glyph: {
@@ -283,7 +283,7 @@ const styles = StyleSheet.create({
   rowWrap: {
     alignItems: 'center',
     flexDirection: 'row',
-    paddingRight: spacing.xs,
+    paddingEnd: spacing.xs,
   },
   row: {
     alignItems: 'center',
@@ -291,8 +291,8 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     minHeight: 62,
-    paddingLeft: spacing.lg,
-    paddingRight: spacing.sm,
+    paddingStart: spacing.lg,
+    paddingEnd: spacing.sm,
     paddingVertical: spacing.sm,
   },
   thumb: {
