@@ -1,0 +1,64 @@
+{
+  "expo": {
+    "name": "Nutrition",
+    "slug": "nutrition-tracker",
+    "version": "1.0.0",
+    "scheme": "nutrition",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B1220"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "sa.nutrition.tracker",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Nutrition uses the camera so you can photograph a meal and log it without typing.",
+        "NSPhotoLibraryUsageDescription": "Nutrition needs access to your photos so you can log a meal from a picture you already took.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "sa.nutrition.tracker",
+      "edgeToEdgeEnabled": true,
+      "adaptiveIcon": {
+        "backgroundColor": "#0B1220",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": ["android.permission.CAMERA", "android.permission.READ_MEDIA_IMAGES"],
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-image",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Nutrition uses the camera so you can photograph a meal and log it without typing."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Nutrition needs access to your photos so you can log a meal from a picture you already took."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": false
+    }
+  }
+}
