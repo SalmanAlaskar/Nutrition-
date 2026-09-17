@@ -22,12 +22,24 @@ served from this Mac over the network.
 
 **2. Start the server**
 
+If the phone is on the same Wi-Fi as this Mac, this is the reliable option:
+
+```bash
+npx expo start --lan
+```
+
+A QR code appears in the terminal along with a URL like `exp://10.41.13.69:8081`.
+
+If the phone is on mobile data, or the two are on networks that cannot see each other, use the
+tunnel instead:
+
 ```bash
 npm run share
 ```
 
-The first run asks to install a tunnelling helper. Accept it. After a few seconds a QR code
-appears in the terminal along with a URL that looks like `exp://xxxxxxx.exp.direct`.
+That routes through an ngrok tunnel and prints a URL like `exp://xxxxxxx.exp.direct`. Some
+corporate and government networks block it, in which case it times out with "ngrok tunnel took
+too long to connect" and you should fall back to the LAN option above.
 
 **3. Open it**
 
@@ -38,9 +50,9 @@ The app downloads and launches. Enter your body details and start logging.
 
 **What to know**
 
-- The tunnel works over mobile data, so the phone does not need to be on the same Wi-Fi.
-- It only lives while that terminal is running. Close the terminal and the link dies.
-- Every time you restart it you get a new URL.
+- The link only lives while that terminal is running. Close it and the link dies.
+- The LAN address changes when the Mac moves to a different network.
+- The tunnel URL changes every time you restart it.
 - Expo Go cannot run custom native code. Everything in this app works there.
 
 ---
