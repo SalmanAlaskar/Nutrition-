@@ -31,6 +31,9 @@ export interface ScreenProps {
 
 const DEFAULT_EDGES: ScreenEdge[] = ['top'];
 
+const KEYBOARD_DISMISS_MODE =
+  Platform.OS === 'ios' ? 'interactive' : Platform.OS === 'android' ? 'on-drag' : 'none';
+
 export function Screen({
   children,
   scroll = false,
@@ -58,7 +61,11 @@ export function Screen({
         contentStyle,
       ]}
       keyboardShouldPersistTaps="handled"
-      keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+      // Never dismiss on drag on the web. Opening the on-screen keyboard there
+      // shrinks the viewport and the browser scrolls the focused field into
+      // view; 'on-drag' reads that as a drag and closes the keyboard again, so
+      // every digit needs a fresh tap.
+      keyboardDismissMode={KEYBOARD_DISMISS_MODE}
       showsVerticalScrollIndicator={false}
       refreshControl={
         onRefresh ? (
