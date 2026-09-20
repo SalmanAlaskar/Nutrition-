@@ -6,7 +6,7 @@ import { StyleSheet, View } from 'react-native';
 import {
   AppHeader,
   Button,
-  NumberField,
+  MeasurePicker,
   Screen,
   SegmentedControl,
   Txt,
@@ -39,6 +39,18 @@ const SEX_CALORIE_GAP = 166;
 /** Imperial bounds are pulled inwards so a shown bound is always accepted. */
 const MIN_TOTAL_INCHES = Math.ceil(LIMITS.heightCm.min / CM_PER_INCH);
 const MAX_TOTAL_INCHES = Math.floor(LIMITS.heightCm.max / CM_PER_INCH);
+const MIN_FEET = Math.floor(MIN_TOTAL_INCHES / INCHES_PER_FOOT);
+const MAX_FEET = Math.floor(MAX_TOTAL_INCHES / INCHES_PER_FOOT);
+
+/**
+ * Where each wheel opens. A wheel always shows a value under its centre line,
+ * so starting on the midpoint of the range would quietly propose 56 years and
+ * 165 cm. These are ordinary starting points the screen says out loud.
+ */
+const START_AGE = 30;
+const START_HEIGHT_CM = 175;
+const START_WEIGHT_KG = 75;
+const START_FEET = cmToFeetInches(START_HEIGHT_CM);
 const MIN_LB = Math.ceil(kgToLb(LIMITS.weightKg.min));
 const MAX_LB = Math.floor(kgToLb(LIMITS.weightKg.max));
 
@@ -54,13 +66,13 @@ export default function BodyStep() {
 
   const [units, setUnits] = useState<UnitSystem>(initial?.units ?? 'metric');
   const [sex, setSex] = useState<Sex>(initial?.sex ?? 'male');
-  const [age, setAge] = useState<number | null>(initial?.age ?? null);
-  const [heightCm, setHeightCm] = useState<number | null>(initial?.heightCm ?? null);
-  const [feet, setFeet] = useState<number | null>(initialFeetInches?.feet ?? null);
-  const [inches, setInches] = useState<number | null>(initialFeetInches?.inches ?? null);
-  const [weightKg, setWeightKg] = useState<number | null>(initial?.weightKg ?? null);
-  const [weightLb, setWeightLb] = useState<number | null>(
-    initial ? kgToLb(initial.weightKg) : null,
+  const [age, setAge] = useState<number>(initial?.age ?? START_AGE);
+  const [heightCm, setHeightCm] = useState<number>(initial?.heightCm ?? START_HEIGHT_CM);
+  const [feet, setFeet] = useState<number>(initialFeetInches?.feet ?? START_FEET.feet);
+  const [inches, setInches] = useState<number>(initialFeetInches?.inches ?? START_FEET.inches);
+  const [weightKg, setWeightKg] = useState<number>(initial?.weightKg ?? START_WEIGHT_KG);
+  const [weightLb, setWeightLb] = useState<number>(
+    initial ? kgToLb(initial.weightKg) : Math.round(kgToLb(START_WEIGHT_KG)),
   );
 
   const metric = units === 'metric';
@@ -86,46 +98,32 @@ export default function BodyStep() {
     if (next === units) return;
 
     if (next === 'imperial') {
-      if (heightCm !== null) {
-        const converted = cmToFeetInches(heightCm);
-        setFeet(converted.feet);
-        setInches(converted.inches);
-      }
-      if (weightKg !== null) setWeightLb(kgToLb(weightKg));
+      const converted = cmToFeetInches(heightCm);
+      setFeet(converted.feet);
+      setInches(converted.inches);
+      setWeightLb(Math.round(kgToLb(weightKg)));
     } else {
-      if (feet !== null || inches !== null) {
-        setHeightCm(feetInchesToCm(feet ?? 0, inches ?? 0));
-      }
-      if (weightLb !== null) setWeightKg(lbToKg(weightLb));
+      setHeightCm(feetInchesToCm(feet, inches));
+      setWeightKg(lbToKg(weightLb));
     }
 
     setUnits(next);
   };
 
-  const heightValue = metric
-    ? heightCm
-    : feet === null && inches === null
-      ? null
-      : feetInchesToCm(feet ?? 0, inches ?? 0);
+  const heightValue = metric ? heightCm : feetInchesToCm(feet, inches);
 
-  const weightValue = metric ? weightKg : weightLb === null ? null : lbToKg(weightLb);
+  const weightValue = metric ? weightKg : lbToKg(weightLb);
 
-  const ageError =
-    age !== null && (age < LIMITS.age.min || age > LIMITS.age.max)
-      ? t('onboarding:ageError', {
-          min: formatCount(LIMITS.age.min),
-          max: formatCount(LIMITS.age.max),
-        })
-      : undefined;
-
+  // Age and weight are chosen on a wheel that is bounded by LIMITS, so an
+  // out-of-range value cannot be produced and needs no error state. Height
+  // still can be, because feet and inches are two wheels that combine.
   const inchesError =
-    !metric && inches !== null && (inches < 0 || inches >= INCHES_PER_FOOT)
+    !metric && (inches < 0 || inches >= INCHES_PER_FOOT)
       ? t('onboarding:inchesError')
       : undefined;
 
   const heightOutOfRange =
-    heightValue !== null &&
-    (heightValue < LIMITS.heightCm.min || heightValue > LIMITS.heightCm.max);
+    heightValue < LIMITS.heightCm.min || heightValue > LIMITS.heightCm.max;
 
   const heightError = heightOutOfRange
     ? metric
@@ -141,24 +139,7 @@ export default function BodyStep() {
 
   const heightHelp = inchesError ?? heightError;
 
-  const weightOutOfRange =
-    weightValue !== null &&
-    (weightValue < LIMITS.weightKg.min || weightValue > LIMITS.weightKg.max);
-
-  const weightError = weightOutOfRange
-    ? metric
-      ? t('onboarding:weightErrorKg', {
-          min: formatCount(LIMITS.weightKg.min),
-          max: formatCount(LIMITS.weightKg.max),
-        })
-      : t('onboarding:weightErrorLb', {
-          min: formatCount(MIN_LB),
-          max: formatCount(MAX_LB),
-        })
-    : undefined;
-
   const draft = useMemo<BodyDraft | null>(() => {
-    if (age === null || heightValue === null || weightValue === null) return null;
     if (inchesError) return null;
     if (!isValidProfileInput({ age, heightCm: heightValue, weightKg: weightValue })) {
       return null;
@@ -189,6 +170,10 @@ export default function BodyStep() {
         style={styles.units}
       />
 
+      <Txt variant="caption" color="faint" style={styles.startNote}>
+        {t('onboarding:wheelStartNote')}
+      </Txt>
+
       <View style={styles.fields}>
         <View>
           <Txt variant="label" color="muted" weight="semibold" style={styles.label}>
@@ -200,94 +185,84 @@ export default function BodyStep() {
           </Txt>
         </View>
 
-        <NumberField
+        <MeasurePicker
           label={t('onboarding:age')}
           value={age}
           onChange={setAge}
-          suffix={t('units:years')}
-          placeholder="30"
+          min={LIMITS.age.min}
+          max={LIMITS.age.max}
+          unit={t('units:years')}
           hint={t('onboarding:ageRange', {
             min: formatCount(LIMITS.age.min),
             max: formatCount(LIMITS.age.max),
           })}
-          error={ageError}
         />
 
         {metric ? (
-          <NumberField
+          <MeasurePicker
             label={t('onboarding:height')}
             value={heightCm}
             onChange={setHeightCm}
-            suffix={t('units:cm')}
-            placeholder="175"
+            min={LIMITS.heightCm.min}
+            max={LIMITS.heightCm.max}
+            unit={t('units:cm')}
             hint={t('onboarding:heightRangeCm', {
               min: formatCount(LIMITS.heightCm.min),
               max: formatCount(LIMITS.heightCm.max),
             })}
-            error={heightError}
           />
         ) : (
-          <View>
-            <Txt variant="label" color="muted" weight="semibold" style={styles.label}>
-              {t('onboarding:height')}
-            </Txt>
-            <View style={styles.row}>
-              <NumberField
-                label={t('onboarding:feet')}
-                value={feet}
-                onChange={setFeet}
-                suffix={t('onboarding:unitFoot')}
-                placeholder="5"
-                style={styles.rowItem}
-              />
-              <NumberField
-                label={t('onboarding:inches')}
-                value={inches}
-                onChange={setInches}
-                suffix={t('onboarding:unitInch')}
-                placeholder="9"
-                style={styles.rowItem}
-              />
-            </View>
-            <Txt
-              variant="caption"
-              color={heightHelp ? 'danger' : 'faint'}
-              style={styles.caption}
-            >
-              {heightHelp ??
-                t('onboarding:heightRangeImperial', {
-                  min: feetInchesText(MIN_TOTAL_INCHES),
-                  max: feetInchesText(MAX_TOTAL_INCHES),
-                })}
-            </Txt>
-          </View>
+          // Two wheels, feet and inches, feeding the same centimetre value.
+          <MeasurePicker
+            label={t('onboarding:height')}
+            value={feet}
+            onChange={setFeet}
+            min={MIN_FEET}
+            max={MAX_FEET}
+            unit={t('onboarding:unitFoot')}
+            secondary={{
+              value: inches,
+              onChange: setInches,
+              min: 0,
+              max: INCHES_PER_FOOT - 1,
+              unit: t('onboarding:unitInch'),
+            }}
+            hint={
+              heightHelp ??
+              t('onboarding:heightRangeImperial', {
+                min: feetInchesText(MIN_TOTAL_INCHES),
+                max: feetInchesText(MAX_TOTAL_INCHES),
+              })
+            }
+          />
         )}
 
         {metric ? (
-          <NumberField
+          <MeasurePicker
             label={t('onboarding:weight')}
             value={weightKg}
             onChange={setWeightKg}
-            suffix={t('units:kg')}
-            placeholder="75"
+            min={LIMITS.weightKg.min}
+            max={LIMITS.weightKg.max}
+            step={0.5}
+            unit={t('units:kg')}
             hint={t('onboarding:weightRangeKg', {
               min: formatCount(LIMITS.weightKg.min),
               max: formatCount(LIMITS.weightKg.max),
             })}
-            error={weightError}
           />
         ) : (
-          <NumberField
+          <MeasurePicker
             label={t('onboarding:weight')}
             value={weightLb}
             onChange={setWeightLb}
-            suffix={t('units:lb')}
-            placeholder="165"
+            min={MIN_LB}
+            max={MAX_LB}
+            unit={t('units:lb')}
             hint={t('onboarding:weightRangeLb', {
               min: formatCount(MIN_LB),
               max: formatCount(MAX_LB),
             })}
-            error={weightError}
           />
         )}
       </View>
@@ -312,6 +287,10 @@ const styles = StyleSheet.create({
   units: {
     marginBottom: spacing.xl,
   },
+  startNote: {
+    marginBottom: spacing.md,
+    marginStart: spacing.xs,
+  },
   fields: {
     rowGap: spacing.lg,
   },
@@ -322,13 +301,6 @@ const styles = StyleSheet.create({
   caption: {
     marginStart: spacing.xs,
     marginTop: spacing.xs + 2,
-  },
-  row: {
-    columnGap: spacing.md,
-    flexDirection: 'row',
-  },
-  rowItem: {
-    flex: 1,
   },
   spacer: {
     flexGrow: 1,

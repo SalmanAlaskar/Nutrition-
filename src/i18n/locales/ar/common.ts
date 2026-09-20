@@ -40,6 +40,11 @@ export const common = {
   rangeMin: '{{min}} كحد أدنى',
   rangeMax: '{{max}} كحد أقصى',
 
+  /* عجلات الاختيار للعمر والطول والوزن. */
+  pickerAdjustHint: 'مرّر لأعلى أو لأسفل لتغيير القيمة',
+  pickerTypeAction: 'اكتب الرقم',
+  pickerScrollAction: 'اختر بالتمرير',
+
   /* ربط قائمة قصيرة داخل الجملة. */
   joinPair: '{{a}} و{{b}}',
   joinList: '{{a}}، {{b}}',

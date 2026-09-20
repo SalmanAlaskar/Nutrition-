@@ -40,6 +40,11 @@ export const common = {
   rangeMin: 'At least {{min}}',
   rangeMax: 'At most {{max}}',
 
+  /* Scroll pickers for age, height and weight. */
+  pickerAdjustHint: 'Swipe up or down to change the value',
+  pickerTypeAction: 'Type instead',
+  pickerScrollAction: 'Scroll instead',
+
   /* Joining a short list inside a sentence. */
   joinPair: '{{a}} and {{b}}',
   joinList: '{{a}}, {{b}}',

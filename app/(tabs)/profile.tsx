@@ -14,6 +14,7 @@ import {
   IconButton,
   ListRow,
   LoadingView,
+  MeasurePicker,
   NumberField,
   OptionRow,
   Screen,
@@ -584,59 +585,56 @@ export default function ProfileScreen() {
           />
         </LabeledControl>
 
-        <NumberField
+        <MeasurePicker
           label={t('age')}
           value={draft.age}
           onChange={commitAge}
-          suffix={t('units:years')}
+          unit={t('units:years')}
           min={LIMITS.age.min}
           max={LIMITS.age.max}
-          error={ageError}
+          hint={ageError}
           style={styles.field}
         />
 
         {units === 'imperial' ? (
-          <View style={[styles.row, styles.field]}>
-            <NumberField
-              label={t('heightFeet')}
-              value={draft.feet}
-              onChange={(next) => commitImperialHeight(next, draft.inches)}
-              suffix={t('feetSuffix')}
-              min={FEET_RANGE.min}
-              max={FEET_RANGE.max}
-              style={styles.rowItem}
-            />
-            <NumberField
-              label={t('heightInches')}
-              value={draft.inches}
-              onChange={(next) => commitImperialHeight(draft.feet, next)}
-              suffix={t('inchesSuffix')}
-              min={INCH_RANGE.min}
-              max={INCH_RANGE.max}
-              style={styles.rowItem}
-            />
-          </View>
+          <MeasurePicker
+            label={t('height')}
+            value={draft.feet}
+            onChange={(next) => commitImperialHeight(next, draft.inches)}
+            unit={t('feetSuffix')}
+            min={FEET_RANGE.min}
+            max={FEET_RANGE.max}
+            secondary={{
+              value: draft.inches,
+              onChange: (next) => commitImperialHeight(draft.feet, next),
+              min: INCH_RANGE.min,
+              max: INCH_RANGE.max,
+              unit: t('inchesSuffix'),
+            }}
+            style={styles.field}
+          />
         ) : (
-          <NumberField
+          <MeasurePicker
             label={t('height')}
             value={draft.heightCm}
             onChange={commitHeightCm}
-            suffix={t('units:cm')}
+            unit={t('units:cm')}
             min={LIMITS.heightCm.min}
             max={LIMITS.heightCm.max}
-            error={heightError}
+            hint={heightError}
             style={styles.field}
           />
         )}
 
-        <NumberField
+        <MeasurePicker
           label={t('weight')}
           value={draft.weight}
           onChange={commitWeight}
-          suffix={weightUnit}
+          unit={weightUnit}
+          step={units === 'metric' ? 0.5 : 1}
           min={fromKg(LIMITS.weightKg.min, units)}
           max={fromKg(LIMITS.weightKg.max, units)}
-          error={weightError}
+          hint={weightError}
           style={styles.field}
         />
       </Card>

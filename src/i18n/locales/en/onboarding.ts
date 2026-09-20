@@ -110,5 +110,6 @@ export const onboarding = {
   startTrackingHint: 'Saves your plan and opens your daily log',
   saveFailedTitle: 'Could not save your plan',
   saveFailedBody:
-    'Your plan could not be saved on this device. Check you have some free storage and try again.'
+    'Your plan could not be saved on this device. Check you have some free storage and try again.',
+  wheelStartNote: 'Each wheel opens on a common starting value. Scroll it to yours.'
 } as const;
