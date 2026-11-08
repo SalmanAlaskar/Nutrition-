@@ -5,6 +5,7 @@ import {
   darkPalette,
   fontSize,
   fontWeight,
+  layout,
   lightPalette,
   radius,
   spacing,
@@ -17,6 +18,8 @@ export interface Theme {
   colors: Palette;
   spacing: typeof spacing;
   radius: typeof radius;
+  /** Screen rhythm: gutter, section gap, item gap. */
+  layout: typeof layout;
   fontSize: typeof fontSize;
   fontWeight: typeof fontWeight;
   isDark: boolean;
@@ -33,6 +36,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       colors: isDark ? darkPalette : lightPalette,
       spacing,
       radius,
+      layout,
       fontSize,
       fontWeight,
       isDark,

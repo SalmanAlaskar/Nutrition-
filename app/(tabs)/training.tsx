@@ -9,11 +9,10 @@ import { useTrainingText } from '@/components/training/useTrainingText';
 import {
   AppHeader,
   Button,
-  Card,
-  IconButton,
   ListRow,
   LoadingView,
   Screen,
+  Section,
   StatTile,
   Txt,
 } from '@/components/ui';
@@ -33,7 +32,11 @@ interface VolumeRow {
   sets: number;
 }
 
-/** Bar lengths are relative to the busiest day type, never to a fixed ceiling. */
+/**
+ * Bar lengths are relative to the busiest day type, never to a fixed ceiling.
+ * The bar is drawn in ink: the one accent on this screen belongs to the button
+ * that starts the session.
+ */
 function VolumeBar({ row, max }: { row: VolumeRow; max: number }) {
   const { colors } = useTheme();
   const { t } = useTranslation('training');
@@ -60,19 +63,21 @@ function VolumeBar({ row, max }: { row: VolumeRow; max: number }) {
         {label}
       </Txt>
       <View style={[styles.volumeTrack, { backgroundColor: colors.track }]}>
-        <View
-          style={[
-            styles.volumeFill,
-            {
-              backgroundColor: empty ? colors.border : colors.accent,
-              width: `${Math.max(Math.round(share * 100), empty ? 0 : 6)}%`,
-            },
-          ]}
-        />
+        {empty ? null : (
+          <View
+            style={[
+              styles.volumeFill,
+              {
+                backgroundColor: colors.textMuted,
+                width: `${Math.max(Math.round(share * 100), 6)}%`,
+              },
+            ]}
+          />
+        )}
       </View>
       <Txt
         variant="label"
-        color={empty ? 'faint' : 'muted'}
+        color={empty ? 'faint' : 'text'}
         align="end"
         tabular
         style={styles.volumeValue}
@@ -164,7 +169,6 @@ export default function TrainingScreen() {
         return {
           id: `${exercise.exerciseId}-${index}`,
           name: catalogue ? text.name(catalogue) : exercise.name,
-          altName: catalogue ? text.altName(catalogue) : undefined,
           detail: planned ? text.plannedShort(planned) : text.sets(exercise.sets.length),
           detailSpoken: planned ? text.planned(planned) : text.sets(exercise.sets.length),
           done: exercise.done,
@@ -178,7 +182,6 @@ export default function TrainingScreen() {
       return {
         id: `${planned.exerciseId}-${index}`,
         name: catalogue ? text.name(catalogue) : planned.exerciseId,
-        altName: catalogue ? text.altName(catalogue) : undefined,
         detail: text.plannedShort(planned),
         detailSpoken: text.planned(planned),
       };
@@ -250,18 +253,7 @@ export default function TrainingScreen() {
 
   return (
     <Screen scroll refreshing={refreshing} onRefresh={handleRefresh}>
-      <AppHeader
-        title={t('title')}
-        subtitle={text.program(program)}
-        large
-        right={
-          <IconButton
-            icon="create-outline"
-            onPress={openProgram}
-            accessibilityLabel={t('editProgram')}
-          />
-        }
-      />
+      <AppHeader title={t('title')} subtitle={text.program(program)} large />
 
       <WeekStrip
         days={stripDays}
@@ -275,7 +267,6 @@ export default function TrainingScreen() {
         <View style={styles.jump}>
           <Button
             label={t('backToToday')}
-            icon="today-outline"
             onPress={() => setSelectedDate(today)}
             variant="ghost"
             size="sm"
@@ -284,46 +275,35 @@ export default function TrainingScreen() {
         </View>
       ) : null}
 
-      <DayCard
-        day={day}
-        dateLabel={text.date(selectedDate, today)}
-        exercises={cardExercises}
-        status={status}
-        primaryLabel={primaryLabel}
-        onPrimary={openSession}
-        style={styles.dayCard}
-      />
+      <Section>
+        <DayCard
+          day={day}
+          dateLabel={text.date(selectedDate, today)}
+          exercises={cardExercises}
+          status={status}
+          primaryLabel={primaryLabel}
+          onPrimary={openSession}
+        />
+      </Section>
 
-      <View style={styles.tiles}>
-        <StatTile
-          label={t('weekTile')}
-          value={`${formatCount(weekStats.completed)}/${formatCount(weekStats.scheduled)}`}
-          hint={t('weekTileHint')}
-          icon="checkmark-done-outline"
-          tone={weekStats.completed > 0 ? 'accent' : 'default'}
-          style={styles.tile}
-        />
-        <StatTile
-          label={t('streakTile')}
-          value={formatCount(streak)}
-          unit={streak === 1 ? t('unitDay') : t('unitDays')}
-          hint={t('streakTileHint')}
-          icon="flame-outline"
-          style={styles.tile}
-        />
-      </View>
+      <Section>
+        <View style={styles.tiles}>
+          <StatTile
+            label={t('weekTile')}
+            value={`${formatCount(weekStats.completed)}/${formatCount(weekStats.scheduled)}`}
+            style={styles.tile}
+          />
+          <StatTile
+            label={t('streakTile')}
+            value={formatCount(streak)}
+            unit={streak === 1 ? t('unitDay') : t('unitDays')}
+            style={styles.tile}
+          />
+        </View>
+      </Section>
 
       {volumeRows.length > 0 ? (
-        <Card style={styles.volumeCard}>
-          <View style={styles.volumeHeader}>
-            <Txt variant="label" weight="semibold">
-              {t('volumeTitle')}
-            </Txt>
-            <Txt variant="caption" color="faint">
-              {t('volumeCaption').toUpperCase()}
-            </Txt>
-          </View>
-
+        <Section title={t('volumeTitle')} subtitle={t('volumeCaption')}>
           <View style={styles.volumeList}>
             {volumeRows.map((row) => (
               <VolumeBar key={row.type} row={row} max={maxVolume} />
@@ -335,69 +315,54 @@ export default function TrainingScreen() {
               {t('volumeNote', { types: text.list(untrained) })}
             </Txt>
           ) : null}
-        </Card>
+        </Section>
       ) : null}
 
-      <Card padded={false} style={styles.programCard}>
+      <Section divider>
         <ListRow
           title={t('editProgram')}
           subtitle={t('editProgramSubtitle')}
-          icon="calendar-outline"
           onPress={openProgram}
           chevron
         />
-      </Card>
+      </Section>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   strip: {
-    marginBottom: spacing.lg,
+    marginTop: spacing.xs,
   },
-  // The jump back sits with the strip it belongs to, not with the card below it.
+  // The jump back sits with the strip it belongs to, not with the day below it.
   jump: {
     alignItems: 'flex-start',
-    marginBottom: spacing.sm,
-    marginTop: -spacing.sm,
-  },
-  dayCard: {
-    marginBottom: spacing.lg,
+    marginTop: spacing.sm,
   },
   tiles: {
-    columnGap: spacing.md,
+    columnGap: spacing.xl,
     flexDirection: 'row',
   },
   tile: {
     flex: 1,
     flexBasis: 0,
   },
-  volumeCard: {
-    marginTop: spacing.lg,
-  },
-  volumeHeader: {
-    alignItems: 'center',
-    columnGap: spacing.sm,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
   volumeList: {
-    marginTop: spacing.md,
-    rowGap: spacing.sm,
+    rowGap: spacing.md,
   },
   volumeRow: {
     alignItems: 'center',
-    columnGap: spacing.sm,
+    columnGap: spacing.md,
     flexDirection: 'row',
-    minHeight: 24,
+    minHeight: 22,
   },
   volumeLabel: {
-    width: 72,
+    width: 76,
   },
   volumeTrack: {
     borderRadius: radius.pill,
     flex: 1,
-    height: 8,
+    height: 6,
     overflow: 'hidden',
   },
   volumeFill: {
@@ -408,9 +373,6 @@ const styles = StyleSheet.create({
     minWidth: 22,
   },
   volumeNote: {
-    marginTop: spacing.md,
-  },
-  programCard: {
     marginTop: spacing.lg,
   },
 });

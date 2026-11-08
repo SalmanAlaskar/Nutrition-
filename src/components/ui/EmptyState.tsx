@@ -10,7 +10,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
-import { radius, spacing, useTheme } from '@/theme';
+import { layout, spacing, useTheme } from '@/theme';
 
 import { Button } from './Button';
 import { Txt } from './Txt';
@@ -27,7 +27,7 @@ const DECORATIVE: AccessibilityProps = Platform.select<AccessibilityProps>({
 });
 
 export interface EmptyStateProps {
-  /** Ionicons glyph shown in the halo. */
+  /** Ionicons glyph, drawn quietly above the title. */
   icon: string;
   /** Defaults to the translated "Nothing here yet". */
   title?: string;
@@ -35,6 +35,8 @@ export interface EmptyStateProps {
   message?: string;
   actionLabel?: string;
   onAction?: () => void;
+  /** Tighter padding, for an empty slot sitting inside a longer screen. */
+  compact?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -44,26 +46,34 @@ export function EmptyState({
   message,
   actionLabel,
   onAction,
+  compact = false,
   style,
 }: EmptyStateProps) {
   const { colors } = useTheme();
   const { t } = useTranslation('common');
 
   return (
-    <View style={[styles.wrapper, style]}>
-      <View style={[styles.mark, { backgroundColor: colors.accentSoft }]} {...DECORATIVE}>
-        <Ionicons name={icon as IconName} size={24} color={colors.accent} />
+    <View style={[styles.wrapper, compact ? styles.compact : null, style]}>
+      {/* No accent halo: an empty slot is not the most important thing on the screen. */}
+      <View {...DECORATIVE}>
+        <Ionicons name={icon as IconName} size={compact ? 20 : 24} color={colors.textFaint} />
       </View>
 
-      <Txt variant="heading" weight="bold" style={styles.title}>
+      <Txt variant={compact ? 'body' : 'heading'} style={styles.title}>
         {title ?? t('emptyTitle')}
       </Txt>
-      <Txt color="muted" style={styles.message}>
+      <Txt variant="label" color="muted" style={styles.message}>
         {message ?? t('emptyMessage')}
       </Txt>
 
       {actionLabel && onAction ? (
-        <Button label={actionLabel} onPress={onAction} variant="secondary" style={styles.action} />
+        <Button
+          label={actionLabel}
+          onPress={onAction}
+          variant="secondary"
+          size="sm"
+          style={styles.action}
+        />
       ) : null}
     </View>
   );
@@ -72,22 +82,17 @@ export function EmptyState({
 const styles = StyleSheet.create({
   wrapper: {
     alignItems: 'flex-start',
-    paddingHorizontal: spacing.lg,
     paddingVertical: spacing.xl,
   },
-  mark: {
-    alignItems: 'center',
-    borderRadius: radius.lg,
-    height: 48,
-    justifyContent: 'center',
-    width: 48,
+  compact: {
+    paddingVertical: spacing.lg,
   },
   title: {
-    marginTop: spacing.lg,
+    marginTop: spacing.md,
   },
   message: {
-    marginTop: spacing.sm - 2,
-    maxWidth: 360,
+    marginTop: spacing.xs,
+    maxWidth: layout.maxTextWidth,
   },
   action: {
     marginTop: spacing.lg,

@@ -97,8 +97,9 @@ export function TextField({
   const [focused, setFocused] = useState(false);
 
   const invalid = Boolean(error);
-  // Border width never changes, only its colour, so focus cannot shift the layout.
-  const borderColor = invalid ? colors.danger : focused ? colors.accent : colors.border;
+  // A field is a tone, not an outline. Border width never changes, only its
+  // colour, so focus cannot shift the layout — and at rest there is no line.
+  const borderColor = invalid ? colors.danger : focused ? colors.accent : 'transparent';
   // The ring lives in constant padding around the field, so it cannot shift it either.
   // It only appears on focus, which is what keyboard users need instead of the
   // browser outline this component suppresses.
@@ -109,7 +110,7 @@ export function TextField({
   return (
     <View style={style}>
       {label ? (
-        <Txt variant="label" color={invalid ? 'danger' : 'muted'} weight="semibold" style={styles.label}>
+        <Txt variant="label" color={invalid ? 'danger' : 'muted'} style={styles.label}>
           {label}
         </Txt>
       ) : null}
@@ -119,7 +120,7 @@ export function TextField({
           style={[
             styles.field,
             {
-              backgroundColor: editable ? colors.surface : colors.surfaceAlt,
+              backgroundColor: editable ? colors.surfaceAlt : colors.surface,
               borderColor,
             },
             multiline ? styles.fieldMultiline : null,
@@ -185,7 +186,7 @@ export function TextField({
           <View {...DECORATIVE}>
             <Ionicons name="alert-circle" size={13} color={colors.danger} />
           </View>
-          <Txt variant="caption" color="danger" weight="medium" style={styles.helper}>
+          <Txt variant="caption" color="danger" style={styles.helper}>
             {error}
           </Txt>
         </View>

@@ -25,6 +25,14 @@ export const common = {
   notLoggedYet: 'Nothing logged yet',
   seeAll: 'See all',
 
+  /* Shared vocabulary for sections and figures, so screens agree on wording. */
+  showMore: 'Show more',
+  showLess: 'Show less',
+  total: 'Total',
+  average: 'Average',
+  target: 'Target',
+  remaining: 'Left',
+
   /* Default empty state, used when a screen does not supply its own. */
   emptyTitle: 'Nothing here yet',
   emptyMessage: 'This fills in as soon as there is something to show.',

@@ -64,34 +64,24 @@ export function OptionRow({
       accessibilityState={{ selected, checked: selected }}
       style={({ pressed }) => [
         styles.row,
-        {
-          backgroundColor: selected ? colors.accentSoft : colors.surface,
-          borderColor: selected ? colors.accent : colors.border,
-        },
+        // The chosen option separates itself by tone, not by an outline.
+        { backgroundColor: selected ? colors.accentSoft : colors.surface },
         pressed ? [styles.pressed, { backgroundColor: colors.surfaceAlt }] : null,
         style,
       ]}
     >
       {icon ? (
-        <View
-          style={[
-            styles.iconWrap,
-            { backgroundColor: selected ? colors.surface : colors.surfaceAlt },
-          ]}
-          {...DECORATIVE}
-        >
+        <View style={styles.iconWrap} {...DECORATIVE}>
           <Ionicons
             name={icon as IconName}
-            size={18}
+            size={19}
             color={selected ? colors.accent : colors.textMuted}
           />
         </View>
       ) : null}
 
       <View style={styles.text}>
-        <Txt weight="semibold" numberOfLines={2}>
-          {title}
-        </Txt>
+        <Txt numberOfLines={2}>{title}</Txt>
         {subtitle ? (
           <Txt variant="label" color="muted" style={styles.subtitle}>
             {subtitle}
@@ -115,7 +105,6 @@ const styles = StyleSheet.create({
   row: {
     alignItems: 'center',
     borderRadius: radius.lg,
-    borderWidth: 1,
     columnGap: spacing.md,
     flexDirection: 'row',
     minHeight: 60,
@@ -128,10 +117,8 @@ const styles = StyleSheet.create({
   },
   iconWrap: {
     alignItems: 'center',
-    borderRadius: radius.md,
-    height: 36,
     justifyContent: 'center',
-    width: 36,
+    width: 24,
   },
   text: {
     flex: 1,

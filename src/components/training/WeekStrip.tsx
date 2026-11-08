@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -41,7 +40,11 @@ export interface WeekStripProps {
   style?: StyleProp<ViewStyle>;
 }
 
-/** The training week at a glance: what each day holds and what is already done. */
+/**
+ * The training week at a glance. No colour carries meaning here: the selected
+ * day is a tone, today is the one day set in ink, and a finished day keeps a
+ * small mark under it. That leaves the screen's single accent for the action.
+ */
 export function WeekStrip({ days, selectedDate, today, onSelect, style }: WeekStripProps) {
   const { colors } = useTheme();
   const { t } = useTranslation('training');
@@ -57,21 +60,6 @@ export function WeekStrip({ days, selectedDate, today, onSelect, style }: WeekSt
           ? t('spokenDayDone', { date: text.date(day.date, today), type: typeLabel })
           : t('spokenDay', { date: text.date(day.date, today), type: typeLabel });
 
-        const background = selected ? colors.accent : colors.surface;
-        const border = selected || isToday ? colors.accent : colors.border;
-        const initialColor = selected
-          ? colors.accentText
-          : isToday
-            ? colors.accent
-            : colors.textFaint;
-        const typeColor = selected
-          ? colors.accentText
-          : day.type
-            ? colors.text
-            : colors.textFaint;
-        // On the filled day the tick has to read against the accent, not on it.
-        const tickColor = selected ? colors.accentText : colors.success;
-
         return (
           <Pressable
             key={day.date}
@@ -81,30 +69,30 @@ export function WeekStrip({ days, selectedDate, today, onSelect, style }: WeekSt
             accessibilityState={{ selected }}
             style={({ pressed }) => [
               styles.day,
-              {
-                backgroundColor: background,
-                borderColor: border,
-                borderWidth: selected || isToday ? 1.5 : 1,
-              },
-              pressed ? styles.pressed : null,
+              selected ? { backgroundColor: colors.surfaceAlt } : null,
+              pressed && !selected ? { backgroundColor: colors.surface } : null,
             ]}
           >
-            <Txt variant="caption" weight="bold" color={initialColor}>
+            <Txt
+              variant="caption"
+              weight={isToday ? 'bold' : 'medium'}
+              color={isToday || selected ? 'text' : 'faint'}
+            >
               {text.weekdayLetter(day.date)}
             </Txt>
             <Txt
               variant="caption"
-              weight={day.type ? 'semibold' : 'medium'}
-              color={typeColor}
+              weight={selected ? 'semibold' : 'regular'}
+              color={day.type ? (selected ? 'text' : 'muted') : 'faint'}
               numberOfLines={1}
+              align="center"
               style={styles.type}
             >
               {typeLabel}
             </Txt>
-            <View style={styles.tick} {...DECORATIVE}>
-              {day.completed ? (
-                <Ionicons name="checkmark-circle" size={13} color={tickColor} />
-              ) : null}
+            {/* The mark keeps its height on every day, so the row never jumps. */}
+            <View style={styles.mark} {...DECORATIVE}>
+              {day.completed ? <View style={[styles.dot, { backgroundColor: colors.text }]} /> : null}
             </View>
           </Pressable>
         );
@@ -115,7 +103,7 @@ export function WeekStrip({ days, selectedDate, today, onSelect, style }: WeekSt
 
 const styles = StyleSheet.create({
   row: {
-    columnGap: spacing.xs + 2,
+    columnGap: spacing.xs,
     flexDirection: 'row',
   },
   day: {
@@ -124,21 +112,23 @@ const styles = StyleSheet.create({
     flex: 1,
     flexBasis: 0,
     justifyContent: 'center',
-    minHeight: 68,
+    minHeight: 64,
     paddingHorizontal: 2,
     paddingVertical: spacing.sm,
   },
-  pressed: {
-    opacity: 0.7,
-  },
   type: {
-    letterSpacing: 0,
-    marginTop: 3,
+    marginTop: 5,
+    width: '100%',
   },
-  tick: {
+  mark: {
     alignItems: 'center',
-    height: 15,
+    height: 5,
     justifyContent: 'center',
-    marginTop: 2,
+    marginTop: 6,
+  },
+  dot: {
+    borderRadius: radius.pill,
+    height: 5,
+    width: 5,
   },
 });

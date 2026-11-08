@@ -1,15 +1,6 @@
-import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Platform,
-  Pressable,
-  StyleSheet,
-  View,
-  type AccessibilityProps,
-  type StyleProp,
-  type ViewStyle,
-} from 'react-native';
+import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Txt } from '@/components/ui';
 import { formatAmount, formatCount } from '@/domain/format';
@@ -23,8 +14,6 @@ import type {
   Targets,
   WorkoutSession,
 } from '@/types';
-
-type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
 export interface PlanStripProps {
   totals: DailyTotals;
@@ -42,21 +31,14 @@ export interface PlanStripProps {
   style?: StyleProp<ViewStyle>;
 }
 
-/** Decoration is hidden from assistive tech; the DOM only understands aria-hidden. */
-const DECORATIVE: AccessibilityProps = Platform.select<AccessibilityProps>({
-  web: { 'aria-hidden': true },
-  default: {
-    accessibilityElementsHidden: true,
-    importantForAccessibility: 'no-hide-descendants',
-  },
-});
-
-/** Which palette slot a pillar's value uses. */
-type Tone = 'text' | 'accent' | 'danger' | 'muted';
+/**
+ * 'quiet' is a pillar with nothing in it yet; 'warning' is past the day's
+ * target. Neither uses the accent: that belongs to the ring above.
+ */
+type Tone = 'default' | 'quiet' | 'warning';
 
 interface Pillar {
   key: string;
-  icon: IconName;
   label: string;
   value: string;
   detail: string;
@@ -69,6 +51,8 @@ interface Pillar {
  * The day's three pillars in one row: what has been eaten, what is scheduled in
  * the gym and where the body is. Each one is a tap through to the screen that
  * owns it, so Today answers "where am I" without scrolling.
+ *
+ * Three columns separated by space alone — no box, no rules, no icons.
  */
 export function PlanStrip({
   totals,
@@ -89,19 +73,14 @@ export function PlanStrip({
     const eaten = Math.round(totals.macros.calories);
     const shared = {
       key: 'calories',
-      icon: 'flame-outline' as IconName,
       label: t('macros:calories'),
       hint: t('today:hintCalories'),
       onPress: onCalories,
+      value: formatCount(eaten),
     };
 
     if (!targets) {
-      return {
-        ...shared,
-        value: formatCount(eaten),
-        detail: t('today:planLogged'),
-        tone: 'text',
-      };
+      return { ...shared, detail: t('today:planLogged'), tone: 'default' };
     }
 
     const left = Math.round(targets.calories) - eaten;
@@ -109,18 +88,16 @@ export function PlanStrip({
 
     return {
       ...shared,
-      value: formatCount(eaten),
       detail: over
         ? t('today:planOver', { value: formatCount(Math.abs(left)) })
         : t('today:planLeft', { value: formatCount(left) }),
-      tone: over ? 'danger' : 'accent',
+      tone: over ? 'warning' : 'default',
     };
   };
 
   const trainingPillar = (): Pillar => {
     const shared = {
       key: 'training',
-      icon: 'barbell-outline' as IconName,
       label: t('nav:training'),
       hint: t('today:hintTraining'),
       onPress: onTraining,
@@ -135,33 +112,32 @@ export function PlanStrip({
           ? sessions[0].dayLabel ?? t('today:planSession')
           : t('today:planRest'),
         detail: started ? t('today:planSessionLogged') : t('today:planNoSession'),
-        tone: started ? 'accent' : 'muted',
+        tone: started ? 'default' : 'quiet',
       };
     }
 
     return {
       ...shared,
-      value: (isRTL ? programDay.labelAr ?? programDay.label : programDay.label),
+      value: isRTL ? programDay.labelAr ?? programDay.label : programDay.label,
       detail: done
         ? t('today:planDone')
         : started
           ? t('today:planStarted')
           : t('today:planNotLogged'),
-      tone: done ? 'accent' : 'text',
+      tone: 'default',
     };
   };
 
   const bodyPillar = (): Pillar => {
     const shared = {
       key: 'body',
-      icon: 'body-outline' as IconName,
       label: t('today:body'),
       hint: t('today:hintBody'),
       onPress: onBody,
     };
 
     if (!scan) {
-      return { ...shared, value: '--', detail: t('today:planNoReading'), tone: 'muted' };
+      return { ...shared, value: '--', detail: t('today:planNoReading'), tone: 'quiet' };
     }
 
     const fat = scan.bodyFatPercent;
@@ -173,74 +149,56 @@ export function PlanStrip({
         fat === undefined
           ? t('today:planLastReading')
           : t('today:planBodyFat', { value: formatAmount(fat, 1) }),
-      tone: 'text',
+      tone: 'default',
     };
   };
 
   const pillars: Pillar[] = [caloriePillar(), trainingPillar(), bodyPillar()];
 
-  const valueColor: Record<Tone, string> = {
-    text: colors.text,
-    accent: colors.accent,
-    danger: colors.danger,
-    muted: colors.textFaint,
-  };
-
   return (
-    <View
-      style={[
-        styles.strip,
-        { backgroundColor: colors.surface, borderColor: colors.border },
-        style,
-      ]}
-    >
-      {pillars.map((pillar, index) => (
-        <React.Fragment key={pillar.key}>
-          {index > 0 ? (
-            <View style={[styles.split, { backgroundColor: colors.border }]} {...DECORATIVE} />
-          ) : null}
-          <Pressable
-            onPress={pillar.onPress}
-            accessibilityRole="button"
-            accessibilityLabel={t('today:pillarSpoken', {
-              label: pillar.label,
-              value: pillar.value,
-              detail: pillar.detail,
-            })}
-            accessibilityHint={pillar.hint}
-            style={({ pressed }) => [
-              styles.pillar,
-              pressed ? { backgroundColor: colors.surfaceAlt } : null,
-            ]}
+    <View style={[styles.strip, style]}>
+      {pillars.map((pillar) => (
+        <Pressable
+          key={pillar.key}
+          onPress={pillar.onPress}
+          accessibilityRole="button"
+          accessibilityLabel={t('today:pillarSpoken', {
+            label: pillar.label,
+            value: pillar.value,
+            detail: pillar.detail,
+          })}
+          accessibilityHint={pillar.hint}
+          style={({ pressed }) => [
+            styles.pillar,
+            pressed ? [styles.pressed, { backgroundColor: colors.surfaceAlt }] : null,
+          ]}
+        >
+          <Txt variant="caption" color="faint" align="start" numberOfLines={1}>
+            {pillar.label}
+          </Txt>
+
+          {/* The figure never wraps and never shrinks to fit its column. */}
+          <Txt
+            variant="body"
+            weight="semibold"
+            color={pillar.tone === 'quiet' ? 'faint' : 'text'}
+            align="start"
+            numberOfLines={1}
+            tabular
+            style={styles.value}
           >
-            <View style={styles.head}>
-              <Ionicons
-                name={pillar.icon}
-                size={13}
-                color={colors.textFaint}
-                {...DECORATIVE}
-              />
-              <Txt variant="caption" color="faint" weight="semibold" numberOfLines={1}>
-                {pillar.label}
-              </Txt>
-            </View>
+            {pillar.value}
+          </Txt>
 
-            <Txt
-              variant="label"
-              weight="bold"
-              color={valueColor[pillar.tone]}
-              numberOfLines={1}
-              tabular
-              style={styles.value}
-            >
-              {pillar.value}
-            </Txt>
-
-            <Txt variant="caption" color="faint" numberOfLines={1}>
-              {pillar.detail}
-            </Txt>
-          </Pressable>
-        </React.Fragment>
+          <Txt
+            variant="caption"
+            color={pillar.tone === 'warning' ? 'warning' : 'faint'}
+            align="start"
+            numberOfLines={2}
+          >
+            {pillar.detail}
+          </Txt>
+        </Pressable>
       ))}
     </View>
   );
@@ -248,28 +206,24 @@ export function PlanStrip({
 
 const styles = StyleSheet.create({
   strip: {
-    alignItems: 'stretch',
-    borderRadius: radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
+    columnGap: spacing.md,
     flexDirection: 'row',
-    overflow: 'hidden',
-  },
-  split: {
-    width: StyleSheet.hairlineWidth,
   },
   pillar: {
     flex: 1,
-    justifyContent: 'center',
-    minHeight: 72,
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: spacing.md,
+    minHeight: 64,
+    // A touch of negative inset keeps the first column flush with the gutter
+    // while the pressed tone still has room to breathe.
+    marginHorizontal: -spacing.xs,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.xs,
   },
-  head: {
-    alignItems: 'center',
-    columnGap: spacing.xs,
-    flexDirection: 'row',
+  pressed: {
+    borderRadius: radius.md,
   },
   value: {
-    marginTop: spacing.xs + 1,
+    flexShrink: 0,
+    marginTop: spacing.xs,
+    marginBottom: 2,
   },
 });

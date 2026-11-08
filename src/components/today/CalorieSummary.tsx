@@ -1,41 +1,28 @@
-import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Platform,
-  StyleSheet,
-  View,
-  type AccessibilityProps,
-  type StyleProp,
-  type ViewStyle,
-} from 'react-native';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { Button, Card, Divider, MacroBar, ProgressRing, Txt } from '@/components/ui';
+import { Button, MacroBar, ProgressRing, Txt } from '@/components/ui';
 import { formatCount } from '@/domain/format';
 import { progress } from '@/domain/nutrition';
 import { remainingBudget } from '@/domain/totals';
-import { radius, spacing, useTheme } from '@/theme';
+import { layout, spacing, useTheme } from '@/theme';
 import type { DailyTotals, Targets } from '@/types';
 
 export interface CalorieSummaryProps {
   totals: DailyTotals;
-  /** Null until the profile exists; the card then prompts for setup. */
+  /** Null until the profile exists; the summary then prompts for setup. */
   targets: Targets | null;
   onFinishProfile: () => void;
   style?: StyleProp<ViewStyle>;
 }
 
-const RING_SIZE = 200;
-const RING_STROKE = 18;
-
-/** Decoration is hidden from assistive tech; the DOM only understands aria-hidden. */
-const DECORATIVE: AccessibilityProps = Platform.select<AccessibilityProps>({
-  web: { 'aria-hidden': true },
-  default: {
-    accessibilityElementsHidden: true,
-    importantForAccessibility: 'no-hide-descendants',
-  },
-});
+/**
+ * The ring is the one thing on this screen allowed to be large, so it gets a
+ * thin stroke and nothing drawn around it. No card: the page is its container.
+ */
+const RING_SIZE = 212;
+const RING_STROKE = 12;
 
 export function CalorieSummary({
   totals,
@@ -49,49 +36,44 @@ export function CalorieSummary({
 
   if (!targets) {
     return (
-      <Card style={style}>
-        <View style={styles.setup}>
-          <View style={[styles.setupGlyph, { backgroundColor: colors.accentSoft }]}>
-            <Ionicons name="person-outline" size={20} color={colors.accent} {...DECORATIVE} />
-          </View>
+      <View style={style}>
+        <Txt variant="heading">{t('today:noTargetTitle')}</Txt>
+        <Txt color="muted" style={styles.setupBody}>
+          {t('today:noTargetBody')}
+        </Txt>
 
-          <Txt variant="heading" style={styles.setupTitle}>
-            {t('today:noTargetTitle')}
+        {/*
+          Figure and unit in one text run. As siblings Arabic reorders them and
+          the count ends up glued to whatever follows it.
+        */}
+        <Txt variant="metric" tabular numberOfLines={1} style={styles.setupFigure}>
+          {formatCount(consumed)}
+          <Txt variant="label" color="faint" weight="medium">
+            {` ${t('today:noTargetLogged')}`}
           </Txt>
-          <Txt color="muted" style={styles.setupBody}>
-            {t('today:noTargetBody')}
-          </Txt>
+        </Txt>
 
-          <View style={[styles.setupMeta, { backgroundColor: colors.surfaceAlt }]}>
-            <Txt variant="label" weight="semibold" tabular>
-              {formatCount(consumed)}
-            </Txt>
-            <Txt variant="label" color="faint">
-              {t('today:noTargetLogged')}
-            </Txt>
-          </View>
-
-          <Button
-            label={t('today:finishProfile')}
-            onPress={onFinishProfile}
-            icon="person-outline"
-            accessibilityHint={t('today:finishProfileHint')}
-            style={styles.setupAction}
-          />
-        </View>
-      </Card>
+        <Button
+          label={t('today:finishProfile')}
+          onPress={onFinishProfile}
+          accessibilityHint={t('today:finishProfileHint')}
+          style={styles.setupAction}
+        />
+      </View>
     );
   }
 
   const budget = remainingBudget(totals.macros, targets);
   const over = budget.overTarget;
-  const stateColor = over ? colors.danger : colors.accent;
+  // Past the target the ring warns rather than alarms: this is an estimate of a
+  // day's eating, not a fault.
+  const stateColor = over ? colors.warning : colors.accent;
   const remainingText = over
     ? t('today:caloriesOver', { value: formatCount(Math.abs(budget.calories)) })
     : t('today:caloriesLeft', { value: formatCount(budget.calories) });
 
   return (
-    <Card style={style}>
+    <View style={style}>
       <View
         accessible
         accessibilityLabel={t('today:ringSpoken', {
@@ -110,26 +92,30 @@ export function CalorieSummary({
           <Txt variant="display" tabular numberOfLines={1}>
             {formatCount(consumed)}
           </Txt>
-          <Txt variant="label" color="muted" tabular style={styles.ringTarget}>
+          <Txt
+            variant="label"
+            color="muted"
+            tabular
+            numberOfLines={1}
+            style={styles.ringTarget}
+          >
             {t('today:ringTarget', { target: formatCount(targets.calories) })}
           </Txt>
         </ProgressRing>
 
-        <View style={[styles.remaining, { backgroundColor: colors.surfaceAlt }]}>
-          <View style={[styles.dot, { backgroundColor: stateColor }]} {...DECORATIVE} />
-          <Txt
-            variant="label"
-            weight="semibold"
-            color={over ? 'danger' : 'accent'}
-            tabular
-            numberOfLines={1}
-          >
-            {remainingText}
-          </Txt>
-        </View>
+        {/* One line of words, no pill and no dot: the ring already carries the state. */}
+        <Txt
+          variant="label"
+          weight="semibold"
+          color={over ? 'warning' : 'accent'}
+          align="center"
+          tabular
+          numberOfLines={1}
+          style={styles.remaining}
+        >
+          {remainingText}
+        </Txt>
       </View>
-
-      <Divider style={styles.split} />
 
       <View style={styles.macros}>
         <MacroBar
@@ -151,66 +137,34 @@ export function CalorieSummary({
           color={colors.fat}
         />
       </View>
-    </Card>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   hero: {
     alignItems: 'center',
-    paddingTop: spacing.sm,
   },
   ringTarget: {
-    marginTop: spacing.xs,
+    marginTop: spacing.sm,
   },
   remaining: {
-    alignItems: 'center',
-    borderRadius: radius.pill,
-    columnGap: spacing.sm,
-    flexDirection: 'row',
     marginTop: spacing.lg,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm - 1,
   },
-  dot: {
-    borderRadius: radius.pill,
-    height: 7,
-    width: 7,
-  },
-  split: {
-    marginTop: spacing.xl,
-  },
+  // The bars sit well clear of the ring so they read as its footnote, not as a
+  // second block competing with it.
   macros: {
-    marginTop: spacing.lg,
+    marginTop: spacing.xxl,
     rowGap: spacing.lg,
-  },
-  setup: {
-    alignItems: 'flex-start',
-  },
-  setupGlyph: {
-    alignItems: 'center',
-    borderRadius: radius.md,
-    height: 40,
-    justifyContent: 'center',
-    width: 40,
-  },
-  setupTitle: {
-    marginTop: spacing.md,
   },
   setupBody: {
     marginTop: spacing.sm,
+    maxWidth: layout.maxTextWidth,
   },
-  setupMeta: {
-    alignItems: 'baseline',
-    alignSelf: 'flex-start',
-    borderRadius: radius.pill,
-    columnGap: spacing.xs + 2,
-    flexDirection: 'row',
-    marginTop: spacing.lg,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs + 1,
+  setupFigure: {
+    marginTop: spacing.xl,
   },
   setupAction: {
-    marginTop: spacing.lg,
+    marginTop: spacing.xl,
   },
 });

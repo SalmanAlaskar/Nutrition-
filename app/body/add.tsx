@@ -15,11 +15,12 @@ import { useScanDate } from '@/components/body/useScanDate';
 import {
   AppHeader,
   Button,
-  Card,
+  Divider,
   IconButton,
   LoadingView,
   NumberField,
   Screen,
+  Section,
   TextField,
   Txt,
 } from '@/components/ui';
@@ -37,7 +38,7 @@ import { makeId } from '@/domain/id';
 import { mirrorIcon, useDirection } from '@/i18n';
 import { parseScanDraft, type ScanDraft } from '@/services/bodyScan';
 import { useApp } from '@/state/AppStore';
-import { radius, spacing, useTheme } from '@/theme';
+import { layout, radius, spacing, useTheme } from '@/theme';
 import type { BodyScan, ScanSource, SegmentalValues } from '@/types';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -143,6 +144,14 @@ const CALCULATED_HINT_KEYS = {
   fatFreeMassKg: 'calcFromFatMass',
   bmi: 'calcBmi',
 } as const satisfies Partial<Record<NumberKey, string>>;
+
+/** How a reading got here, kept visible in the header of an imported one. */
+const SOURCE_KEYS = {
+  manual: 'sourceManual',
+  qr: 'sourceQr',
+  photo: 'sourcePhoto',
+  document: 'sourceDocument',
+} as const satisfies Record<ScanSource, string>;
 
 const SOURCE_NOTE_KEYS = {
   manual: null,
@@ -459,6 +468,7 @@ export default function AddBodyScanScreen() {
     );
   };
 
+  /** An optional group, opened by its own heading. The chevron is the one icon. */
   const disclosure = (title: string, caption: string, open: boolean, onToggle: () => void) => (
     <Pressable
       onPress={onToggle}
@@ -466,21 +476,15 @@ export default function AddBodyScanScreen() {
       accessibilityLabel={title}
       accessibilityHint={caption}
       accessibilityState={{ expanded: open }}
-      style={({ pressed }) => [
-        styles.disclosure,
-        pressed ? { backgroundColor: colors.surfaceAlt } : null,
-      ]}
+      style={({ pressed }) => [styles.disclosure, pressed ? styles.pressed : null]}
     >
-      <View style={styles.disclosureText}>
-        <Txt weight="semibold">{title}</Txt>
-        <Txt variant="caption" color="faint" numberOfLines={2}>
-          {caption}
-        </Txt>
-      </View>
+      <Txt variant="label" weight="semibold" style={styles.disclosureText} numberOfLines={2}>
+        {title}
+      </Txt>
       <View {...DECORATIVE}>
         <Ionicons
           name={(open ? 'chevron-up' : 'chevron-down') as IconName}
-          size={18}
+          size={16}
           color={colors.textFaint}
         />
       </View>
@@ -502,45 +506,44 @@ export default function AddBodyScanScreen() {
     return (
       <Screen scroll edges={['top', 'bottom']}>
         <AppHeader title={t('notFoundTitle')} onBack={goBack} />
-        <Card>
-          <Txt color="muted">{t('notFoundBody')}</Txt>
-          <Button
-            label={t('backToList')}
-            onPress={goBack}
-            variant="secondary"
-            style={styles.notFoundAction}
-          />
-        </Card>
+        <Section first>
+          <Txt color="muted" style={styles.notFoundBody}>
+            {t('notFoundBody')}
+          </Txt>
+          <Button label={t('backToList')} onPress={goBack} variant="secondary" />
+        </Section>
       </Screen>
     );
   }
 
   const sourceNoteKey = SOURCE_NOTE_KEYS[source];
+  const subtitle =
+    source === 'manual' ? dayLabel(date) : `${dayLabel(date)} · ${t(SOURCE_KEYS[source])}`;
 
   return (
     <Screen scroll edges={['top', 'bottom']} keyboardAvoiding>
       <AppHeader
         title={existing ? t('editTitle') : t('addTitle')}
-        subtitle={dayLabel(date)}
+        subtitle={subtitle}
         onBack={handleBack}
       />
 
       {sourceNoteKey ? (
-        <Card style={[styles.block, { backgroundColor: colors.accentSoft }]}>
-          <Txt variant="label" color="muted">
+        <Section first>
+          <Txt variant="label" color="muted" style={styles.measure}>
             {t(sourceNoteKey)}
           </Txt>
-        </Card>
+        </Section>
       ) : null}
 
-      <Card style={styles.block}>
-        <Txt variant="label" color="muted" weight="semibold" style={styles.fieldLabel}>
+      <Section first={!sourceNoteKey} gap="tight">
+        <Txt variant="label" color="muted">
           {t('dayOfScan')}
         </Txt>
         <View style={[styles.dateRow, { borderColor: colors.border }]}>
           <IconButton
             icon={mirrorIcon('chevron-back', isRTL)}
-            variant="surface"
+            variant="plain"
             size={18}
             onPress={() => shiftDate(-1)}
             accessibilityLabel={t('prevDay')}
@@ -549,34 +552,32 @@ export default function AddBodyScanScreen() {
             <Txt weight="semibold" align="center" numberOfLines={1}>
               {dayLabel(date)}
             </Txt>
-            <Txt variant="caption" color="faint" align="center">
+            <Txt variant="caption" color="faint" align="center" numberOfLines={1}>
               {shortDay(date)}
             </Txt>
           </View>
           <IconButton
             icon={mirrorIcon('chevron-forward', isRTL)}
-            variant="surface"
+            variant="plain"
             size={18}
             disabled={date >= today}
             onPress={() => shiftDate(1)}
             accessibilityLabel={t('nextDay')}
           />
         </View>
-      </Card>
+      </Section>
 
-      <Card style={styles.block}>
-        <Txt variant="caption" color="faint" weight="bold" style={styles.sectionTitle}>
-          {t('sectionMain').toUpperCase()}
-        </Txt>
+      {/* The four every sheet prints. On their own they are the whole form. */}
+      <Section title={t('sectionMain')} subtitle={t('addFoot')}>
         {MAIN_FIELDS.map(renderField)}
-      </Card>
+      </Section>
 
-      <Card padded={false} style={styles.block}>
+      <Section title={t('optionalTitle')} subtitle={t('optionalHint')} divider gap="tight">
         {disclosure(t('moreFields'), t('moreFieldsHint'), showMore, () =>
           setShowMore((open) => !open),
         )}
         {showMore ? (
-          <View style={styles.disclosureBody}>
+          <View style={styles.optionalBody}>
             {MORE_FIELDS.map(renderField)}
             <TextField
               label={t('machine')}
@@ -592,16 +593,15 @@ export default function AddBodyScanScreen() {
             />
           </View>
         ) : null}
-      </Card>
 
-      <Card padded={false} style={styles.block}>
+        <Divider />
         {disclosure(t('segmental'), t('segmentalHint'), showSegments, () =>
           setShowSegments((open) => !open),
         )}
         {showSegments ? (
-          <View style={styles.disclosureBody}>
-            <Txt variant="caption" color="faint" weight="bold" style={styles.sectionTitle}>
-              {`${t('segmentalLean')} · ${t('units:kg')}`.toUpperCase()}
+          <View style={styles.optionalBody}>
+            <Txt variant="label" color="muted" style={styles.groupTitle}>
+              {`${t('segmentalLean')} · ${t('units:kg')}`}
             </Txt>
             {SEGMENT_KEYS.map((key) => (
               <NumberField
@@ -616,8 +616,8 @@ export default function AddBodyScanScreen() {
               />
             ))}
 
-            <Txt variant="caption" color="faint" weight="bold" style={styles.sectionTitleSpaced}>
-              {`${t('segmentalFat')} · ${t('units:kg')}`.toUpperCase()}
+            <Txt variant="label" color="muted" style={styles.groupTitleSpaced}>
+              {`${t('segmentalFat')} · ${t('units:kg')}`}
             </Txt>
             {SEGMENT_KEYS.map((key) => (
               <NumberField
@@ -633,82 +633,69 @@ export default function AddBodyScanScreen() {
             ))}
           </View>
         ) : null}
-      </Card>
 
-      <Card style={styles.block}>
-        <TextField
-          label={t('note')}
-          value={note}
-          onChangeText={(next) => {
-            setTouched(true);
-            setNote(next);
-          }}
-          placeholder={t('notePlaceholder')}
-          maxLength={300}
-          multiline
-        />
-      </Card>
+        <Divider />
+        <View style={styles.noteBlock}>
+          <TextField
+            label={t('note')}
+            value={note}
+            onChangeText={(next) => {
+              setTouched(true);
+              setNote(next);
+            }}
+            placeholder={t('notePlaceholder')}
+            maxLength={300}
+            multiline
+          />
+        </View>
+      </Section>
 
       {problems.length > 0 ? (
-        <Card style={[styles.block, { borderColor: colors.warning }]}>
-          <View style={styles.warningHead}>
-            <View {...DECORATIVE}>
-              <Ionicons name="alert-circle-outline" size={18} color={colors.warning} />
-            </View>
-            <Txt weight="semibold">{t('checkTitle')}</Txt>
-          </View>
-          {problems.map((problem, index) => (
-            <Txt
-              key={`${problem.key}-${index}`}
-              variant="label"
-              color="muted"
-              style={styles.warning}
-            >
-              {problemText(problem)}
+        <Section>
+          {/* A wash and plain words, never a saturated outline round the form. */}
+          <View style={[styles.check, { backgroundColor: colors.warningSoft }]}>
+            <Txt variant="label" weight="semibold">
+              {t('checkTitle')}
             </Txt>
-          ))}
-          <Txt variant="caption" color="faint" style={styles.warningFoot}>
-            {t('checkFoot')}
+            {problems.map((problem, index) => (
+              <Txt
+                key={`${problem.key}-${index}`}
+                variant="label"
+                color="muted"
+                style={styles.checkLine}
+              >
+                {problemText(problem)}
+              </Txt>
+            ))}
+            <Txt variant="caption" color="faint" style={styles.checkFoot}>
+              {t('checkFoot')}
+            </Txt>
+          </View>
+        </Section>
+      ) : null}
+
+      <Section gap="tight">
+        {error ? (
+          <Txt variant="label" color="danger" style={styles.error}>
+            {error}
           </Txt>
-        </Card>
-      ) : null}
-
-      {error ? (
-        <Txt variant="label" color="danger" style={styles.error}>
-          {error}
-        </Txt>
-      ) : null}
-
-      <Button
-        label={existing ? t('saveEdit') : t('saveNew')}
-        onPress={handleSave}
-        disabled={derived.weightKg <= 0}
-        loading={saving}
-        accessibilityHint={derived.weightKg <= 0 ? t('saveHintBlocked') : t('saveHintReady')}
-        fullWidth
-        style={styles.save}
-      />
-
-      <Txt variant="caption" color="faint" align="center" style={styles.foot}>
-        {t('addFoot')}
-      </Txt>
+        ) : null}
+        <Button
+          label={existing ? t('saveEdit') : t('saveNew')}
+          onPress={handleSave}
+          disabled={derived.weightKg <= 0}
+          loading={saving}
+          accessibilityHint={derived.weightKg <= 0 ? t('saveHintBlocked') : t('saveHintReady')}
+          fullWidth
+        />
+      </Section>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  block: {
-    marginTop: spacing.md,
-  },
-  sectionTitle: {
-    marginBottom: spacing.md,
-  },
-  sectionTitleSpaced: {
-    marginBottom: spacing.md,
-    marginTop: spacing.lg,
-  },
-  fieldLabel: {
-    marginBottom: spacing.sm,
+  measure: {
+    maxWidth: layout.maxTextWidth,
   },
   field: {
     marginBottom: spacing.md,
@@ -719,6 +706,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginTop: spacing.sm,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
   },
@@ -729,40 +717,43 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     columnGap: spacing.md,
     flexDirection: 'row',
-    minHeight: 56,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    minHeight: layout.minTarget + 8,
+  },
+  pressed: {
+    opacity: 0.6,
   },
   disclosureText: {
     flex: 1,
-    rowGap: 2,
   },
-  disclosureBody: {
-    paddingHorizontal: spacing.lg,
+  optionalBody: {
+    paddingBottom: spacing.sm,
     paddingTop: spacing.sm,
   },
-  warningHead: {
-    alignItems: 'center',
-    columnGap: spacing.sm,
-    flexDirection: 'row',
-    marginBottom: spacing.sm,
+  groupTitle: {
+    marginBottom: spacing.md,
   },
-  warning: {
-    marginTop: spacing.xs,
+  groupTitleSpaced: {
+    marginBottom: spacing.md,
+    marginTop: spacing.md,
   },
-  warningFoot: {
+  noteBlock: {
+    paddingTop: spacing.lg,
+  },
+  check: {
+    borderRadius: radius.md,
+    padding: spacing.lg,
+  },
+  checkLine: {
+    marginTop: spacing.sm,
+  },
+  checkFoot: {
     marginTop: spacing.md,
   },
   error: {
-    marginTop: spacing.md,
+    marginBottom: spacing.md,
   },
-  save: {
-    marginTop: spacing.xl,
-  },
-  foot: {
-    marginTop: spacing.md,
-  },
-  notFoundAction: {
-    marginTop: spacing.lg,
+  notFoundBody: {
+    marginBottom: spacing.lg,
+    maxWidth: layout.maxTextWidth,
   },
 });

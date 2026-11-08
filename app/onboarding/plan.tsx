@@ -6,18 +6,17 @@ import {
   Platform,
   StyleSheet,
   View,
-  useWindowDimensions,
+  type AccessibilityProps,
 } from 'react-native';
 
 import {
   AppHeader,
   Badge,
   Button,
-  Card,
   Divider,
   LoadingView,
-  ProgressRing,
   Screen,
+  Section,
   Txt,
   type BadgeTone,
 } from '@/components/ui';
@@ -35,11 +34,21 @@ import {
 } from '@/domain/nutrition';
 import { mirrorIcon, useDirection } from '@/i18n';
 import { useApp } from '@/state/AppStore';
-import { radius, spacing, useTheme } from '@/theme';
+import { layout, radius, spacing, useTheme } from '@/theme';
 import type { Goal, Profile } from '@/types';
 
-import { Eyebrow, StepProgress, parsePlanDraft, planDraftParams } from './_layout';
+import { StepProgress, parsePlanDraft, planDraftParams } from './_layout';
 
+/** Decoration is hidden from assistive tech; the DOM only understands aria-hidden. */
+const DECORATIVE: AccessibilityProps = Platform.select<AccessibilityProps>({
+  web: { 'aria-hidden': true },
+  default: {
+    accessibilityElementsHidden: true,
+    importantForAccessibility: 'no-hide-descendants',
+  },
+});
+
+/** A band is a word, not a colour wash: the tone only tints the word itself. */
 const BMI_TONE: Record<BmiCategory, BadgeTone> = {
   Underweight: 'warning',
   Healthy: 'success',
@@ -59,12 +68,6 @@ const GOAL_KEYS = {
   maintain: 'onboarding:goalMaintain',
   gain: 'onboarding:goalGain',
 } as const satisfies Record<Goal, string>;
-
-const RING_STROKE = 9;
-const RING_MIN = 64;
-const RING_MAX = 96;
-/** Screen gutter, card padding and the inner panel's padding, both edges. */
-const RING_INSET = spacing.lg * 6;
 
 /** Alert is a no-op on react-native-web, so the browser gets its own dialog. */
 function notifyFailure(title: string, message: string): void {
@@ -86,7 +89,7 @@ function DetailRow({
 }: {
   label: string;
   value: string;
-  /** Shown after the value at label weight, so the figure stays dominant. */
+  /** Printed inside the value's own text run, at label size. */
   unit?: string;
   hint: string;
   right?: React.ReactNode;
@@ -98,22 +101,21 @@ function DetailRow({
       style={styles.detailRow}
     >
       <View style={styles.detailText}>
-        <Txt weight="medium">{label}</Txt>
+        <Txt>{label}</Txt>
         <Txt variant="caption" color="faint" style={styles.detailHint}>
           {hint}
         </Txt>
       </View>
-      <View style={styles.detailValue}>
-        <Txt weight="semibold" tabular numberOfLines={1}>
-          {value}
-        </Txt>
+      {right}
+      {/* One run, so Arabic never reorders a figure away from its unit. */}
+      <Txt tabular numberOfLines={1} align="end" style={styles.detailValue}>
+        {value}
         {unit ? (
-          <Txt variant="label" color="faint" numberOfLines={1}>
-            {unit}
+          <Txt variant="label" color="faint">
+            {` ${unit}`}
           </Txt>
         ) : null}
-        {right}
-      </View>
+      </Txt>
     </View>
   );
 }
@@ -123,7 +125,6 @@ export default function PlanStep() {
   const params = useLocalSearchParams();
   const { saveProfile } = useApp();
   const { colors } = useTheme();
-  const { width } = useWindowDimensions();
   const { isRTL } = useDirection();
   const { t } = useTranslation(['onboarding', 'macros', 'units']);
 
@@ -179,13 +180,6 @@ export default function PlanStep() {
           calories: formatCount(maintenance),
         });
 
-  const ringSize = Math.round(
-    Math.min(
-      RING_MAX,
-      Math.max(RING_MIN, (width - RING_INSET - spacing.md * 2) / 3),
-    ),
-  );
-
   const macros = [
     {
       key: 'protein',
@@ -240,124 +234,112 @@ export default function PlanStep() {
 
       <StepProgress current={3} />
 
-      <Card style={styles.hero}>
-        <View
-          accessible
-          accessibilityLabel={t('onboarding:planSpoken', {
-            calories: formatCount(targets.calories),
-            goal: goalLabel,
-            detail: goalSentence,
-          })}
-          style={styles.heroBlock}
+      {/*
+        The payoff. Nothing is drawn around it: the figure is the largest thing
+        on the screen and the only accent, and the rest of the block supports it.
+      */}
+      <View
+        accessible
+        accessibilityLabel={t('onboarding:planSpoken', {
+          calories: formatCount(targets.calories),
+          goal: goalLabel,
+          detail: goalSentence,
+        })}
+        style={styles.hero}
+      >
+        <Txt variant="label" color="muted" numberOfLines={1}>
+          {goalLabel}
+        </Txt>
+        <Txt
+          variant="display"
+          color="accent"
+          tabular
+          numberOfLines={1}
+          style={styles.heroValue}
         >
-          <View style={[styles.heroPill, { backgroundColor: colors.accentSoft }]}>
-            <Txt variant="label" weight="semibold" color="accent" numberOfLines={1}>
-              {goalLabel}
-            </Txt>
-          </View>
-          <Txt
-            variant="display"
-            color="accent"
-            tabular
-            numberOfLines={1}
-            style={styles.heroValue}
-          >
-            {formatCount(targets.calories)}
-          </Txt>
-          <Txt variant="label" color="muted" numberOfLines={1}>
-            {t('onboarding:caloriesPerDay')}
-          </Txt>
-          <Txt color="muted" align="center" style={styles.heroNote}>
-            {goalSentence}
-          </Txt>
+          {formatCount(targets.calories)}
+        </Txt>
+        {/* The unit carries no digits of its own, so it can sit on its own line. */}
+        <Txt variant="label" color="muted" numberOfLines={1}>
+          {t('onboarding:caloriesPerDay')}
+        </Txt>
+        <Txt color="muted" style={styles.heroNote}>
+          {goalSentence}
+        </Txt>
+      </View>
+
+      <View style={styles.macroBlock}>
+        <View style={styles.splitBar} {...DECORATIVE}>
+          {macros.map((macro) => (
+            <View
+              key={macro.key}
+              style={{ backgroundColor: macro.color, flex: Math.max(macro.share, 0.001) }}
+            />
+          ))}
         </View>
 
-        <Divider style={styles.heroDivider} />
+        {macros.map((macro) => {
+          const grams = `${formatCount(macro.grams)} ${t('units:gram')}`;
+          return (
+            <View
+              key={macro.key}
+              accessible
+              accessibilityLabel={t('onboarding:macroSpoken', {
+                label: macro.label,
+                grams,
+                percent: formatPercent(macro.share),
+              })}
+              style={styles.macroRow}
+            >
+              <View style={[styles.dot, { backgroundColor: macro.color }]} {...DECORATIVE} />
+              <Txt numberOfLines={1} style={styles.macroLabel}>
+                {macro.label}
+              </Txt>
+              {/* Grams and share share one run; as siblings they read as one number. */}
+              <Txt tabular numberOfLines={1} align="end">
+                {formatCount(macro.grams)}
+                <Txt variant="label" color="faint">
+                  {` ${t('units:gram')} · ${formatPercent(macro.share)}`}
+                </Txt>
+              </Txt>
+            </View>
+          );
+        })}
 
-        <View style={[styles.macroPanel, { backgroundColor: colors.surfaceAlt }]}>
-          <View style={styles.macroRow}>
-            {macros.map((macro) => {
-              const grams = `${formatCount(macro.grams)} ${t('units:gram')}`;
-              return (
-                <View
-                  key={macro.key}
-                  accessible
-                  accessibilityLabel={t('onboarding:macroSpoken', {
-                    label: macro.label,
-                    grams,
-                    percent: formatPercent(macro.share),
-                  })}
-                  style={styles.macro}
-                >
-                  <ProgressRing
-                    size={ringSize}
-                    strokeWidth={RING_STROKE}
-                    progress={macro.share}
-                    color={macro.color}
-                  >
-                    <Txt variant="label" weight="bold" tabular numberOfLines={1}>
-                      {grams}
-                    </Txt>
-                  </ProgressRing>
-                  <Txt
-                    variant="label"
-                    weight="semibold"
-                    numberOfLines={1}
-                    style={styles.macroLabel}
-                  >
-                    {macro.label}
-                  </Txt>
-                  <Txt variant="caption" color="faint" tabular numberOfLines={1}>
-                    {formatPercent(macro.share)}
-                  </Txt>
-                </View>
-              );
-            })}
-          </View>
-        </View>
-
-        <Txt variant="caption" color="faint" align="center" style={styles.macroNote}>
+        <Txt variant="caption" color="faint" style={styles.macroNote}>
           {t('onboarding:macroNote')}
         </Txt>
-      </Card>
+      </View>
 
-      <Eyebrow label={t('onboarding:breakdown')} style={styles.breakdown} />
-
-      <Card padded={false}>
+      <Section title={t('onboarding:breakdown')} gap="tight">
         <DetailRow
           label={t('onboarding:restingBurn')}
           value={formatCount(bmr)}
           unit={t('units:kcal')}
           hint={t('onboarding:restingBurnHint')}
         />
-        <Divider inset />
+        <Divider />
         <DetailRow
           label={t('onboarding:maintenanceRow')}
           value={formatCount(maintenance)}
           unit={t('units:kcal')}
           hint={t('onboarding:maintenanceRowHint')}
         />
-        <Divider inset />
+        <Divider />
         <DetailRow
           label={t('onboarding:bmi')}
           value={formatAmount(bmi)}
           hint={t('onboarding:bmiHint')}
-          right={
-            <Badge
-              label={t(BMI_KEYS[category])}
-              tone={BMI_TONE[category]}
-              style={styles.badge}
-            />
-          }
+          right={<Badge label={t(BMI_KEYS[category])} tone={BMI_TONE[category]} variant="plain" />}
         />
-        <Divider inset />
+        <Divider />
         <DetailRow
           label={t('onboarding:healthyWeight')}
           value={`${formatAmount(healthyLow)}–${formatAmount(healthyHigh)}`}
           unit={weightUnit}
           hint={t('onboarding:healthyWeightHint')}
         />
-      </Card>
+      </Section>
 
       <Txt variant="caption" color="faint" style={styles.disclaimer}>
         {t('onboarding:disclaimer')}
@@ -388,56 +370,50 @@ export default function PlanStep() {
 
 const styles = StyleSheet.create({
   hero: {
-    marginTop: spacing.xs,
-  },
-  heroBlock: {
-    alignItems: 'center',
-  },
-  heroPill: {
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm - 1,
+    marginTop: layout.sectionGap,
   },
   heroValue: {
-    marginTop: spacing.md,
-  },
-  heroNote: {
-    marginTop: spacing.md,
-  },
-  heroDivider: {
-    marginBottom: spacing.xl,
-    marginTop: spacing.xl,
-  },
-  macroPanel: {
-    borderRadius: radius.lg,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
-  },
-  macroRow: {
-    columnGap: spacing.md,
-    flexDirection: 'row',
-    justifyContent: 'center',
-  },
-  macro: {
-    alignItems: 'center',
-    flexShrink: 1,
-  },
-  macroLabel: {
     marginTop: spacing.sm,
   },
-  macroNote: {
-    marginTop: spacing.md,
+  heroNote: {
+    marginTop: spacing.lg,
+    maxWidth: layout.maxTextWidth,
   },
-  breakdown: {
-    marginBottom: spacing.sm,
+  macroBlock: {
     marginTop: spacing.xl,
+  },
+  splitBar: {
+    borderRadius: radius.pill,
+    flexDirection: 'row',
+    height: 6,
+    marginBottom: spacing.sm,
+    overflow: 'hidden',
+    width: '100%',
+  },
+  macroRow: {
+    alignItems: 'center',
+    columnGap: spacing.md,
+    flexDirection: 'row',
+    minHeight: 34,
+    paddingVertical: spacing.xs + 2,
+  },
+  dot: {
+    borderRadius: radius.pill,
+    height: 8,
+    width: 8,
+  },
+  macroLabel: {
+    flex: 1,
+  },
+  macroNote: {
+    marginTop: spacing.sm,
+    maxWidth: layout.maxTextWidth,
   },
   detailRow: {
     alignItems: 'center',
     columnGap: spacing.md,
     flexDirection: 'row',
     minHeight: 60,
-    paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
   detailText: {
@@ -447,19 +423,15 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   detailValue: {
-    alignItems: 'center',
-    columnGap: spacing.sm,
-    flexDirection: 'row',
-  },
-  badge: {
-    alignSelf: 'center',
+    flexShrink: 0,
   },
   disclaimer: {
-    marginTop: spacing.lg,
+    marginTop: layout.sectionGap,
+    maxWidth: layout.maxTextWidth,
   },
   spacer: {
     flexGrow: 1,
-    minHeight: spacing.xl,
+    minHeight: spacing.xxl,
   },
   error: {
     marginTop: spacing.lg,

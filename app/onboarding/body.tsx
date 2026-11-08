@@ -8,6 +8,7 @@ import {
   Button,
   MeasurePicker,
   Screen,
+  Section,
   SegmentedControl,
   Txt,
   type SegmentedOption,
@@ -22,7 +23,7 @@ import {
   lbToKg,
 } from '@/domain/nutrition';
 import { mirrorIcon, useDirection } from '@/i18n';
-import { spacing } from '@/theme';
+import { layout, spacing } from '@/theme';
 import type { Sex, UnitSystem } from '@/types';
 
 import { StepProgress, bodyDraftParams, parseBodyDraft, type BodyDraft } from './_layout';
@@ -82,9 +83,10 @@ export default function BodyStep() {
     { value: 'imperial', label: t('onboarding:unitsImperial') },
   ];
 
+  // No glyphs: each one would only repeat the word printed beside it.
   const sexOptions: SegmentedOption<Sex>[] = [
-    { value: 'male', label: t('onboarding:male'), icon: 'male' },
-    { value: 'female', label: t('onboarding:female'), icon: 'female' },
+    { value: 'male', label: t('onboarding:male') },
+    { value: 'female', label: t('onboarding:female') },
   ];
 
   const feetInchesText = (totalInches: number) =>
@@ -163,6 +165,7 @@ export default function BodyStep() {
 
       <StepProgress current={1} />
 
+      {/* The two labels say cm / kg and ft / lb, so no heading is needed. */}
       <SegmentedControl
         options={unitOptions}
         value={units}
@@ -170,21 +173,18 @@ export default function BodyStep() {
         style={styles.units}
       />
 
-      <Txt variant="caption" color="faint" style={styles.startNote}>
-        {t('onboarding:wheelStartNote')}
-      </Txt>
+      <Section title={t('onboarding:sex')} gap="tight">
+        <SegmentedControl options={sexOptions} value={sex} onChange={setSex} />
+        <Txt variant="caption" color="faint" style={styles.caption}>
+          {t('onboarding:sexNote', { calories: formatCount(SEX_CALORIE_GAP) })}
+        </Txt>
+      </Section>
 
-      <View style={styles.fields}>
-        <View>
-          <Txt variant="label" color="muted" weight="semibold" style={styles.label}>
-            {t('onboarding:sex')}
-          </Txt>
-          <SegmentedControl options={sexOptions} value={sex} onChange={setSex} />
-          <Txt variant="caption" color="faint" style={styles.caption}>
-            {t('onboarding:sexNote', { calories: formatCount(SEX_CALORIE_GAP) })}
-          </Txt>
-        </View>
-
+      <Section
+        title={t('onboarding:measurementsTitle')}
+        subtitle={t('onboarding:wheelStartNote')}
+        contentStyle={styles.fields}
+      >
         <MeasurePicker
           label={t('onboarding:age')}
           value={age}
@@ -265,7 +265,7 @@ export default function BodyStep() {
             })}
           />
         )}
-      </View>
+      </Section>
 
       <View style={styles.spacer} />
 
@@ -285,26 +285,19 @@ export default function BodyStep() {
 
 const styles = StyleSheet.create({
   units: {
-    marginBottom: spacing.xl,
-  },
-  startNote: {
-    marginBottom: spacing.md,
-    marginStart: spacing.xs,
+    marginTop: layout.sectionGap,
   },
   fields: {
-    rowGap: spacing.lg,
-  },
-  label: {
-    marginBottom: spacing.xs + 2,
-    marginStart: spacing.xs / 2,
+    rowGap: spacing.xl,
   },
   caption: {
-    marginStart: spacing.xs,
-    marginTop: spacing.xs + 2,
+    marginStart: spacing.xs / 2,
+    marginTop: spacing.sm,
+    maxWidth: layout.maxTextWidth,
   },
   spacer: {
     flexGrow: 1,
-    minHeight: spacing.xl,
+    minHeight: spacing.xxl,
   },
   continue: {
     marginTop: spacing.xl,

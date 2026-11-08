@@ -1,5 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
+import * as DocumentPicker from 'expo-document-picker';
+import { File as FsFile } from 'expo-file-system';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -31,7 +33,7 @@ import {
   Txt,
   type SegmentedOption,
 } from '@/components/ui';
-import { formatCount } from '@/domain/format';
+import { formatAmount, formatCount } from '@/domain/format';
 import {
   LANGUAGES,
   changeLanguage,
@@ -40,7 +42,16 @@ import {
   type LanguageCode,
 } from '@/i18n';
 import { useApp } from '@/state/AppStore';
-import { DEFAULT_SETTINGS, deleteCustomFood, exportAll } from '@/storage/repository';
+import {
+  DEFAULT_SETTINGS,
+  IMPORT_KINDS,
+  deleteCustomFood,
+  exportAll,
+  importBundle,
+  type ImportKind,
+  type ImportProblem,
+  type ImportResult,
+} from '@/storage/repository';
 import { clearApiKey, hasApiKey, setApiKey } from '@/storage/secrets';
 import { radius, spacing, useTheme } from '@/theme';
 import type { FoodItem, PhotoAnalysisMode, UnitSystem } from '@/types';
@@ -115,6 +126,46 @@ function readAppIdentity(): AppIdentity {
   } catch {
     return { name: 'Nutrition', version: null };
   }
+}
+
+/** The settings key that names each kind of record an import can carry. */
+type ImportKindLabelKey =
+  | 'importKindProfile'
+  | 'importKindSettings'
+  | 'importKindWeights'
+  | 'importKindCustomFoods'
+  | 'importKindMeals'
+  | 'importKindProgram'
+  | 'importKindWorkouts'
+  | 'importKindCustomExercises'
+  | 'importKindScans';
+
+const KIND_LABEL_KEYS: Record<ImportKind, ImportKindLabelKey> = {
+  profile: 'importKindProfile',
+  settings: 'importKindSettings',
+  weights: 'importKindWeights',
+  customFoods: 'importKindCustomFoods',
+  meals: 'importKindMeals',
+  program: 'importKindProgram',
+  workouts: 'importKindWorkouts',
+  customExercises: 'importKindCustomExercises',
+  scans: 'importKindScans',
+};
+
+/** How many problems a report spells out before it only counts the rest. */
+const PROBLEM_LINE_LIMIT = 6;
+
+/**
+ * The picked file as text. A browser hands over the `File` itself, a phone
+ * hands over a path in the cache directory, and either can hand over a data URL.
+ */
+async function readPickedText(asset: DocumentPicker.DocumentPickerAsset): Promise<string> {
+  if (asset.file) return asset.file.text();
+  if (asset.uri.startsWith('data:')) {
+    const response = await fetch(asset.uri);
+    return response.text();
+  }
+  return new FsFile(asset.uri).text();
 }
 
 function SectionTitle({
@@ -266,6 +317,11 @@ export default function SettingsScreen() {
   const [exporting, setExporting] = useState(false);
   const [exportJson, setExportJson] = useState<string | null>(null);
   const [dataError, setDataError] = useState<string | null>(null);
+
+  const [importing, setImporting] = useState(false);
+  const [importReport, setImportReport] = useState<ImportResult | null>(null);
+  const [pasting, setPasting] = useState(false);
+  const [pasteDraft, setPasteDraft] = useState('');
 
   const modeOptions: SegmentedOption<PhotoAnalysisMode>[] = useMemo(
     () => [
@@ -426,6 +482,103 @@ export default function SettingsScreen() {
     }
   }, [identity.name, t]);
 
+  const applyImport = useCallback(
+    async (raw: string) => {
+      setImporting(true);
+      try {
+        const outcome = await importBundle(raw);
+        setImportReport(outcome);
+        if (outcome.ok) {
+          // The field stays open when nothing landed, so a file that was all
+          // rejected can be corrected and tried again without pasting it twice.
+          if (outcome.added + outcome.replaced > 0) {
+            setPasting(false);
+            setPasteDraft('');
+          }
+          // The screens read from the store, so the new records only appear
+          // once it has been told to read storage again.
+          await refresh();
+        }
+      } catch (error) {
+        console.warn('[settings] import failed', error);
+        setDataError(t('importError'));
+      } finally {
+        setImporting(false);
+      }
+    },
+    [refresh, t],
+  );
+
+  /**
+   * Checks the file without writing, so the count of records it would overwrite
+   * can be put to the user before anything is replaced.
+   */
+  const reviewImport = useCallback(
+    async (raw: string) => {
+      setDataError(null);
+      setImportReport(null);
+      setImporting(true);
+      let preview: ImportResult;
+      try {
+        preview = await importBundle(raw, { dryRun: true });
+      } catch (error) {
+        console.warn('[settings] import check failed', error);
+        setDataError(t('importError'));
+        setImporting(false);
+        return;
+      }
+      setImporting(false);
+
+      if (!preview.ok) {
+        setImportReport(preview);
+        return;
+      }
+      if (preview.replaced === 0) {
+        await applyImport(raw);
+        return;
+      }
+      confirmAction({
+        title: t('importReplaceTitle'),
+        message:
+          preview.replaced === 1
+            ? t('importReplaceMessageOne')
+            : t('importReplaceMessage', { value: formatCount(preview.replaced) }),
+        confirmLabel: t('importReplaceAction'),
+        cancelLabel: t('common:cancel'),
+        onConfirm: () => {
+          void applyImport(raw);
+        },
+      });
+    },
+    [applyImport, t],
+  );
+
+  const pickImportFile = useCallback(() => {
+    setDataError(null);
+    void (async () => {
+      try {
+        const picked = await DocumentPicker.getDocumentAsync({
+          type: ['application/json', 'text/plain'],
+          multiple: false,
+          copyToCacheDirectory: true,
+        });
+        if (picked.canceled) return;
+        const asset = picked.assets[0];
+        if (!asset) return;
+        const raw = await readPickedText(asset);
+        await reviewImport(raw);
+      } catch (error) {
+        console.warn('[settings] could not read the picked file', error);
+        setDataError(t('importFileError'));
+      }
+    })();
+  }, [reviewImport, t]);
+
+  const closePaste = useCallback(() => {
+    setPasting(false);
+    setPasteDraft('');
+  }, []);
+
   const eraseEverything = useCallback(async () => {
     try {
       await clearApiKey();
@@ -497,6 +650,71 @@ export default function SettingsScreen() {
     });
     return food.brand ? `${food.brand} · ${energy}` : energy;
   };
+
+  /**
+   * One refusal as a sentence. Every key is named in full, because i18next only
+   * checks the interpolations of a key it can see written out.
+   */
+  const problemLine = (problem: ImportProblem): string => {
+    const kind = problem.kind === undefined ? '' : t(KIND_LABEL_KEYS[problem.kind]);
+    const id = problem.id ?? '';
+    switch (problem.code) {
+      case 'notJson':
+        return t('importProblemNotJson');
+      case 'notObject':
+        return t('importProblemNotObject');
+      case 'unsupportedVersion':
+        return problem.version === undefined
+          ? t('importProblemVersionUnknown')
+          : t('importProblemVersion', { value: formatAmount(problem.version) });
+      case 'nothingRecognised':
+        return t('importProblemNothing');
+      case 'wrongShape':
+        return problem.date === undefined
+          ? t('importProblemWrongShape', { kind })
+          : t('importProblemWrongShapeDay', { kind, date: problem.date });
+      case 'badRecord':
+        return t('importProblemBadRecord', {
+          kind,
+          position: formatCount(problem.position ?? 0),
+        });
+      case 'duplicate':
+        return t('importProblemDuplicate', { kind, id });
+      case 'badDate':
+        return t('importProblemBadDate', { kind, id });
+      case 'badWeight':
+        return t('importProblemBadWeight', { kind, id });
+      case 'badFields':
+        return t('importProblemBadFields', { kind, id });
+    }
+  };
+
+  /** One line per kind the file actually touched, in reporting order. */
+  const importKindLines = importReport
+    ? IMPORT_KINDS.filter((kind) => {
+        const counts = importReport.counts[kind];
+        return counts.added + counts.replaced + counts.skipped > 0;
+      }).map((kind) => ({
+        kind,
+        text: t('importKindCounts', {
+          kind: t(KIND_LABEL_KEYS[kind]),
+          added: formatCount(importReport.counts[kind].added),
+          replaced: formatCount(importReport.counts[kind].replaced),
+          skipped: formatCount(importReport.counts[kind].skipped),
+        }),
+      }))
+    : [];
+
+  const shownProblems = importReport ? importReport.problems.slice(0, PROBLEM_LINE_LIMIT) : [];
+  const hiddenProblems = importReport
+    ? importReport.problems.length - shownProblems.length
+    : 0;
+  const importChangedNothing =
+    importReport !== null &&
+    importReport.ok &&
+    importReport.added === 0 &&
+    importReport.replaced === 0 &&
+    importReport.skipped === 0;
 
   return (
     <>
@@ -785,6 +1003,109 @@ export default function SettingsScreen() {
           />
         </Card>
 
+        <Card style={styles.card}>
+          <CardTitle title={t('importTitle')} hint={t('importHint')} />
+          <View style={styles.actionRow}>
+            <Button
+              label={t('importPick')}
+              onPress={pickImportFile}
+              loading={importing && !pasting}
+              variant="secondary"
+              icon="folder-open-outline"
+              accessibilityHint={t('importPickHint')}
+            />
+            <Button
+              label={pasting ? t('importPasteClose') : t('importPasteOpen')}
+              onPress={pasting ? closePaste : () => setPasting(true)}
+              variant="ghost"
+              icon="clipboard-outline"
+            />
+          </View>
+
+          {pasting ? (
+            <View style={styles.pasteBox}>
+              {/* Some mobile browsers offer no file picker at all, so the
+                  clipboard is the only way a file reaches the app there. */}
+              <TextField
+                label={t('importPasteLabel')}
+                value={pasteDraft}
+                onChangeText={setPasteDraft}
+                placeholder='{ "version": 1, "scans": [] }'
+                hint={t('importPasteFieldHint')}
+                multiline
+                autoCapitalize="none"
+                icon="code-slash-outline"
+              />
+              <Button
+                label={t('importPasteConfirm')}
+                onPress={() => void reviewImport(pasteDraft)}
+                disabled={pasteDraft.trim().length === 0}
+                loading={importing}
+                icon="download-outline"
+                style={styles.resetButton}
+              />
+            </View>
+          ) : null}
+
+          {importing ? (
+            <Txt variant="label" color="muted" style={styles.notice}>
+              {t('importBusy')}
+            </Txt>
+          ) : null}
+
+          {importReport ? (
+            <View
+              style={[
+                styles.report,
+                { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
+              ]}
+            >
+              <Txt weight="semibold" color={importReport.ok ? 'text' : 'danger'}>
+                {importReport.ok ? t('importDoneTitle') : t('importFailedTitle')}
+              </Txt>
+
+              {importReport.ok ? (
+                <Txt variant="label" color="muted" style={styles.reportLine}>
+                  {t('importTotals', {
+                    added: formatCount(importReport.added),
+                    replaced: formatCount(importReport.replaced),
+                    skipped: formatCount(importReport.skipped),
+                  })}
+                </Txt>
+              ) : null}
+
+              {importKindLines.map((line) => (
+                <Txt key={line.kind} variant="label" color="muted" style={styles.reportLine}>
+                  {line.text}
+                </Txt>
+              ))}
+
+              {importChangedNothing ? (
+                <Txt variant="label" color="muted" style={styles.reportLine}>
+                  {t('importNothingChanged')}
+                </Txt>
+              ) : null}
+
+              {shownProblems.map((problem, index) => (
+                <Txt
+                  key={`${problem.code}-${problem.kind ?? 'file'}-${index}`}
+                  variant="label"
+                  color="warning"
+                  style={styles.reportLine}
+                >
+                  {problemLine(problem)}
+                </Txt>
+              ))}
+
+              {hiddenProblems > 0 ? (
+                <Txt variant="label" color="warning" style={styles.reportLine}>
+                  {t('importProblemMore', { value: formatCount(hiddenProblems) })}
+                </Txt>
+              ) : null}
+            </View>
+          ) : null}
+        </Card>
+
         <Card style={[styles.card, styles.warningCard, { borderColor: colors.danger }]}>
           <Txt weight="semibold" color="danger">
             {t('eraseTitle')}
@@ -964,6 +1285,18 @@ const styles = StyleSheet.create({
   },
   resetButton: {
     marginTop: spacing.lg,
+  },
+  pasteBox: {
+    marginTop: spacing.lg,
+  },
+  report: {
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginTop: spacing.lg,
+    padding: spacing.lg,
+  },
+  reportLine: {
+    marginTop: spacing.sm,
   },
   warningCard: {
     borderWidth: 1,

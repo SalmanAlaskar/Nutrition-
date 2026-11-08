@@ -2,7 +2,7 @@
 export const nav = {
   today: 'اليوم',
   training: 'التمرين',
-  dashboard: 'لوحة المعلومات',
+  dashboard: 'اللوحة',
   history: 'السجل',
   profile: 'الملف'
 } as const;

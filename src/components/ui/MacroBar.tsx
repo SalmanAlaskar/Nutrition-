@@ -56,8 +56,9 @@ export function MacroBar({ label, value, target, color, unit, style }: MacroBarP
       accessibilityValue={{ min: 0, max: goal, now: shown }}
     >
       <View style={styles.header}>
-        <Txt variant="caption" weight="bold" color="faint" numberOfLines={1} style={styles.label}>
-          {label.toUpperCase()}
+        {/* Sentence case, not shouted caps: Arabic has no caps, and nor does calm. */}
+        <Txt variant="label" color="muted" numberOfLines={1} style={styles.label}>
+          {label}
         </Txt>
         {/*
           One text run, not three siblings in a row. Laid out as separate
@@ -68,13 +69,13 @@ export function MacroBar({ label, value, target, color, unit, style }: MacroBarP
           the muted target carry the signal without shouting.
         */}
         <Txt variant="label" numberOfLines={1} style={styles.values}>
-          <Txt variant="label" weight="bold" color="text" tabular>
+          <Txt variant="label" weight="semibold" color="text" tabular>
             {formatCount(shown)}
           </Txt>
           <Txt variant="label" color={over ? colors.warning : 'faint'} tabular>
             {` / ${formatCount(goal)}`}
           </Txt>
-          <Txt variant="caption" color="faint" weight="medium">
+          <Txt variant="caption" color="faint">
             {` ${suffix}`}
           </Txt>
         </Txt>
@@ -97,7 +98,7 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: spacing.xs + 2,
+    marginBottom: spacing.sm - 1,
   },
   label: {
     flexShrink: 1,
@@ -109,7 +110,7 @@ const styles = StyleSheet.create({
   track: {
     borderRadius: radius.pill,
     flexDirection: 'row',
-    height: 8,
+    height: 6,
     overflow: 'hidden',
     width: '100%',
   },

@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { spacing, useTheme } from '@/theme';
+import { layout, spacing, useTheme } from '@/theme';
 
 export type ScreenEdge = 'top' | 'bottom';
 
@@ -50,14 +50,16 @@ export function Screen({
 
   const top = edges.includes('top') ? insets.top : 0;
   const bottom = edges.includes('bottom') ? insets.bottom : 0;
-  const gutter = padded ? spacing.lg : 0;
+  const gutter = padded ? layout.gutter : 0;
 
   const body = scroll ? (
     <ScrollView
       style={styles.flex}
       contentContainerStyle={[
         styles.scrollContent,
-        { paddingHorizontal: gutter, paddingBottom: bottom + (padded ? spacing.xl : 0) },
+        // A screen ends well clear of the tab bar; nothing should feel crowded
+        // against the bottom edge.
+        { paddingHorizontal: gutter, paddingBottom: bottom + (padded ? spacing.xxl : 0) },
         contentStyle,
       ]}
       keyboardShouldPersistTaps="handled"

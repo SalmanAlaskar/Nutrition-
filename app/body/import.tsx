@@ -1,18 +1,20 @@
-import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Platform,
-  StyleSheet,
-  View,
-  type AccessibilityProps,
-} from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 
-import { AppHeader, Button, Card, LoadingView, Screen, TextField, Txt } from '@/components/ui';
+import {
+  AppHeader,
+  Button,
+  LoadingView,
+  Screen,
+  Section,
+  TextField,
+  Txt,
+} from '@/components/ui';
 import { formatCount } from '@/domain/format';
 import {
   analyzeScanDocument,
@@ -26,16 +28,8 @@ import {
 } from '@/services/bodyScan';
 import { useApp } from '@/state/AppStore';
 import { hasApiKey } from '@/storage/secrets';
-import { radius, spacing, useTheme } from '@/theme';
+import { layout, radius, spacing, useTheme } from '@/theme';
 import type { ScanSource } from '@/types';
-
-type IconName = React.ComponentProps<typeof Ionicons>['name'];
-
-/** Decoration only: the surrounding text already carries the meaning. */
-const DECORATIVE: AccessibilityProps =
-  Platform.OS === 'web'
-    ? { 'aria-hidden': true }
-    : { accessibilityElementsHidden: true, importantForAccessibility: 'no-hide-descendants' };
 
 type Phase = 'idle' | 'scanning' | 'consent' | 'fetching' | 'analyzing';
 
@@ -372,24 +366,16 @@ export default function ImportBodyScanScreen() {
     return (
       <Screen scroll edges={['top', 'bottom']}>
         <AppHeader title={t('consentTitle')} onBack={cancelUpload} />
-        <Card>
-          <Txt weight="semibold" numberOfLines={2}>
-            {pending.name}
-          </Txt>
-          <Txt color="muted" style={styles.consentBody}>
+        <Section first title={pending.name} gap="tight">
+          <Txt color="muted" style={styles.measure}>
             {pending.kind === 'pdf' ? t('consentPdf', { host }) : t('consentPhoto', { host })}
           </Txt>
-          <View style={styles.consentActions}>
+          <View style={styles.actions}>
             <Button label={t('consentSend')} onPress={() => analyze(pending)} fullWidth />
             <Button label={t('consentNot')} variant="secondary" onPress={cancelUpload} fullWidth />
+            <Button label={t('consentType')} variant="ghost" onPress={typeItIn} fullWidth />
           </View>
-        </Card>
-        <Button
-          label={t('consentType')}
-          variant="ghost"
-          onPress={typeItIn}
-          style={styles.altAction}
-        />
+        </Section>
       </Screen>
     );
   }
@@ -403,225 +389,138 @@ export default function ImportBodyScanScreen() {
     );
   }
 
+  const notice = failure !== null || thin !== null;
+
   return (
     <Screen scroll edges={['top', 'bottom']} keyboardAvoiding>
       <AppHeader title={t('importTitle')} subtitle={t('importSubtitle')} onBack={goBack} />
 
+      {/* A wash and plain words: a problem informs, it does not shout. */}
       {failure ? (
-        <Card style={[styles.block, { borderColor: colors.danger }]}>
-          <View style={styles.noticeHead}>
-            <View {...DECORATIVE}>
-              <Ionicons name="alert-circle-outline" size={18} color={colors.danger} />
-            </View>
-            <Txt weight="semibold" style={styles.noticeTitle}>
+        <Section first>
+          <View style={[styles.notice, { backgroundColor: colors.dangerSoft }]}>
+            <Txt weight="semibold" color="danger">
               {t(failure.headlineKey)}
             </Txt>
+            <Txt variant="label" color="muted" style={styles.noticeBody}>
+              {suggestionOf(failure)}
+            </Txt>
           </View>
-          <Txt color="muted" style={styles.noticeBody}>
-            {suggestionOf(failure)}
-          </Txt>
-        </Card>
+        </Section>
       ) : null}
 
       {thin ? (
-        <Card style={[styles.block, { borderColor: colors.warning }]}>
-          <View style={styles.noticeHead}>
-            <View {...DECORATIVE}>
-              <Ionicons name="help-circle-outline" size={18} color={colors.warning} />
-            </View>
-            <Txt weight="semibold" style={styles.noticeTitle}>
+        <Section first={failure === null}>
+          <View style={[styles.notice, { backgroundColor: colors.warningSoft }]}>
+            <Txt weight="semibold" color="warning">
               {t('thinTitle')}
             </Txt>
+            <Txt variant="label" color="muted" style={styles.noticeBody}>
+              {thin.fieldCount === 0
+                ? t('thinNone')
+                : thin.fieldCount === 1
+                  ? t('thinOne')
+                  : t('thinFew', { n: formatCount(thin.fieldCount) })}
+            </Txt>
+            <View style={styles.actions}>
+              {thin.fieldCount > 0 ? (
+                <Button
+                  label={t('thinCarry')}
+                  onPress={() => handoff(thin.draft, thin.source)}
+                  fullWidth
+                />
+              ) : null}
+              <Button label={t('thinType')} variant="secondary" onPress={typeItIn} fullWidth />
+            </View>
           </View>
-          <Txt color="muted" style={styles.noticeBody}>
-            {thin.fieldCount === 0
-              ? t('thinNone')
-              : thin.fieldCount === 1
-                ? t('thinOne')
-                : t('thinFew', { n: formatCount(thin.fieldCount) })}
-          </Txt>
-          <View style={styles.consentActions}>
-            {thin.fieldCount > 0 ? (
-              <Button
-                label={t('thinCarry')}
-                onPress={() => handoff(thin.draft, thin.source)}
-                fullWidth
-              />
-            ) : null}
-            <Button label={t('thinType')} variant="secondary" onPress={typeItIn} fullWidth />
-          </View>
-        </Card>
+        </Section>
       ) : null}
 
-      <Card style={styles.block}>
-        <View style={styles.cardHead}>
-          <View style={[styles.mark, { backgroundColor: colors.accentSoft }]} {...DECORATIVE}>
-            <Ionicons name={'qr-code-outline' as IconName} size={20} color={colors.accent} />
-          </View>
-          <View style={styles.cardTitle}>
-            <Txt weight="semibold">{t('qrTitle')}</Txt>
-            <Txt variant="caption" color="faint">
-              {t('qrBody')}
-            </Txt>
-          </View>
-        </View>
-
-        {canScan ? (
-          <Button
-            label={t('qrScan')}
-            icon="camera-outline"
-            onPress={startScanning}
-            fullWidth
-            style={styles.cardAction}
+      <Section first={!notice} title={t('qrTitle')} subtitle={t('qrBody')}>
+        <View style={styles.actions}>
+          {canScan ? <Button label={t('qrScan')} onPress={startScanning} fullWidth /> : null}
+          <TextField
+            label={t('qrPaste')}
+            value={url}
+            onChangeText={setUrl}
+            placeholder={t('qrPastePlaceholder')}
+            autoCapitalize="none"
+            keyboardType="url"
           />
-        ) : null}
-
-        <TextField
-          label={t('qrPaste')}
-          value={url}
-          onChangeText={setUrl}
-          placeholder={t('qrPastePlaceholder')}
-          autoCapitalize="none"
-          keyboardType="url"
-          icon="link-outline"
-          style={styles.cardAction}
-        />
-        <Button
-          label={t('qrRead')}
-          variant="secondary"
-          onPress={() => readUrl(url)}
-          disabled={url.trim() === ''}
-          fullWidth
-        />
+          <Button
+            label={t('qrRead')}
+            variant={canScan ? 'secondary' : 'primary'}
+            onPress={() => readUrl(url)}
+            disabled={url.trim() === ''}
+            fullWidth
+          />
+        </View>
         {Platform.OS === 'web' ? (
-          <Txt variant="caption" color="faint" style={styles.cardFoot}>
+          <Txt variant="caption" color="faint" style={styles.foot}>
             {t('qrWebNote')}
           </Txt>
         ) : null}
-      </Card>
+      </Section>
 
-      <Card style={styles.block}>
-        <View style={styles.cardHead}>
-          <View style={[styles.mark, { backgroundColor: colors.accentSoft }]} {...DECORATIVE}>
-            <Ionicons name={'document-attach-outline' as IconName} size={20} color={colors.accent} />
-          </View>
-          <View style={styles.cardTitle}>
-            <Txt weight="semibold">{t('fileTitle')}</Txt>
-            <Txt variant="caption" color="faint">
-              {t('fileBody')}
-            </Txt>
-          </View>
-        </View>
-
+      <Section title={t('fileTitle')} subtitle={t('fileBody')}>
         {aiReady ? (
           <>
-            <Button
-              label={t('choosePhoto')}
-              icon="image-outline"
-              onPress={pickPhoto}
-              fullWidth
-              style={styles.cardAction}
-            />
-            <Button
-              label={t('choosePdf')}
-              icon="document-outline"
-              variant="secondary"
-              onPress={pickPdf}
-              fullWidth
-              style={styles.cardAction}
-            />
-            <Txt variant="caption" color="faint" style={styles.cardFoot}>
+            <View style={styles.actions}>
+              <Button
+                label={t('choosePhoto')}
+                variant="secondary"
+                onPress={pickPhoto}
+                fullWidth
+              />
+              <Button label={t('choosePdf')} variant="secondary" onPress={pickPdf} fullWidth />
+            </View>
+            <Txt variant="caption" color="faint" style={styles.foot}>
               {t('fileFoot')}
             </Txt>
           </>
         ) : (
           <>
-            <Txt color="muted" style={styles.cardAction}>
+            <Txt variant="label" color="muted" style={styles.measure}>
               {settings.photoAnalysis !== 'ai' ? t('aiOff') : t('aiNoKey')}
             </Txt>
             <Button
               label={t('openSettings')}
-              icon="settings-outline"
               variant="secondary"
               onPress={() => router.push('/settings')}
               fullWidth
+              style={styles.spacedAction}
             />
           </>
         )}
-      </Card>
+      </Section>
 
-      <Card style={styles.block}>
-        <View style={styles.cardHead}>
-          <View style={[styles.mark, { backgroundColor: colors.accentSoft }]} {...DECORATIVE}>
-            <Ionicons name={'create-outline' as IconName} size={20} color={colors.accent} />
-          </View>
-          <View style={styles.cardTitle}>
-            <Txt weight="semibold">{t('manualTitle')}</Txt>
-            <Txt variant="caption" color="faint">
-              {t('manualBody')}
-            </Txt>
-          </View>
-        </View>
-        <Button
-          label={t('manualAction')}
-          icon="keypad-outline"
-          variant="secondary"
-          onPress={typeItIn}
-          fullWidth
-          style={styles.cardAction}
-        />
-      </Card>
+      <Section title={t('manualTitle')} subtitle={t('manualBody')}>
+        <Button label={t('manualAction')} variant="secondary" onPress={typeItIn} fullWidth />
+      </Section>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  block: {
+  measure: {
+    maxWidth: layout.maxTextWidth,
+  },
+  actions: {
+    rowGap: spacing.md,
+  },
+  spacedAction: {
+    marginTop: spacing.lg,
+  },
+  foot: {
     marginTop: spacing.md,
+    maxWidth: layout.maxTextWidth,
   },
-  cardHead: {
-    alignItems: 'center',
-    columnGap: spacing.md,
-    flexDirection: 'row',
-  },
-  mark: {
-    alignItems: 'center',
+  notice: {
     borderRadius: radius.md,
-    height: 40,
-    justifyContent: 'center',
-    width: 40,
-  },
-  cardTitle: {
-    flex: 1,
-    rowGap: 2,
-  },
-  cardAction: {
-    marginTop: spacing.md,
-  },
-  cardFoot: {
-    marginTop: spacing.md,
-  },
-  noticeHead: {
-    alignItems: 'center',
-    columnGap: spacing.sm,
-    flexDirection: 'row',
-  },
-  noticeTitle: {
-    flex: 1,
+    padding: spacing.lg,
   },
   noticeBody: {
-    marginTop: spacing.sm,
-  },
-  consentBody: {
-    marginTop: spacing.sm,
-  },
-  consentActions: {
-    marginTop: spacing.lg,
-    rowGap: spacing.sm,
-  },
-  altAction: {
-    alignSelf: 'center',
-    marginTop: spacing.lg,
+    marginTop: spacing.xs,
   },
   camera: {
     borderRadius: radius.lg,
@@ -631,6 +530,7 @@ const styles = StyleSheet.create({
   },
   cameraHint: {
     marginTop: spacing.lg,
+    maxWidth: layout.maxTextWidth,
   },
   cameraCancel: {
     alignSelf: 'flex-start',

@@ -173,17 +173,19 @@ export function MeasurePicker({
   return (
     <View style={style}>
       <View style={styles.header}>
-        <Txt variant="label" color="muted" weight="semibold">
+        <Txt variant="label" color="muted">
           {label}
         </Txt>
         {allowTyping ? (
           <Pressable
             onPress={toggleTyping}
             accessibilityRole="button"
+            accessibilityLabel={typing ? t('pickerScrollAction') : t('pickerTypeAction')}
             hitSlop={spacing.sm}
             style={({ pressed }) => (pressed ? styles.pressed : null)}
           >
-            <Txt variant="label" color="accent" weight="semibold">
+            {/* A way to switch input, not the point of the screen: no accent. */}
+            <Txt variant="label" color="muted" weight="semibold">
               {typing ? t('pickerScrollAction') : t('pickerTypeAction')}
             </Txt>
           </Pressable>
@@ -203,8 +205,8 @@ export function MeasurePicker({
         into one longer number.
       */}
       <View style={styles.readout} {...DECORATIVE}>
-        <Txt variant="title">
-          <Txt variant="title" tabular>
+        <Txt variant="metric">
+          <Txt variant="metric" tabular>
             {value === null ? UNSET : format(value)}
           </Txt>
           <Txt variant="body" color="muted">
@@ -212,8 +214,8 @@ export function MeasurePicker({
           </Txt>
         </Txt>
         {secondary ? (
-          <Txt variant="title" style={styles.readoutSecond}>
-            <Txt variant="title" tabular>
+          <Txt variant="metric" style={styles.readoutSecond}>
+            <Txt variant="metric" tabular>
               {secondary.value === null ? UNSET : formatSecondary(secondary.value)}
             </Txt>
             <Txt variant="body" color="muted">

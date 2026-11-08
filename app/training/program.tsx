@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -8,27 +9,36 @@ import {
   ScrollView,
   StyleSheet,
   View,
+  type AccessibilityProps,
 } from 'react-native';
 
 import { useTrainingText } from '@/components/training/useTrainingText';
 import {
   AppHeader,
   Button,
-  Card,
   Chip,
   Divider,
   IconButton,
   LoadingView,
   NumberField,
   Screen,
+  Section,
   Txt,
 } from '@/components/ui';
 import { exerciseById } from '@/data/exercises';
 import { formatCount } from '@/domain/format';
 import { DEFAULT_PROGRAM, fallbackExerciseName } from '@/domain/training';
 import { useApp } from '@/state/AppStore';
-import { radius, spacing, useTheme } from '@/theme';
+import { layout, spacing, useTheme } from '@/theme';
 import type { PlannedExercise, Program, ProgramDay } from '@/types';
+
+type IconName = React.ComponentProps<typeof Ionicons>['name'];
+
+/** Decoration is hidden from assistive tech; the DOM only understands aria-hidden. */
+const DECORATIVE: AccessibilityProps =
+  Platform.OS === 'web'
+    ? { 'aria-hidden': true }
+    : { accessibilityElementsHidden: true, importantForAccessibility: 'no-hide-descendants' };
 
 /** Sunday first, the way the week runs here. */
 const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
@@ -223,19 +233,15 @@ export default function ProgramScreen() {
         onBack={goBack}
       />
 
-      <Txt variant="caption" color="faint" weight="bold" style={styles.sectionLabel}>
-        {t('sectionWeek').toUpperCase()}
-      </Txt>
-
-      <Card padded={false}>
+      <Section first title={t('sectionWeek')} gap="tight">
         {WEEKDAYS.map((weekday) => {
           const assigned = program.schedule[weekday] ?? null;
           return (
             <View key={weekday}>
-              {weekday > 0 ? <Divider inset /> : null}
+              {weekday > 0 ? <Divider /> : null}
               <View style={styles.weekRow}>
                 <Txt
-                  weight="semibold"
+                  color="muted"
                   style={styles.weekday}
                   numberOfLines={1}
                   accessibilityLabel={text.weekdayLong(weekday)}
@@ -257,7 +263,6 @@ export default function ProgramScreen() {
                   ))}
                   <Chip
                     label={t('rest')}
-                    icon="moon-outline"
                     selected={assigned === null}
                     onPress={() => setScheduleDay(weekday, null)}
                   />
@@ -266,223 +271,186 @@ export default function ProgramScreen() {
             </View>
           );
         })}
-      </Card>
-
-      <Txt variant="caption" color="faint" weight="bold" style={styles.sectionLabel}>
-        {t('sectionDays').toUpperCase()}
-      </Txt>
+      </Section>
 
       {program.days.map((day) => {
         const dayLabel = text.day(day);
         return (
-          <Card key={day.id} style={styles.dayCard}>
-            <Txt variant="heading" weight="bold" numberOfLines={1}>
-              {dayLabel}
-            </Txt>
-            <Txt variant="label" color="muted" numberOfLines={1}>
-              {`${text.type(day.type)} · ${text.exercises(day.exercises.length)}`}
-            </Txt>
+          <Section
+            key={day.id}
+            title={dayLabel}
+            subtitle={`${text.type(day.type)} · ${text.exercises(day.exercises.length)}`}
+            gap="tight"
+          >
+            {day.exercises.map((planned, index) => {
+              const key = `${day.id}:${index}`;
+              const expanded = openKey === key;
+              const catalogue = exerciseById(planned.exerciseId, customExercises);
+              const name = catalogue
+                ? text.name(catalogue)
+                : fallbackExerciseName(planned.exerciseId);
+              const volume = text.planned(planned);
 
-            <View style={styles.plannedList}>
-              {day.exercises.map((planned, index) => {
-                const key = `${day.id}:${index}`;
-                const expanded = openKey === key;
-                const catalogue = exerciseById(planned.exerciseId, customExercises);
-                const name = catalogue
-                  ? text.name(catalogue)
-                  : fallbackExerciseName(planned.exerciseId);
-                const volume = text.planned(planned);
+              return (
+                <View key={key}>
+                  {index > 0 ? <Divider /> : null}
 
-                return (
-                  <View
-                    key={key}
-                    style={[
-                      styles.planned,
-                      { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
-                    ]}
+                  <Pressable
+                    onPress={() => setOpenKey(expanded ? null : key)}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('plannedSpoken', { name, planned: volume })}
+                    accessibilityHint={t('plannedHint')}
+                    accessibilityState={{ expanded }}
+                    style={({ pressed }) => [styles.plannedRow, pressed ? styles.pressed : null]}
                   >
-                    <View style={styles.plannedRow}>
-                      <Pressable
-                        onPress={() => setOpenKey(expanded ? null : key)}
-                        accessibilityRole="button"
-                        accessibilityLabel={t('plannedSpoken', { name, planned: volume })}
-                        accessibilityHint={t('plannedHint')}
-                        accessibilityState={{ expanded }}
-                        style={({ pressed }) => [
-                          styles.plannedMain,
-                          pressed ? styles.pressed : null,
-                        ]}
+                    <View style={styles.plannedText}>
+                      <Txt numberOfLines={2}>{name}</Txt>
+                      <Txt
+                        variant="label"
+                        color="muted"
+                        numberOfLines={1}
+                        tabular
+                        style={styles.plannedMeta}
                       >
-                        <Txt weight="medium" numberOfLines={2}>
-                          {name}
-                        </Txt>
-                        <Txt
-                          variant="label"
-                          color="muted"
-                          numberOfLines={1}
-                          style={styles.plannedMeta}
-                        >
-                          {volume}
-                        </Txt>
-                      </Pressable>
-
-                      <IconButton
-                        icon={expanded ? 'chevron-up' : 'chevron-down'}
-                        onPress={() => setOpenKey(expanded ? null : key)}
-                        accessibilityLabel={
-                          expanded ? t('closeExercise', { name }) : t('editExercise', { name })
-                        }
-                        size={18}
+                        {volume}
+                      </Txt>
+                    </View>
+                    <View style={styles.chevron} {...DECORATIVE}>
+                      <Ionicons
+                        name={(expanded ? 'chevron-up' : 'chevron-down') as IconName}
+                        size={16}
+                        color={colors.textFaint}
                       />
                     </View>
+                  </Pressable>
 
-                    {expanded ? (
-                      <View style={styles.editor}>
-                        <View style={styles.fields}>
-                          <NumberField
-                            label={t('fieldSets')}
-                            value={planned.sets}
-                            onChange={(sets) => {
-                              if (sets !== null) updatePlanned(day, index, { sets });
-                            }}
-                            min={MIN_SETS}
-                            max={MAX_SETS}
-                            style={styles.field}
-                          />
-                          <NumberField
-                            label={t('fieldMinReps')}
-                            value={planned.repsLow}
-                            onChange={(repsLow) => {
-                              if (repsLow !== null) updatePlanned(day, index, { repsLow });
-                            }}
-                            min={MIN_REPS}
-                            max={MAX_REPS}
-                            style={styles.field}
-                          />
-                          <NumberField
-                            label={t('fieldMaxReps')}
-                            value={planned.repsHigh}
-                            onChange={(repsHigh) => {
-                              if (repsHigh !== null) updatePlanned(day, index, { repsHigh });
-                            }}
-                            min={MIN_REPS}
-                            max={MAX_REPS}
-                            style={styles.field}
-                          />
-                        </View>
-
-                        <View style={styles.editorActions}>
-                          <IconButton
-                            icon="arrow-up"
-                            onPress={() => movePlanned(day, index, -1)}
-                            accessibilityLabel={t('moveUp', { name })}
-                            variant="surface"
-                            size={18}
-                            disabled={index === 0}
-                          />
-                          <IconButton
-                            icon="arrow-down"
-                            onPress={() => movePlanned(day, index, 1)}
-                            accessibilityLabel={t('moveDown', { name })}
-                            variant="surface"
-                            size={18}
-                            disabled={index === day.exercises.length - 1}
-                          />
-                          <IconButton
-                            icon="trash-outline"
-                            onPress={() => removePlanned(day, index)}
-                            accessibilityLabel={t('removeFromDay', { name, day: dayLabel })}
-                            variant="danger"
-                            size={18}
-                          />
-                        </View>
+                  {expanded ? (
+                    <View style={styles.editor}>
+                      <View style={styles.fields}>
+                        <NumberField
+                          label={t('fieldSets')}
+                          value={planned.sets}
+                          onChange={(sets) => {
+                            if (sets !== null) updatePlanned(day, index, { sets });
+                          }}
+                          min={MIN_SETS}
+                          max={MAX_SETS}
+                          style={styles.field}
+                        />
+                        <NumberField
+                          label={t('fieldMinReps')}
+                          value={planned.repsLow}
+                          onChange={(repsLow) => {
+                            if (repsLow !== null) updatePlanned(day, index, { repsLow });
+                          }}
+                          min={MIN_REPS}
+                          max={MAX_REPS}
+                          style={styles.field}
+                        />
+                        <NumberField
+                          label={t('fieldMaxReps')}
+                          value={planned.repsHigh}
+                          onChange={(repsHigh) => {
+                            if (repsHigh !== null) updatePlanned(day, index, { repsHigh });
+                          }}
+                          min={MIN_REPS}
+                          max={MAX_REPS}
+                          style={styles.field}
+                        />
                       </View>
-                    ) : null}
-                  </View>
-                );
-              })}
-            </View>
+
+                      <View style={styles.editorActions}>
+                        <IconButton
+                          icon="arrow-up"
+                          onPress={() => movePlanned(day, index, -1)}
+                          accessibilityLabel={t('moveUp', { name })}
+                          size={18}
+                          disabled={index === 0}
+                        />
+                        <IconButton
+                          icon="arrow-down"
+                          onPress={() => movePlanned(day, index, 1)}
+                          accessibilityLabel={t('moveDown', { name })}
+                          size={18}
+                          disabled={index === day.exercises.length - 1}
+                        />
+                        <IconButton
+                          icon="trash-outline"
+                          onPress={() => removePlanned(day, index)}
+                          accessibilityLabel={t('removeFromDay', { name, day: dayLabel })}
+                          size={18}
+                          color={colors.danger}
+                        />
+                      </View>
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })}
 
             <Button
               label={t('addExercise')}
-              icon="add"
               onPress={() => openPicker(day)}
               variant="secondary"
               size="sm"
               accessibilityHint={t('addExerciseToDay', { day: dayLabel })}
               style={styles.addExercise}
             />
-          </Card>
+          </Section>
         );
       })}
 
-      <Button
-        label={t('resetAction')}
-        icon="refresh"
-        onPress={resetToDefault}
-        variant="danger"
-        fullWidth
-        accessibilityHint={t('resetHint')}
-        style={styles.reset}
-      />
+      <Section divider>
+        <Button
+          label={t('resetAction')}
+          onPress={resetToDefault}
+          variant="danger"
+          fullWidth
+          accessibilityHint={t('resetHint')}
+        />
+      </Section>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  sectionLabel: {
-    letterSpacing: 0.8,
-    marginBottom: spacing.sm,
-    marginTop: spacing.lg,
-  },
   weekRow: {
     alignItems: 'center',
-    columnGap: spacing.sm,
+    columnGap: spacing.md,
     flexDirection: 'row',
-    minHeight: 56,
-    paddingEnd: spacing.md,
-    paddingStart: spacing.lg,
+    minHeight: layout.minTarget + spacing.md,
   },
   weekday: {
-    width: 48,
+    width: 52,
   },
   weekChips: {
     alignItems: 'center',
     columnGap: spacing.sm,
     paddingVertical: spacing.sm,
   },
-  dayCard: {
-    marginBottom: spacing.md,
-  },
-  plannedList: {
-    marginTop: spacing.md,
-    rowGap: spacing.sm,
-  },
-  planned: {
-    borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-  },
   plannedRow: {
     alignItems: 'center',
-    columnGap: spacing.sm,
+    columnGap: spacing.md,
     flexDirection: 'row',
+    minHeight: 56,
+    paddingVertical: spacing.sm,
   },
-  plannedMain: {
+  plannedText: {
     flex: 1,
-    justifyContent: 'center',
-    minHeight: 44,
-    paddingVertical: spacing.xs,
   },
   plannedMeta: {
-    marginTop: 2,
+    marginTop: 3,
+  },
+  chevron: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 20,
   },
   pressed: {
-    opacity: 0.7,
+    opacity: 0.6,
   },
   editor: {
-    marginBottom: spacing.sm,
+    marginBottom: spacing.lg,
   },
   fields: {
     columnGap: spacing.sm,
@@ -493,14 +461,11 @@ const styles = StyleSheet.create({
     flexBasis: 0,
   },
   editorActions: {
-    columnGap: spacing.sm,
+    columnGap: spacing.xs,
     flexDirection: 'row',
-    marginTop: spacing.sm,
-  },
-  addExercise: {
     marginTop: spacing.md,
   },
-  reset: {
+  addExercise: {
     marginTop: spacing.lg,
   },
 });

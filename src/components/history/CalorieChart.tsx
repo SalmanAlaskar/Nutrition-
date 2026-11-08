@@ -33,7 +33,7 @@ export interface CalorieChartProps {
   style?: StyleProp<ViewStyle>;
 }
 
-const PLOT_HEIGHT = 156;
+const PLOT_HEIGHT = 150;
 const BOTTOM_INSET = 10;
 /** Headroom above the tallest bar; larger when values are printed on top. */
 const TOP_INSET = 12;
@@ -76,7 +76,7 @@ export function CalorieChart({ days, target, style }: CalorieChartProps) {
 
   const geometry = useMemo(() => {
     const slot = count > 0 ? width / count : 0;
-    const barWidth = Math.max(3, Math.min(slot * 0.62, 22));
+    const barWidth = Math.max(3, Math.min(slot * 0.5, 14));
     const showValues = count <= 10 && slot >= MIN_VALUE_SLOT;
     const topInset = showValues ? TOP_INSET_WITH_VALUES : TOP_INSET;
     const plotHeight = PLOT_HEIGHT - topInset - BOTTOM_INSET;
@@ -156,10 +156,9 @@ export function CalorieChart({ days, target, style }: CalorieChartProps) {
                 x2={width}
                 y1={geometry.targetY}
                 y2={geometry.targetY}
-                stroke={colors.textFaint}
+                stroke={colors.borderStrong}
                 strokeWidth={1}
-                strokeOpacity={0.55}
-                strokeDasharray="4 6"
+                strokeDasharray="3 5"
               />
             ) : null}
 
@@ -199,9 +198,8 @@ export function CalorieChart({ days, target, style }: CalorieChartProps) {
                       key={`value-${bar.key}`}
                       x={bar.center}
                       y={bar.y - 7}
-                      fill={bar.over ? colors.warning : colors.textMuted}
+                      fill={bar.over ? colors.warning : colors.textFaint}
                       fontSize={fontSize.xs}
-                      fontWeight="600"
                       textAnchor="middle"
                     >
                       {formatCount(bar.value)}
@@ -239,7 +237,7 @@ export function CalorieChart({ days, target, style }: CalorieChartProps) {
                 <Txt
                   variant="caption"
                   color={last ? 'muted' : 'faint'}
-                  weight={last ? 'bold' : 'medium'}
+                  weight="medium"
                   align="center"
                   numberOfLines={1}
                 >
@@ -261,9 +259,9 @@ export function CalorieChart({ days, target, style }: CalorieChartProps) {
                   x2={16}
                   y1={1}
                   y2={1}
-                  stroke={colors.textFaint}
-                  strokeWidth={2}
-                  strokeDasharray="4 4"
+                  stroke={colors.borderStrong}
+                  strokeWidth={1.5}
+                  strokeDasharray="3 4"
                 />
               </Svg>
             </View>

@@ -2,33 +2,28 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Platform,
-  StyleSheet,
-  View,
-  type AccessibilityProps,
-  type StyleProp,
-  type ViewStyle,
-} from 'react-native';
+import { Platform, StyleSheet, View, type AccessibilityProps } from 'react-native';
 
 import { AdherenceRing } from '@/components/dashboard/AdherenceRing';
-import { HeroSummary, type HeroBody } from '@/components/dashboard/HeroSummary';
-import { MetricGrid, type MetricGridItem } from '@/components/dashboard/MetricGrid';
+import { HeroSummary } from '@/components/dashboard/HeroSummary';
+import {
+  MetricTable,
+  type MetricRow,
+  type MetricTone,
+} from '@/components/dashboard/MetricTable';
 import { InsightList } from '@/components/insights/InsightList';
 import {
   AppHeader,
-  Badge,
-  Card,
-  Divider,
   EmptyState,
   LoadingView,
   Screen,
+  Section,
   SegmentedControl,
   Txt,
 } from '@/components/ui';
 import { latestScan, scanChange, type ScanMetricKey } from '@/domain/bodyScan';
 import { addDays, lastNDays, parseDateKey, todayKey } from '@/domain/date';
-import { formatCount, formatDelta } from '@/domain/format';
+import { formatAmount, formatCount, formatDelta } from '@/domain/format';
 import { buildInsights } from '@/domain/insights';
 import { totalMacros } from '@/domain/totals';
 import {
@@ -41,7 +36,7 @@ import {
 import { useDirection } from '@/i18n';
 import { useApp } from '@/state/AppStore';
 import { getMealsForDates, getWorkoutsForDates } from '@/storage/repository';
-import { radius, spacing, useTheme } from '@/theme';
+import { layout, radius, spacing, useTheme } from '@/theme';
 import type { BodyScan, Meal, SessionType, WorkoutSession } from '@/types';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -70,6 +65,12 @@ const ADHERENCE_BAND = 10;
 /** Stands in for a figure there is no data for. */
 const MISSING = '—';
 
+/** Below this a change is noise rather than a direction. */
+const FLAT = 0.05;
+
+/** The InBody score is a whole number, so anything under half a point is level. */
+const FLAT_SCORE = 0.5;
+
 /** Sunday first, the way the week runs here. */
 const WEEKDAY_KEYS = [
   'weekdaySun',
@@ -95,7 +96,7 @@ const TYPE_KEYS = {
 
 type BodyMetricKey = 'weightKg' | 'skeletalMuscleKg' | 'bodyFatKg' | 'bodyFatPercent';
 
-/** The four readings the grid leads with, in the order he reads them. */
+/** The four readings the table leads with, in the order he reads them. */
 const BODY_METRICS = [
   { key: 'weightKg', labelKey: 'metricWeight', unit: 'kg', decimals: 1, higherIsBetter: null },
   {
@@ -157,61 +158,13 @@ function scanValue(scan: BodyScan, key: ScanMetricKey): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
-/** Section title with a caption or a badge on the trailing edge. */
-function SectionHeader({
-  title,
-  hint,
-  right,
-}: {
-  title: string;
-  hint?: string;
-  right?: React.ReactNode;
-}) {
-  return (
-    <View style={styles.section}>
-      <Txt
-        variant="heading"
-        numberOfLines={1}
-        style={styles.sectionTitle}
-        accessibilityRole="header"
-      >
-        {title}
-      </Txt>
-      {right ??
-        (hint ? (
-          <Txt variant="caption" color="faint" align="end" numberOfLines={2} style={styles.sectionHint}>
-            {hint}
-          </Txt>
-        ) : null)}
-    </View>
-  );
-}
-
-/** A label, a figure, and the line that puts the figure in context. */
-function StatLine({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-}) {
-  return (
-    <View accessible accessibilityLabel={[label, value, hint].filter(Boolean).join('. ')}>
-      <Txt variant="caption" color="faint" weight="bold" numberOfLines={1}>
-        {label.toUpperCase()}
-      </Txt>
-      <Txt variant="heading" weight="bold" tabular numberOfLines={1}>
-        {value}
-      </Txt>
-      {hint ? (
-        <Txt variant="caption" color="muted" tabular numberOfLines={1}>
-          {hint}
-        </Txt>
-      ) : null}
-    </View>
-  );
+/**
+ * A fraction, written without spaces on purpose: a lone slash between two
+ * numbers binds them into one left-to-right run, so Arabic cannot reorder the
+ * halves and show the denominator first.
+ */
+function fraction(done: number, total: number): string {
+  return `${formatCount(done)}/${formatCount(total)}`;
 }
 
 export default function DashboardScreen() {
@@ -422,44 +375,107 @@ export default function DashboardScreen() {
       };
     });
 
-    const fatPercent = latest ? scanValue(latest, 'bodyFatPercent') : undefined;
-    const headline: HeroBody | null =
-      latest && fatPercent !== undefined
-        ? {
-            metric: 'bodyFat',
-            value: fatPercent,
-            fromScan: true,
-            delta: change?.bodyFatPercent,
-            days: change?.days,
-          }
-        : latest
-          ? {
-              metric: 'weight',
-              value: latest.weightKg,
-              fromScan: true,
-              delta: change?.weightKg,
-              days: change?.days,
-            }
-          : profile
-            ? { metric: 'weight', value: profile.weightKg, fromScan: false }
-            : null;
+    return { latest, change, metrics };
+  }, [bodyScans]);
 
-    return { latest, change, metrics, headline };
-  }, [bodyScans, profile]);
+  const score = bodyData.latest ? scanValue(bodyData.latest, 'inBodyScore') : undefined;
+  const scoreDelta = bodyData.change?.inBodyScore;
 
-  const metricItems = useMemo<MetricGridItem[]>(
-    () =>
-      bodyData.metrics.map((metric) => ({
+  /**
+   * The body table: every reading as a line of figures, the change read as a
+   * direction rather than as up or down, and the InBody score as the last row
+   * so the whole section is one table instead of a table and a box.
+   */
+  const bodyRows = useMemo<MetricRow[]>(() => {
+    const rows: MetricRow[] = bodyData.metrics.map((metric) => {
+      const label = t(metric.labelKey);
+      const unit = metric.unit === 'kg' ? t('units:kg') : t('units:percent');
+      const { delta } = metric;
+      const flat = delta !== undefined && Math.abs(delta) < FLAT;
+      const tone: MetricTone =
+        delta === undefined || flat || metric.better === null
+          ? 'neutral'
+          : metric.better
+            ? 'good'
+            : 'poor';
+
+      const change =
+        delta === undefined
+          ? t('deltaNone')
+          : flat
+            ? t('deltaFlat')
+            : t(delta > 0 ? 'deltaUp' : 'deltaDown', {
+                amount: `${formatAmount(Math.abs(delta), metric.decimals)} ${unit}`.trim(),
+              });
+
+      return {
         key: metric.key,
-        label: t(metric.labelKey),
-        value: metric.value,
-        unit: metric.unit === 'kg' ? t('units:kg') : t('units:percent'),
-        decimals: metric.decimals,
-        delta: metric.delta,
-        better: metric.better,
+        label,
+        value: metric.value === null ? MISSING : formatAmount(metric.value, metric.decimals),
+        unit,
+        delta: delta === undefined ? undefined : formatDelta(delta, metric.decimals),
+        tone,
         series: metric.series,
-      })),
-    [bodyData.metrics, t],
+        spoken:
+          metric.value === null
+            ? t('metricMissing', { label })
+            : `${t('metricSpoken', {
+                label,
+                value: formatAmount(metric.value, metric.decimals),
+                unit,
+              })}. ${change}`,
+      };
+    });
+
+    if (score !== undefined) {
+      const flat = scoreDelta !== undefined && Math.abs(scoreDelta) < FLAT_SCORE;
+      const change =
+        scoreDelta === undefined
+          ? t('deltaNone')
+          : flat
+            ? t('deltaFlat')
+            : t(scoreDelta > 0 ? 'deltaUp' : 'deltaDown', {
+                amount: formatCount(Math.abs(scoreDelta)),
+              });
+
+      rows.push({
+        key: 'inBodyScore',
+        label: t('bodyScore'),
+        value: formatCount(score),
+        delta: scoreDelta === undefined ? undefined : formatDelta(scoreDelta, 0),
+        tone:
+          scoreDelta === undefined || flat ? 'neutral' : scoreDelta > 0 ? 'good' : 'poor',
+        spoken: `${t('bodyScore')}: ${formatCount(score)}. ${change}`,
+      });
+    }
+
+    return rows;
+  }, [bodyData.metrics, score, scoreDelta, t]);
+
+  /** The three range figures, read as the same kind of table as the body. */
+  const nutritionRows = useMemo<MetricRow[]>(
+    () => [
+      {
+        key: 'calories',
+        label: t('avgCalories'),
+        value: formatCount(nutrition.avgCalories),
+        unit: t('units:kcal'),
+        hint: targets ? t('targetValue', { value: formatCount(targets.calories) }) : undefined,
+      },
+      {
+        key: 'protein',
+        label: t('avgProtein'),
+        value: formatCount(nutrition.avgProtein),
+        unit: t('units:gram'),
+        hint: targets ? t('targetValue', { value: formatCount(targets.protein) }) : undefined,
+      },
+      {
+        key: 'daysLogged',
+        label: t('daysLogged'),
+        value: fraction(nutrition.logged, rangeDays),
+      },
+    ],
+    [t, nutrition.avgCalories, nutrition.avgProtein, nutrition.logged, targets, rangeDays],
   );
 
   /* ------------------------------------------------------------- insights -- */
@@ -509,8 +525,6 @@ export default function DashboardScreen() {
     [t, lastWeek, lastMonth],
   );
 
-  const score = bodyData.latest ? scanValue(bodyData.latest, 'inBodyScore') : undefined;
-  const scoreDelta = bodyData.change?.inBodyScore;
   const programName =
     program === null
       ? undefined
@@ -526,6 +540,7 @@ export default function DashboardScreen() {
     router.push('/onboarding');
   }, [router]);
 
+  const hasReading = bodyData.latest !== null;
   const busy = !ready || !loaded;
 
   return (
@@ -539,81 +554,44 @@ export default function DashboardScreen() {
           <HeroSummary
             consumed={eatenToday}
             targetCalories={targets?.calories ?? null}
-            body={bodyData.headline}
-            onPressBody={openBody}
             onSetUpProfile={openOnboarding}
             style={styles.hero}
           />
 
-          <SectionHeader
+          <Section
             title={t('bodyTitle')}
-            hint={
+            subtitle={
               bodyData.change
                 ? t('bodySince', { days: formatCount(bodyData.change.days) })
-                : bodyData.latest
+                : hasReading
                   ? t('bodyOnlyReading')
                   : undefined
             }
-          />
-
-          {bodyData.latest === null ? (
-            <Card style={styles.block}>
+            actionLabel={hasReading ? t('bodyOpen') : undefined}
+            onAction={hasReading ? openBody : undefined}
+          >
+            {hasReading ? (
+              <MetricTable rows={bodyRows} />
+            ) : (
               <EmptyState
                 icon="body-outline"
                 title={t('bodyEmptyTitle')}
                 message={t('bodyEmptyMessage')}
                 actionLabel={t('bodyEmptyAction')}
-                onAction={() => router.push('/body/import')}
+                onAction={openBody}
               />
-            </Card>
-          ) : (
-            <View style={styles.block}>
-              <MetricGrid items={metricItems} />
+            )}
+          </Section>
 
-              {score === undefined ? null : (
-                <View
-                  accessible
-                  accessibilityLabel={`${t('bodyScore')}: ${formatCount(score)}`}
-                  style={[
-                    styles.scoreRow,
-                    { backgroundColor: colors.surface, borderColor: colors.border },
-                  ]}
-                >
-                  <Txt variant="label" weight="semibold" numberOfLines={1} style={styles.scoreLabel}>
-                    {t('bodyScore')}
-                  </Txt>
-                  <Txt variant="heading" weight="bold" tabular numberOfLines={1}>
-                    {formatCount(score)}
-                  </Txt>
-                  {scoreDelta === undefined ? null : (
-                    <Txt
-                      variant="label"
-                      weight="semibold"
-                      tabular
-                      numberOfLines={1}
-                      color={
-                        scoreDelta === 0 ? 'faint' : scoreDelta > 0 ? colors.accent : colors.warning
-                      }
-                      style={styles.scoreDelta}
-                    >
-                      {formatDelta(scoreDelta, 0)}
-                    </Txt>
-                  )}
-                </View>
-              )}
-            </View>
-          )}
+          <View style={styles.range}>
+            <SegmentedControl<RangeKey>
+              options={rangeOptions}
+              value={range}
+              onChange={setRange}
+            />
+          </View>
 
-          <SegmentedControl<RangeKey>
-            options={rangeOptions}
-            value={range}
-            onChange={setRange}
-            style={styles.range}
-          />
-
-          <SectionHeader title={t('trainingTitle')} hint={programName} />
-
-          <Card style={styles.block}>
+          <Section title={t('trainingTitle')} subtitle={programName} style={styles.afterRange}>
             {trainingEmpty ? (
               <EmptyState
                 icon="barbell-outline"
@@ -624,38 +602,28 @@ export default function DashboardScreen() {
               />
             ) : (
               <>
-                <View style={styles.trainingHead}>
+                <View style={styles.weekHead}>
                   <View
                     accessible
                     accessibilityLabel={t('trainingWeekSpoken', {
                       done: formatCount(training.doneThisWeek),
                       planned: formatCount(training.plannedThisWeek),
                     })}
-                    style={styles.trainingCount}
+                    style={styles.weekCount}
                   >
-                    <Txt variant="title" weight="bold" tabular numberOfLines={1}>
-                      {`${formatCount(training.doneThisWeek)} / ${formatCount(
-                        training.plannedThisWeek,
-                      )}`}
+                    <Txt variant="metric" tabular numberOfLines={1} style={styles.weekFigure}>
+                      {fraction(training.doneThisWeek, training.plannedThisWeek)}
                     </Txt>
-                    <Txt
-                      variant="label"
-                      color="muted"
-                      numberOfLines={1}
-                      style={styles.trainingUnit}
-                    >
+                    <Txt variant="label" color="muted" numberOfLines={2}>
                       {t('trainingWeek')}
                     </Txt>
                   </View>
 
-                  <Badge
-                    label={
-                      training.streak > 0
-                        ? t('trainingStreak', { days: formatCount(training.streak) })
-                        : t('trainingNoStreak')
-                    }
-                    tone={training.streak > 0 ? 'accent' : 'default'}
-                  />
+                  <Txt variant="label" color="faint" align="end" numberOfLines={2} style={styles.streak}>
+                    {training.streak > 0
+                      ? t('trainingStreak', { days: formatCount(training.streak) })
+                      : t('trainingNoStreak')}
+                  </Txt>
                 </View>
 
                 <View style={styles.week}>
@@ -681,43 +649,32 @@ export default function DashboardScreen() {
                           {weekday}
                         </Txt>
 
-                        {day.scheduled === null && !day.trained ? (
-                          <View style={styles.weekSlot} {...DECORATIVE}>
+                        <View style={styles.weekSlot} {...DECORATIVE}>
+                          {day.scheduled === null && !day.trained ? (
                             <View style={[styles.weekRest, { backgroundColor: colors.border }]} />
-                          </View>
-                        ) : (
-                          <View
-                            style={[
-                              styles.weekSlot,
-                              styles.weekDot,
-                              day.trained
-                                ? { backgroundColor: colors.accent, borderColor: colors.accent }
-                                : {
-                                    backgroundColor: colors.surfaceAlt,
-                                    borderColor: day.isToday ? colors.accent : colors.border,
-                                  },
-                            ]}
-                            {...DECORATIVE}
-                          >
-                            {day.trained ? (
-                              <Ionicons name="checkmark" size={14} color={colors.accentText} />
-                            ) : null}
-                          </View>
-                        )}
+                          ) : (
+                            <View
+                              style={[
+                                styles.weekDot,
+                                day.trained
+                                  ? { backgroundColor: colors.text, borderColor: colors.text }
+                                  : {
+                                      backgroundColor: 'transparent',
+                                      borderColor: day.isToday
+                                        ? colors.text
+                                        : colors.borderStrong,
+                                    },
+                              ]}
+                            />
+                          )}
+                        </View>
                       </View>
                     );
                   })}
                 </View>
 
-                <Divider style={styles.divider} />
-
                 <View style={styles.splitHead}>
-                  <Txt
-                    variant="label"
-                    weight="semibold"
-                    numberOfLines={1}
-                    style={styles.splitTitle}
-                  >
+                  <Txt variant="label" weight="semibold" numberOfLines={1} style={styles.splitTitle}>
                     {t('trainingSplit', { days: formatCount(rangeDays) })}
                   </Txt>
                   <Txt variant="caption" color="faint" numberOfLines={1}>
@@ -747,50 +704,39 @@ export default function DashboardScreen() {
                                 done: formatCount(row.done),
                               })
                         }
-                        style={styles.splitRow}
                       >
-                        <View
-                          style={[styles.splitBubble, { backgroundColor: colors.surfaceAlt }]}
-                          {...DECORATIVE}
-                        >
-                          <Ionicons
-                            name={SESSION_ICONS[row.type] as IconName}
-                            size={16}
-                            color={colors.textMuted}
-                          />
-                        </View>
-
-                        <View style={styles.splitBody}>
-                          <View style={styles.splitLabels}>
-                            <Txt weight="medium" numberOfLines={1} style={styles.splitLabel}>
-                              {typeLabel}
-                            </Txt>
-                            <Txt
-                              variant="label"
-                              color={behind ? 'warning' : 'muted'}
-                              tabular
-                              numberOfLines={1}
-                            >
-                              {row.scheduled > 0
-                                ? `${formatCount(row.done)} / ${formatCount(row.scheduled)}`
-                                : formatCount(row.done)}
-                            </Txt>
-                          </View>
-
-                          <View
-                            style={[styles.bar, { backgroundColor: colors.track }]}
-                            {...DECORATIVE}
-                          >
-                            <View
-                              style={[
-                                styles.barFill,
-                                {
-                                  backgroundColor: behind ? colors.warning : colors.accent,
-                                  width: `${share * 100}%`,
-                                },
-                              ]}
+                        <View style={styles.splitLabels}>
+                          {/* The glyph is the fastest way to tell push from legs;
+                              it is the only icon in this section. */}
+                          <View {...DECORATIVE}>
+                            <Ionicons
+                              name={SESSION_ICONS[row.type] as IconName}
+                              size={15}
+                              color={colors.textFaint}
                             />
                           </View>
+                          <Txt numberOfLines={1} style={styles.splitLabel}>
+                            {typeLabel}
+                          </Txt>
+                          <Txt
+                            variant="label"
+                            color={behind ? 'warning' : 'muted'}
+                            tabular
+                            numberOfLines={1}
+                          >
+                            {row.scheduled > 0
+                              ? fraction(row.done, row.scheduled)
+                              : formatCount(row.done)}
+                          </Txt>
+                        </View>
+
+                        <View style={[styles.bar, { backgroundColor: colors.track }]} {...DECORATIVE}>
+                          <View
+                            style={[
+                              styles.barFill,
+                              { backgroundColor: colors.textFaint, width: `${share * 100}%` },
+                            ]}
+                          />
                         </View>
                       </View>
                     );
@@ -804,14 +750,12 @@ export default function DashboardScreen() {
                 ) : null}
               </>
             )}
-          </Card>
+          </Section>
 
-          <SectionHeader
+          <Section
             title={t('nutritionTitle')}
-            hint={t('lastDays', { days: formatCount(rangeDays) })}
-          />
-
-          <Card style={styles.block}>
+            subtitle={t('lastDays', { days: formatCount(rangeDays) })}
+          >
             {nutrition.logged === 0 ? (
               <EmptyState
                 icon="restaurant-outline"
@@ -822,117 +766,88 @@ export default function DashboardScreen() {
               />
             ) : (
               <>
-                <View style={styles.nutritionTop}>
-                  {targets ? (
-                    <AdherenceRing
-                      hit={nutrition.onTarget}
-                      logged={nutrition.logged}
-                      band={ADHERENCE_BAND}
-                      style={styles.ring}
-                    />
-                  ) : null}
-
-                  <View style={styles.nutritionStats}>
-                    <StatLine
-                      label={t('avgCalories')}
-                      value={formatCount(nutrition.avgCalories)}
-                      hint={
-                        targets
-                          ? t('targetValue', { value: formatCount(targets.calories) })
-                          : undefined
-                      }
-                    />
-                    <StatLine
-                      label={t('avgProtein')}
-                      value={formatCount(nutrition.avgProtein)}
-                      hint={
-                        targets
-                          ? t('targetValue', { value: formatCount(targets.protein) })
-                          : undefined
-                      }
-                    />
-                    <StatLine
-                      label={t('daysLogged')}
-                      value={t('daysLoggedValue', {
-                        logged: formatCount(nutrition.logged),
-                        total: formatCount(rangeDays),
-                      })}
-                    />
-                  </View>
-                </View>
-
-                {targets === null ? (
-                  <Txt variant="caption" color="muted" style={styles.note}>
+                {targets ? (
+                  <AdherenceRing
+                    hit={nutrition.onTarget}
+                    logged={nutrition.logged}
+                    band={ADHERENCE_BAND}
+                  />
+                ) : (
+                  <Txt variant="caption" color="muted">
                     {t('nutritionNoTarget')}
                   </Txt>
-                ) : null}
+                )}
 
-                <Divider style={styles.divider} />
+                <MetricTable rows={nutritionRows} style={styles.nutritionTable} />
 
-                <Txt variant="caption" color="faint" weight="bold" style={styles.compareTitle}>
-                  {t('compare').toUpperCase()}
-                </Txt>
-
-                <View style={styles.compareHead} {...DECORATIVE}>
-                  <View style={styles.compareLabel} />
-                  <Txt variant="caption" color="faint" align="end" style={styles.compareCell}>
-                    {t('macros:calories')}
+                <View style={styles.compare}>
+                  <Txt variant="label" weight="semibold" numberOfLines={1}>
+                    {t('compare')}
                   </Txt>
-                  <Txt variant="caption" color="faint" align="end" style={styles.compareCell}>
-                    {t('macros:protein')}
-                  </Txt>
-                </View>
 
-                {compareRows.map((row) => (
                   <View
-                    key={row.key}
-                    accessible
-                    accessibilityLabel={`${row.label}. ${t('avgCalories')} ${formatCount(
-                      row.data.avgCalories,
-                    )} ${t('units:kcal')}. ${t('avgProtein')} ${formatCount(
-                      row.data.avgProtein,
-                    )} ${t('units:gram')}`}
-                    style={styles.compareRow}
+                    style={[styles.compareHead, { borderColor: colors.border }]}
+                    {...DECORATIVE}
                   >
-                    <Txt
-                      variant="label"
-                      color="muted"
-                      numberOfLines={1}
-                      style={styles.compareLabel}
-                    >
-                      {row.label}
+                    <View style={styles.compareLabel} />
+                    <Txt variant="caption" color="faint" align="end" style={styles.compareCell}>
+                      {t('macros:calories')}
                     </Txt>
-                    <Txt
-                      variant="label"
-                      weight="semibold"
-                      align="end"
-                      tabular
-                      numberOfLines={1}
-                      style={styles.compareCell}
-                    >
-                      {row.data.logged > 0 ? formatCount(row.data.avgCalories) : MISSING}
-                    </Txt>
-                    <Txt
-                      variant="label"
-                      weight="semibold"
-                      align="end"
-                      tabular
-                      numberOfLines={1}
-                      style={styles.compareCell}
-                    >
-                      {row.data.logged > 0 ? formatCount(row.data.avgProtein) : MISSING}
+                    <Txt variant="caption" color="faint" align="end" style={styles.compareCell}>
+                      {t('macros:protein')}
                     </Txt>
                   </View>
-                ))}
+
+                  {compareRows.map((row) => (
+                    <View
+                      key={row.key}
+                      accessible
+                      accessibilityLabel={`${row.label}. ${t('avgCalories')} ${formatCount(
+                        row.data.avgCalories,
+                      )} ${t('units:kcal')}. ${t('avgProtein')} ${formatCount(
+                        row.data.avgProtein,
+                      )} ${t('units:gram')}`}
+                      style={styles.compareRow}
+                    >
+                      <Txt
+                        variant="label"
+                        color="muted"
+                        numberOfLines={1}
+                        style={styles.compareLabel}
+                      >
+                        {row.label}
+                      </Txt>
+                      <Txt
+                        variant="label"
+                        align="end"
+                        tabular
+                        numberOfLines={1}
+                        style={styles.compareCell}
+                      >
+                        {row.data.logged > 0 ? formatCount(row.data.avgCalories) : MISSING}
+                      </Txt>
+                      <Txt
+                        variant="label"
+                        align="end"
+                        tabular
+                        numberOfLines={1}
+                        style={styles.compareCell}
+                      >
+                        {row.data.logged > 0 ? formatCount(row.data.avgProtein) : MISSING}
+                      </Txt>
+                    </View>
+                  ))}
+                </View>
               </>
             )}
-          </Card>
+          </Section>
 
           <InsightList
             insights={insights}
             title={t('insightsTitle')}
             subtitle={t('insightsSubtitle')}
             emptyMessage={t('insightsEmpty')}
+            style={styles.insights}
           />
         </>
       )}
@@ -942,141 +857,99 @@ export default function DashboardScreen() {
 
 const styles = StyleSheet.create({
   hero: {
-    marginBottom: spacing.xl,
+    marginTop: spacing.lg,
   },
-  block: {
-    marginBottom: spacing.xl,
-  },
+  // The range control belongs to the two sections under it, so it sits a
+  // section away from the body table and close to the training heading.
   range: {
-    marginBottom: spacing.xl,
+    marginTop: layout.sectionGap,
   },
-  section: {
-    alignItems: 'center',
-    columnGap: spacing.md,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: spacing.md,
-    minHeight: 44,
+  afterRange: {
+    marginTop: spacing.xl,
   },
-  sectionTitle: {
-    flexShrink: 1,
-  },
-  sectionHint: {
-    flexShrink: 1,
-    maxWidth: '50%',
+  insights: {
+    marginTop: layout.sectionGap,
   },
   note: {
-    marginTop: spacing.md,
-  },
-  divider: {
-    marginVertical: spacing.lg,
-  },
-
-  /* body */
-  scoreRow: {
-    alignItems: 'center',
-    borderRadius: radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    columnGap: spacing.sm,
-    flexDirection: 'row',
-    marginTop: spacing.md,
-    minHeight: 52,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
-  scoreLabel: {
-    flexGrow: 1,
-    flexShrink: 1,
-  },
-  scoreDelta: {
-    minWidth: 34,
+    marginTop: spacing.lg,
   },
 
   /* training */
-  trainingHead: {
+  weekHead: {
     alignItems: 'flex-start',
     columnGap: spacing.md,
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  trainingCount: {
-    alignItems: 'baseline',
-    columnGap: spacing.sm,
-    flexDirection: 'row',
+  weekCount: {
     flexShrink: 1,
   },
-  trainingUnit: {
+  weekFigure: {
+    // A figure never shrinks or wraps to fit.
+    flexShrink: 0,
+  },
+  streak: {
     flexShrink: 1,
+    maxWidth: '45%',
+    marginTop: spacing.xs,
   },
   week: {
     columnGap: spacing.xs,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: spacing.lg,
+    marginTop: spacing.xl,
   },
   weekDay: {
     alignItems: 'center',
     flex: 1,
-    rowGap: spacing.xs + 2,
+    rowGap: spacing.sm,
   },
   weekSlot: {
     alignItems: 'center',
-    height: 28,
+    height: 20,
     justifyContent: 'center',
-    width: 28,
+    width: 20,
   },
   weekDot: {
     borderRadius: radius.pill,
     borderWidth: 1.5,
+    height: 12,
+    width: 12,
   },
   weekRest: {
     borderRadius: radius.pill,
-    height: 3,
-    width: 12,
+    height: 2,
+    width: 10,
   },
   splitHead: {
     alignItems: 'baseline',
     columnGap: spacing.md,
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginTop: spacing.xxl,
   },
   splitTitle: {
     flexShrink: 1,
   },
   splitList: {
     marginTop: spacing.lg,
-    rowGap: spacing.md,
-  },
-  splitRow: {
-    alignItems: 'center',
-    columnGap: spacing.md,
-    flexDirection: 'row',
-    minHeight: 34,
-  },
-  splitBubble: {
-    alignItems: 'center',
-    borderRadius: radius.pill,
-    height: 28,
-    justifyContent: 'center',
-    width: 28,
-  },
-  splitBody: {
-    flex: 1,
-    rowGap: spacing.xs + 2,
+    rowGap: spacing.lg,
   },
   splitLabels: {
-    alignItems: 'baseline',
-    columnGap: spacing.md,
+    alignItems: 'center',
+    columnGap: spacing.sm,
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    minHeight: 22,
   },
   splitLabel: {
+    flexGrow: 1,
     flexShrink: 1,
   },
   bar: {
     borderRadius: radius.pill,
     flexDirection: 'row',
-    height: 6,
+    height: 3,
+    marginTop: spacing.sm,
     overflow: 'hidden',
     width: '100%',
   },
@@ -1085,32 +958,24 @@ const styles = StyleSheet.create({
   },
 
   /* nutrition */
-  nutritionTop: {
-    alignItems: 'center',
-    columnGap: spacing.lg,
-    flexDirection: 'row',
+  nutritionTable: {
+    marginTop: spacing.xl,
   },
-  ring: {
-    flexShrink: 0,
-  },
-  nutritionStats: {
-    flex: 1,
-    rowGap: spacing.md,
-  },
-  compareTitle: {
-    letterSpacing: 0.8,
-    marginBottom: spacing.sm,
+  compare: {
+    marginTop: spacing.xxl,
   },
   compareHead: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
     columnGap: spacing.md,
     flexDirection: 'row',
-    paddingBottom: spacing.xs,
+    marginTop: spacing.md,
+    paddingBottom: spacing.sm,
   },
   compareRow: {
     alignItems: 'center',
     columnGap: spacing.md,
     flexDirection: 'row',
-    minHeight: 32,
+    minHeight: 36,
   },
   compareLabel: {
     flexGrow: 1,

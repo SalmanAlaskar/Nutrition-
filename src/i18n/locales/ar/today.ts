@@ -69,7 +69,7 @@ export const today = {
 
   /* ---------------------------------------------------------- quick add -- */
   quickAddTitle: 'إضافة سريعة',
-  quickAddHint: 'ضغطة واحدة تسجّل حصة عادية في {{slot}}',
+  quickAddHint: 'ضغطة وحدة تسجّل حصة في {{slot}}',
   quickAddDone: 'أُضيفت',
   quickAddFailed: 'أعد المحاولة',
 

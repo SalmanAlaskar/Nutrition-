@@ -10,13 +10,18 @@ import {
 } from 'react-native';
 
 import { Txt } from '@/components/ui';
-import { segmentalBalance } from '@/domain/bodyScan';
-import { formatAmount } from '@/domain/format';
+import { formatAmount, formatDelta } from '@/domain/format';
 import { radius, spacing, useTheme } from '@/theme';
 import type { BodyScan, SegmentalValues } from '@/types';
 
 export interface SegmentalChartProps {
   scan: BodyScan;
+  /**
+   * The reading before this one. When it carries the same parts, every bar
+   * gains a signed change, which is the whole point of the chart: a limb that
+   * was standing still and then started moving.
+   */
+  previous?: BodyScan;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -26,84 +31,105 @@ const DECORATIVE: AccessibilityProps =
     ? { 'aria-hidden': true }
     : { accessibilityElementsHidden: true, importantForAccessibility: 'no-hide-descendants' };
 
-const BAR_HEIGHT = 10;
+/** A thin mark reads as a measurement; a thick one reads as a button. */
+const BAR_HEIGHT = 6;
 /** The lighter side of a pair, so the heavier one reads as the heavier one. */
-const LIGHT_SIDE_OPACITY = 0.4;
+const LIGHT_SIDE_OPACITY = 0.38;
 /** Below this many kilograms the two sides are the same reading, not a gap. */
 const EVEN_KG = 0.1;
 /** Keeps a very small bar visible at all. */
-const MIN_BAR_FRACTION = 0.06;
+const MIN_BAR_FRACTION = 0.05;
+/** Stands in for a part the earlier reading did not carry. */
+const MISSING = '—';
 
 /** Right and left of one limb pair, drawn together because the gap is the point. */
 interface Pair {
   id: 'arms' | 'legs';
   titleKey: 'pairArms' | 'pairLegs';
-  right?: number;
-  left?: number;
+  rightKey: 'rightArm' | 'rightLeg';
+  leftKey: 'leftArm' | 'leftLeg';
 }
 
-function value(values: SegmentalValues, key: keyof SegmentalValues): number | undefined {
-  const raw = values[key];
+const PAIRS: Pair[] = [
+  { id: 'arms', titleKey: 'pairArms', rightKey: 'rightArm', leftKey: 'leftArm' },
+  { id: 'legs', titleKey: 'pairLegs', rightKey: 'rightLeg', leftKey: 'leftLeg' },
+];
+
+const PART_KEYS = {
+  rightArm: 'segmentRightArm',
+  leftArm: 'segmentLeftArm',
+  rightLeg: 'segmentRightLeg',
+  leftLeg: 'segmentLeftLeg',
+  trunk: 'segmentTrunk',
+} as const satisfies Record<keyof SegmentalValues, string>;
+
+function value(values: SegmentalValues | undefined, key: keyof SegmentalValues): number | undefined {
+  const raw = values?.[key];
   return typeof raw === 'number' && Number.isFinite(raw) && raw > 0 ? raw : undefined;
 }
 
 /**
  * Segmental muscle, and fat when the sheet carried it. Each limb pair is drawn
- * as two bars on one scale with the gap between them spelled out, so a side that
- * reads lighter is visible without reading a single number.
+ * as two bars on one scale, so a side that reads lighter is visible without
+ * reading a single number, and each bar carries what it did since last time.
  */
-export function SegmentalChart({ scan, style }: SegmentalChartProps) {
+export function SegmentalChart({ scan, previous, style }: SegmentalChartProps) {
   const { t } = useTranslation(['body', 'units']);
   const { colors } = useTheme();
 
-  const balance = segmentalBalance(scan);
   const kg = t('units:kg');
 
   const group = (
     titleKey: 'leanMass' | 'fatMass',
     values: SegmentalValues | undefined,
+    earlier: SegmentalValues | undefined,
     color: string,
   ) => {
     if (!values) return null;
 
-    const allPairs: Pair[] = [
-      {
-        id: 'arms',
-        titleKey: 'pairArms',
-        right: value(values, 'rightArm'),
-        left: value(values, 'leftArm'),
-      },
-      {
-        id: 'legs',
-        titleKey: 'pairLegs',
-        right: value(values, 'rightLeg'),
-        left: value(values, 'leftLeg'),
-      },
-    ];
-    const pairs = allPairs.filter((pair) => pair.right !== undefined || pair.left !== undefined);
+    const present = PAIRS.filter(
+      (pair) =>
+        value(values, pair.rightKey) !== undefined || value(values, pair.leftKey) !== undefined,
+    );
     const trunk = value(values, 'trunk');
-    if (pairs.length === 0 && trunk === undefined) return null;
+    if (present.length === 0 && trunk === undefined) return null;
 
-    const bar = (
-      key: string,
-      label: string,
-      amount: number,
-      max: number,
-      heavier: boolean,
-      partLabel: string,
-    ) => {
-      const fraction = max > 0 ? Math.max(MIN_BAR_FRACTION, amount / max) : MIN_BAR_FRACTION;
-      const text = `${formatAmount(amount, 2)} ${kg}`;
+    // One scale per group, so the bars inside it compare with each other and a
+    // light arm never looks like a heavy leg.
+    const scale = Math.max(
+      ...PAIRS.flatMap((pair) => [
+        value(values, pair.rightKey) ?? 0,
+        value(values, pair.leftKey) ?? 0,
+      ]),
+      trunk ?? 0,
+    );
+
+    const bar = (key: keyof SegmentalValues, label: string, amount: number, heavier: boolean) => {
+      const fraction = scale > 0 ? Math.max(MIN_BAR_FRACTION, amount / scale) : MIN_BAR_FRACTION;
+      const part = t(PART_KEYS[key]);
+      const reading = `${formatAmount(amount, 2)} ${kg}`;
+      const before = value(earlier, key);
+      const moved = before === undefined ? undefined : amount - before;
+
       return (
         <View
-          key={key}
+          key={`${titleKey}-${key}`}
           accessible
-          accessibilityLabel={t('segmentSpoken', { part: partLabel, value: text })}
+          accessibilityLabel={
+            moved === undefined
+              ? t('segmentSpoken', { part, value: reading })
+              : t('segmentMoved', {
+                  part,
+                  value: reading,
+                  change: `${formatDelta(moved, 2)} ${kg}`,
+                })
+          }
           style={styles.row}
         >
           <Txt variant="label" color="muted" numberOfLines={1} style={styles.rowLabel}>
             {label}
           </Txt>
+
           <View style={[styles.track, { backgroundColor: colors.track }]} {...DECORATIVE}>
             <View
               style={[
@@ -116,23 +142,41 @@ export function SegmentalChart({ scan, style }: SegmentalChartProps) {
               ]}
             />
           </View>
-          <Txt variant="label" weight="semibold" tabular align="end" style={styles.rowValue}>
+
+          <Txt variant="label" tabular align="end" numberOfLines={1} style={styles.rowValue}>
             {formatAmount(amount, 2)}
           </Txt>
+
+          {earlier ? (
+            <Txt
+              variant="label"
+              color="faint"
+              tabular
+              align="end"
+              numberOfLines={1}
+              style={styles.rowDelta}
+            >
+              {moved === undefined ? MISSING : formatDelta(moved, 2)}
+            </Txt>
+          ) : null}
         </View>
       );
     };
 
     return (
       <View style={styles.group}>
-        <Txt variant="caption" color="faint" weight="bold" style={styles.groupTitle}>
-          {`${t(titleKey)} (${kg})`.toUpperCase()}
-        </Txt>
+        <View style={styles.groupHead}>
+          <Txt variant="label" weight="semibold" numberOfLines={1} style={styles.groupTitle}>
+            {t(titleKey)}
+          </Txt>
+          <Txt variant="caption" color="faint" numberOfLines={1}>
+            {kg}
+          </Txt>
+        </View>
 
-        {pairs.map((pair) => {
-          const right = pair.right;
-          const left = pair.left;
-          const max = Math.max(right ?? 0, left ?? 0);
+        {present.map((pair) => {
+          const right = value(values, pair.rightKey);
+          const left = value(values, pair.leftKey);
           const diff = right !== undefined && left !== undefined ? right - left : null;
           const gap =
             diff === null
@@ -146,93 +190,66 @@ export function SegmentalChart({ scan, style }: SegmentalChartProps) {
           return (
             <View key={pair.id} style={styles.pair}>
               <View style={styles.pairHead}>
-                <Txt variant="label" weight="semibold" numberOfLines={1} style={styles.pairTitle}>
+                <Txt variant="caption" color="muted" numberOfLines={1} style={styles.pairTitle}>
                   {t(pair.titleKey)}
                 </Txt>
                 {gap === null ? null : (
-                  <Txt
-                    variant="caption"
-                    weight="semibold"
-                    color={diff !== null && Math.abs(diff) < EVEN_KG ? 'faint' : 'warning'}
-                    tabular
-                    numberOfLines={1}
-                  >
+                  <Txt variant="caption" color="faint" tabular numberOfLines={1}>
                     {gap}
                   </Txt>
                 )}
               </View>
+
               {right === undefined
                 ? null
-                : bar(
-                    `${pair.id}-right`,
-                    t('sideRight'),
-                    right,
-                    max,
-                    diff === null || diff >= 0,
-                    t(pair.id === 'arms' ? 'segmentRightArm' : 'segmentRightLeg'),
-                  )}
+                : bar(pair.rightKey, t('sideRight'), right, diff === null || diff >= 0)}
               {left === undefined
                 ? null
-                : bar(
-                    `${pair.id}-left`,
-                    t('sideLeft'),
-                    left,
-                    max,
-                    diff === null || diff <= 0,
-                    t(pair.id === 'arms' ? 'segmentLeftArm' : 'segmentLeftLeg'),
-                  )}
+                : bar(pair.leftKey, t('sideLeft'), left, diff === null || diff <= 0)}
             </View>
           );
         })}
 
         {trunk === undefined ? null : (
-          <View style={styles.pair}>
-            {bar('trunk', t('segmentTrunk'), trunk, trunk, true, t('segmentTrunk'))}
-          </View>
+          <View style={styles.pair}>{bar('trunk', t('segmentTrunk'), trunk, true)}</View>
         )}
       </View>
     );
   };
 
-  const leanGroup = group('leanMass', scan.segmentalLeanKg, colors.accent);
-  const fatGroup = group('fatMass', scan.segmentalFatKg, colors.fat);
+  // Both groups are drawn in ink: the screen's one accent belongs to the
+  // headline figure, and muscle still leads here because it is the darker tone.
+  const leanGroup = group('leanMass', scan.segmentalLeanKg, previous?.segmentalLeanKg, colors.text);
+  const fatGroup = group('fatMass', scan.segmentalFatKg, previous?.segmentalFatKg, colors.textFaint);
   if (!leanGroup && !fatGroup) return null;
-
-  const sentence = (diff: number, part: 'arms' | 'legs'): string => {
-    if (Math.abs(diff) < EVEN_KG) return t(part === 'arms' ? 'balanceArmsEven' : 'balanceLegsEven');
-    const amount = `${formatAmount(Math.abs(diff), 2)} ${kg}`;
-    if (part === 'arms') {
-      return t(diff > 0 ? 'balanceArmsRight' : 'balanceArmsLeft', { amount });
-    }
-    return t(diff > 0 ? 'balanceLegsRight' : 'balanceLegsLeft', { amount });
-  };
 
   return (
     <View style={style}>
       {leanGroup}
       {fatGroup}
-
-      {balance ? (
-        <Txt variant="label" color="muted" style={styles.balance}>
-          {`${sentence(balance.armDiff, 'arms')} ${sentence(balance.legDiff, 'legs')}`}
-        </Txt>
-      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   group: {
-    marginTop: spacing.md,
+    marginTop: spacing.lg,
   },
-  groupTitle: {
+  groupHead: {
+    alignItems: 'baseline',
+    columnGap: spacing.sm,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     marginBottom: spacing.sm,
   },
+  groupTitle: {
+    flexShrink: 1,
+  },
   pair: {
-    marginBottom: spacing.md,
+    marginTop: spacing.md,
   },
   pairHead: {
-    alignItems: 'center',
+    alignItems: 'baseline',
     columnGap: spacing.sm,
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -245,14 +262,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     columnGap: spacing.sm,
     flexDirection: 'row',
-    minHeight: 24,
+    minHeight: 26,
   },
   rowLabel: {
-    width: 54,
+    width: 46,
   },
   track: {
     borderRadius: radius.pill,
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
     height: BAR_HEIGHT,
     overflow: 'hidden',
   },
@@ -261,9 +279,9 @@ const styles = StyleSheet.create({
     height: BAR_HEIGHT,
   },
   rowValue: {
-    minWidth: 48,
+    width: 50,
   },
-  balance: {
-    marginTop: spacing.sm,
+  rowDelta: {
+    width: 46,
   },
 });

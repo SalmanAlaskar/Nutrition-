@@ -1,24 +1,13 @@
-import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Platform,
-  Pressable,
-  StyleSheet,
-  View,
-  type StyleProp,
-  type ViewStyle,
-} from 'react-native';
+import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Txt } from '@/components/ui';
 import { formatCount } from '@/domain/format';
-import { mirrorIcon, useDirection } from '@/i18n';
-import { radius, spacing, useTheme } from '@/theme';
+import { layout, spacing, useTheme } from '@/theme';
 import type { Macros } from '@/types';
 
 import { useDayText } from './dayText';
-
-type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
 export interface DaySummaryRowProps {
   /** Local calendar day, 'YYYY-MM-DD'. */
@@ -31,15 +20,10 @@ export interface DaySummaryRowProps {
   style?: StyleProp<ViewStyle>;
 }
 
-/** Decoration is hidden from assistive tech; the prop differs per platform. */
-const DECORATIVE = Platform.select({
-  web: { 'aria-hidden': true },
-  default: {
-    accessibilityElementsHidden: true,
-    importantForAccessibility: 'no-hide-descendants' as const,
-  },
-});
-
+/**
+ * One macro as a single text run: the letter, the grams and the unit. Rendered
+ * as siblings, Arabic reorders them and the figure collides with its unit.
+ */
 function MacroPart({
   letter,
   grams,
@@ -52,21 +36,20 @@ function MacroPart({
   color: string;
 }) {
   return (
-    <View style={styles.macroPart}>
-      <Txt variant="caption" weight="bold" color={color}>
+    <Txt variant="label" color="muted" tabular numberOfLines={1}>
+      <Txt variant="label" weight="semibold" color={color}>
         {letter}
       </Txt>
-      <Txt variant="label" color="muted" tabular style={styles.macroValue}>
-        {formatCount(grams)}
-      </Txt>
-      <Txt variant="caption" color="faint" style={styles.macroUnit}>
-        {unit}
-      </Txt>
-    </View>
+      {` ${formatCount(grams)} ${unit}`}
+    </Txt>
   );
 }
 
-/** One day in the history list. Tapping it opens that day on the Today tab. */
+/**
+ * One day in the history list, read as two lines of text rather than a card:
+ * the day with what it cost, then the macros with how it compared. Tapping it
+ * opens that day on the Today tab.
+ */
 export function DaySummaryRow({
   date,
   macros,
@@ -77,19 +60,12 @@ export function DaySummaryRow({
 }: DaySummaryRowProps) {
   const { colors } = useTheme();
   const { t } = useTranslation(['history', 'units']);
-  const { isRTL } = useDirection();
   const dayText = useDayText();
 
   const calories = Math.round(macros.calories);
   const hasTarget = targetCalories > 0;
   const over = hasTarget && calories > targetCalories;
   const difference = Math.abs(calories - targetCalories);
-
-  // The track is scaled to whichever is larger, so an overshoot is drawn past
-  // the target notch instead of silently pinning the bar at full width.
-  const denominator = Math.max(calories, targetCalories, 1);
-  const underShare = Math.min(calories, targetCalories) / denominator;
-  const overShare = over ? (calories - targetCalories) / denominator : 0;
 
   const gramUnit = t('units:gram');
   const day = dayText.dayLabel(date);
@@ -124,148 +100,82 @@ export function DaySummaryRow({
         style,
       ]}
     >
-      <View style={styles.body}>
-        <View style={styles.head}>
-          <View style={styles.dayBlock}>
-            <Txt weight="semibold" numberOfLines={1}>
-              {day}
-            </Txt>
-            <Txt variant="caption" color="faint" numberOfLines={1} style={styles.meals}>
-              {meals}
-            </Txt>
-          </View>
+      <View style={styles.head}>
+        <Txt numberOfLines={1} style={styles.day}>
+          {day}
+          <Txt variant="label" color="faint">{` · ${meals}`}</Txt>
+        </Txt>
 
-          <View style={styles.calories}>
-            <Txt variant="heading" weight="bold" color={over ? colors.warning : colors.text} tabular>
-              {formatCount(calories)}
-            </Txt>
-            <Txt variant="label" color="faint" tabular style={styles.caloriesUnit}>
-              {hasTarget
-                ? t('targetSuffix', { target: formatCount(targetCalories) })
-                : t('units:kcal')}
-            </Txt>
-          </View>
-        </View>
-
-        {hasTarget ? (
-          <View style={[styles.track, { backgroundColor: colors.track }]} {...DECORATIVE}>
-            <View
-              style={[
-                styles.fill,
-                { backgroundColor: colors.accent, width: `${underShare * 100}%` },
-              ]}
-            />
-            {over ? (
-              <View
-                style={[
-                  styles.fill,
-                  styles.overflow,
-                  {
-                    backgroundColor: colors.warning,
-                    borderStartColor: colors.surface,
-                    width: `${overShare * 100}%`,
-                  },
-                ]}
-              />
-            ) : null}
-          </View>
-        ) : null}
-
-        <View style={styles.foot}>
-          <View style={styles.macros}>
-            <MacroPart
-              letter={t('macroInitialProtein')}
-              grams={macros.protein}
-              unit={gramUnit}
-              color={colors.protein}
-            />
-            <MacroPart
-              letter={t('macroInitialCarbs')}
-              grams={macros.carbs}
-              unit={gramUnit}
-              color={colors.carbs}
-            />
-            <MacroPart
-              letter={t('macroInitialFat')}
-              grams={macros.fat}
-              unit={gramUnit}
-              color={colors.fat}
-            />
-          </View>
-          {comparison ? (
-            <Txt
-              variant="caption"
-              color={over ? 'warning' : 'faint'}
-              numberOfLines={1}
-              style={styles.comparison}
-            >
-              {comparison}
-            </Txt>
-          ) : null}
-        </View>
+        {/* Eaten and target in one run: a slash between digits keeps their order. */}
+        <Txt weight="semibold" tabular numberOfLines={1} style={styles.calories}>
+          {formatCount(calories)}
+          <Txt variant="label" color="faint" weight="regular">
+            {hasTarget
+              ? ` ${t('targetSuffix', { target: formatCount(targetCalories) })}`
+              : ` ${t('units:kcal')}`}
+          </Txt>
+        </Txt>
       </View>
 
-      <Ionicons
-        name={mirrorIcon('chevron-forward', isRTL) as IconName}
-        size={16}
-        color={colors.textFaint}
-        style={styles.chevron}
-        {...DECORATIVE}
-      />
+      <View style={styles.foot}>
+        <View style={styles.macros}>
+          <MacroPart
+            letter={t('macroInitialProtein')}
+            grams={macros.protein}
+            unit={gramUnit}
+            color={colors.protein}
+          />
+          <MacroPart
+            letter={t('macroInitialCarbs')}
+            grams={macros.carbs}
+            unit={gramUnit}
+            color={colors.carbs}
+          />
+          <MacroPart
+            letter={t('macroInitialFat')}
+            grams={macros.fat}
+            unit={gramUnit}
+            color={colors.fat}
+          />
+        </View>
+
+        {comparison ? (
+          <Txt
+            variant="label"
+            color={over ? 'warning' : 'faint'}
+            tabular
+            numberOfLines={1}
+            style={styles.comparison}
+          >
+            {comparison}
+          </Txt>
+        ) : null}
+      </View>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   row: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    minHeight: 44,
-    paddingHorizontal: spacing.lg,
+    justifyContent: 'center',
+    minHeight: layout.minTarget,
     paddingVertical: spacing.md,
-  },
-  body: {
-    flexGrow: 1,
-    flexShrink: 1,
-    rowGap: spacing.sm,
+    rowGap: spacing.xs + 2,
   },
   head: {
-    alignItems: 'center',
+    alignItems: 'baseline',
     columnGap: spacing.md,
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  dayBlock: {
+  day: {
     flexShrink: 1,
   },
-  meals: {
-    marginTop: 2,
-  },
   calories: {
-    alignItems: 'baseline',
-    columnGap: spacing.xs + 1,
-    flexDirection: 'row',
     flexShrink: 0,
   },
-  caloriesUnit: {
-    marginBottom: 1,
-  },
-  track: {
-    borderRadius: radius.pill,
-    flexDirection: 'row',
-    height: 6,
-    overflow: 'hidden',
-    width: '100%',
-  },
-  fill: {
-    height: '100%',
-  },
-  overflow: {
-    // The track fills from the reading edge, so the seam is a logical border.
-    borderStartWidth: 1.5,
-  },
   foot: {
-    alignItems: 'center',
+    alignItems: 'baseline',
     columnGap: spacing.md,
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -274,21 +184,10 @@ const styles = StyleSheet.create({
     columnGap: spacing.lg,
     flexDirection: 'row',
     flexShrink: 1,
-  },
-  macroPart: {
-    alignItems: 'baseline',
-    flexDirection: 'row',
-  },
-  macroValue: {
-    marginStart: spacing.xs + 1,
-  },
-  macroUnit: {
-    marginStart: 2,
+    flexWrap: 'wrap',
+    rowGap: 2,
   },
   comparison: {
     flexShrink: 0,
-  },
-  chevron: {
-    marginStart: spacing.md,
   },
 });

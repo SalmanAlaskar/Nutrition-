@@ -12,7 +12,7 @@ import {
 
 import { Txt } from '@/components/ui';
 import { daysBetween, lastNDays, parseDateKey, todayKey } from '@/domain/date';
-import { radius, spacing, useTheme } from '@/theme';
+import { layout, radius, spacing, useTheme } from '@/theme';
 
 import { useDayLabels } from './useDayLabels';
 
@@ -29,9 +29,11 @@ const WINDOW_DAYS = 15;
 /** Ceiling for the window when the selected day sits far in the past. */
 const MAX_DAYS = 120;
 
-const ITEM_WIDTH = 54;
-const GAP = spacing.sm;
-const EDGE = spacing.lg;
+const ITEM_WIDTH = 46;
+const GAP = spacing.xs;
+const EDGE = layout.gutter;
+/** The filled disc behind the selected day's number. */
+const DISC = 34;
 
 export function DayStrip({ selectedDate, loggedDates, onSelect, style }: DayStripProps) {
   const { colors } = useTheme();
@@ -99,23 +101,16 @@ export function DayStrip({ selectedDate, loggedDates, onSelect, style }: DayStri
           const isToday = key === today;
           const hasMeals = logged.has(key);
 
-          // Three states have to stay apart: the day you are looking at is
-          // filled, today keeps an accent outline when you are looking
-          // elsewhere, and every other day is a plain surface.
-          const background = selected ? colors.accent : colors.surface;
-          const border = selected
-            ? colors.accent
+          // No boxes and no accent: three tiers drawn with weight and tone
+          // alone. The day you are looking at is ink, today is plain ink type,
+          // every other day recedes.
+          const numberColor = selected
+            ? colors.bg
             : isToday
-              ? colors.accent
-              : colors.border;
-          const weekdayColor = selected
-            ? colors.accentText
-            : isToday
-              ? colors.accent
-              : colors.textFaint;
-          const numberColor = selected ? colors.accentText : colors.text;
-          // On the filled day the dot has to read against the accent, not on it.
-          const dotColor = selected ? colors.accentText : colors.accent;
+              ? colors.text
+              : colors.textMuted;
+          const weekdayColor = selected || isToday ? colors.text : colors.textFaint;
+          const dotColor = selected ? colors.bg : colors.textFaint;
 
           const label = labels.day(key, today);
 
@@ -126,28 +121,28 @@ export function DayStrip({ selectedDate, loggedDates, onSelect, style }: DayStri
               accessibilityRole="button"
               accessibilityLabel={hasMeals ? t('dayWithMeals', { day: label }) : label}
               accessibilityState={{ selected }}
-              style={({ pressed }) => [
-                styles.day,
-                {
-                  backgroundColor: background,
-                  borderColor: border,
-                  borderWidth: isToday || selected ? 1.5 : 1,
-                },
-                pressed ? styles.pressed : null,
-              ]}
+              style={({ pressed }) => [styles.day, pressed ? styles.pressed : null]}
             >
-              <Txt variant="caption" weight="bold" color={weekdayColor}>
+              <Txt variant="caption" color={weekdayColor} numberOfLines={1}>
                 {labels.weekdayInitial(key)}
               </Txt>
-              <Txt
-                variant="body"
-                weight={selected || isToday ? 'bold' : 'medium'}
-                color={numberColor}
-                tabular
-                style={styles.number}
+
+              <View
+                style={[
+                  styles.disc,
+                  selected ? { backgroundColor: colors.text } : null,
+                ]}
               >
-                {parseDateKey(key).getDate()}
-              </Txt>
+                <Txt
+                  variant="body"
+                  weight={selected || isToday ? 'semibold' : 'regular'}
+                  color={numberColor}
+                  tabular
+                >
+                  {parseDateKey(key).getDate()}
+                </Txt>
+              </View>
+
               <View
                 style={[
                   styles.dot,
@@ -170,22 +165,26 @@ const styles = StyleSheet.create({
   },
   day: {
     alignItems: 'center',
-    borderRadius: radius.lg,
-    height: 72,
     justifyContent: 'center',
+    minHeight: layout.minTarget,
     width: ITEM_WIDTH,
   },
   pressed: {
-    opacity: 0.7,
+    opacity: 0.55,
   },
-  number: {
-    marginTop: 1,
+  disc: {
+    alignItems: 'center',
+    borderRadius: radius.pill,
+    height: DISC,
+    justifyContent: 'center',
+    marginTop: spacing.xs,
+    width: DISC,
   },
   dot: {
     borderRadius: radius.pill,
-    height: 6,
-    marginTop: spacing.xs + 1,
-    width: 6,
+    height: 4,
+    marginTop: spacing.xs,
+    width: 4,
   },
   dotHidden: {
     backgroundColor: 'transparent',

@@ -1,8 +1,8 @@
 export { AppHeader, type AppHeaderProps } from './AppHeader';
-export { Badge, type BadgeProps, type BadgeTone } from './Badge';
+export { Badge, type BadgeProps, type BadgeTone, type BadgeVariant } from './Badge';
 export { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from './Button';
-export { Card, type CardProps } from './Card';
-export { Chip, type ChipProps } from './Chip';
+export { Card, type CardProps, type CardVariant } from './Card';
+export { Chip, type ChipProps, type ChipTone } from './Chip';
 export { Divider, type DividerProps } from './Divider';
 export { EmptyState, type EmptyStateProps } from './EmptyState';
 export { IconButton, type IconButtonProps, type IconButtonVariant } from './IconButton';
@@ -18,12 +18,13 @@ export { NumberField, type NumberFieldProps } from './NumberField';
 export { OptionRow, type OptionRowProps } from './OptionRow';
 export { ProgressRing, type ProgressRingProps } from './ProgressRing';
 export { Screen, type ScreenEdge, type ScreenProps } from './Screen';
+export { Section, type SectionGap, type SectionProps } from './Section';
 export {
   SegmentedControl,
   type SegmentedControlProps,
   type SegmentedOption,
 } from './SegmentedControl';
-export { StatTile, type StatTileProps, type StatTone } from './StatTile';
+export { StatTile, type StatTileProps, type StatTileVariant, type StatTone } from './StatTile';
 export { TextField, type TextFieldProps } from './TextField';
 export {
   Txt,

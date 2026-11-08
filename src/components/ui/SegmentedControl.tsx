@@ -67,7 +67,7 @@ export function SegmentedControl<T extends string>({
   return (
     <View
       accessibilityRole="radiogroup"
-      style={[styles.track, { backgroundColor: trackColor, borderColor: colors.border }, style]}
+      style={[styles.track, { backgroundColor: trackColor }, style]}
     >
       {options.map((option) => {
         const selected = option.value === value;
@@ -80,9 +80,7 @@ export function SegmentedControl<T extends string>({
             accessibilityState={{ selected, checked: selected }}
             style={({ pressed }) => [
               styles.segment,
-              selected
-                ? { backgroundColor: raisedColor, borderColor: colors.border }
-                : styles.segmentIdle,
+              selected ? { backgroundColor: raisedColor } : styles.segmentIdle,
               pressed ? (selected ? styles.pressedSelected : styles.pressed) : null,
             ]}
           >
@@ -91,7 +89,7 @@ export function SegmentedControl<T extends string>({
                 <Ionicons
                   name={option.icon as IconName}
                   size={16}
-                  color={selected ? colors.accent : colors.textFaint}
+                  color={selected ? colors.text : colors.textFaint}
                 />
               </View>
             ) : null}
@@ -114,14 +112,12 @@ export function SegmentedControl<T extends string>({
 const styles = StyleSheet.create({
   track: {
     borderRadius: radius.pill,
-    borderWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     padding: spacing.xs,
   },
   segment: {
     alignItems: 'center',
     borderRadius: radius.pill,
-    borderWidth: StyleSheet.hairlineWidth,
     flex: 1,
     flexBasis: 0,
     justifyContent: 'center',
@@ -132,7 +128,6 @@ const styles = StyleSheet.create({
   },
   segmentIdle: {
     backgroundColor: 'transparent',
-    borderColor: 'transparent',
   },
   pressed: {
     opacity: 0.6,

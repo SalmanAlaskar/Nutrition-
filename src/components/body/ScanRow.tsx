@@ -2,7 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { Badge, IconButton, Txt } from '@/components/ui';
+import { IconButton, Txt } from '@/components/ui';
 import { formatAmount } from '@/domain/format';
 import { spacing, useTheme } from '@/theme';
 import type { BodyScan, ScanSource } from '@/types';
@@ -25,15 +25,11 @@ const SOURCE_KEYS = {
   document: 'sourceDocument',
 } as const satisfies Record<ScanSource, string>;
 
-interface Figure {
-  key: string;
-  label: string;
-  text: string;
-}
-
 /**
- * One reading in the history. The delete control sits beside the tap target, never
- * inside it, so the browser never renders a button within a button.
+ * One reading in the history, read as two lines of text: the day with the
+ * weight it carried, then muscle and fat underneath. The delete control sits
+ * beside the tap target, never inside it, so the browser never renders a
+ * button within a button.
  */
 export function ScanRow({ scan, onPress, onDelete, style }: ScanRowProps) {
   const { t } = useTranslation(['body', 'units']);
@@ -42,40 +38,40 @@ export function ScanRow({ scan, onPress, onDelete, style }: ScanRowProps) {
 
   const kg = t('units:kg');
   const day = dayLabel(scan.date);
+  const weight = `${formatAmount(scan.weightKg, 1)} ${kg}`;
 
-  const stats: Figure[] = [
-    {
-      key: 'weight',
-      label: t('shortWeight'),
-      text: `${formatAmount(scan.weightKg, 1)} ${kg}`,
-    },
-  ];
+  // Each figure is one text run with its label and unit: rendered as siblings,
+  // Arabic reorders them and two adjacent numbers collide into one.
+  const secondary: { key: string; text: string; spoken: string }[] = [];
   if (scan.skeletalMuscleKg !== undefined) {
-    stats.push({
+    const amount = `${formatAmount(scan.skeletalMuscleKg, 1)} ${kg}`;
+    secondary.push({
       key: 'muscle',
-      label: t('shortMuscle'),
-      text: `${formatAmount(scan.skeletalMuscleKg, 1)} ${kg}`,
+      text: `${t('shortMuscle')} ${amount}`,
+      spoken: t('figureSpoken', { label: t('shortMuscle'), value: amount }),
     });
   }
-  if (scan.bodyFatPercent !== undefined) {
-    stats.push({
+  const fatAmount =
+    scan.bodyFatPercent !== undefined
+      ? `${formatAmount(scan.bodyFatPercent, 1)} ${t('units:percent')}`
+      : scan.bodyFatKg !== undefined
+        ? `${formatAmount(scan.bodyFatKg, 1)} ${kg}`
+        : null;
+  if (fatAmount !== null) {
+    secondary.push({
       key: 'fat',
-      label: t('shortFat'),
-      text: `${formatAmount(scan.bodyFatPercent, 1)} ${t('units:percent')}`,
-    });
-  } else if (scan.bodyFatKg !== undefined) {
-    stats.push({
-      key: 'fat',
-      label: t('shortFat'),
-      text: `${formatAmount(scan.bodyFatKg, 1)} ${kg}`,
+      text: `${t('shortFat')} ${fatAmount}`,
+      spoken: t('figureSpoken', { label: t('shortFat'), value: fatAmount }),
     });
   }
 
   const spoken = t('rowSpoken', {
     day,
-    figures: stats
-      .map((figure) => t('figureSpoken', { label: figure.label, value: figure.text }))
-      .join(t('listSeparator')),
+    figures: [
+      t('figureSpoken', { label: t('shortWeight'), value: weight }),
+      ...secondary.map((figure) => figure.spoken),
+      t(SOURCE_KEYS[scan.source]),
+    ].join(t('listSeparator')),
   });
 
   return (
@@ -91,39 +87,31 @@ export function ScanRow({ scan, onPress, onDelete, style }: ScanRowProps) {
         ]}
       >
         <View style={styles.head}>
-          <Txt weight="semibold" numberOfLines={1} style={styles.day}>
+          <Txt numberOfLines={1} style={styles.day}>
             {day}
           </Txt>
-          <Badge label={t(SOURCE_KEYS[scan.source])} />
+          <Txt variant="label" weight="semibold" tabular numberOfLines={1}>
+            {weight}
+          </Txt>
         </View>
 
-        <View style={styles.stats}>
-          {stats.map((figure) => (
-            <View key={figure.key} style={styles.stat}>
-              <Txt variant="caption" color="faint" weight="semibold" numberOfLines={1}>
-                {figure.label.toUpperCase()}
-              </Txt>
-              <Txt variant="label" weight="semibold" tabular numberOfLines={1}>
+        {secondary.length > 0 ? (
+          <View style={styles.figures}>
+            {secondary.map((figure) => (
+              <Txt key={figure.key} variant="label" color="muted" tabular numberOfLines={1}>
                 {figure.text}
               </Txt>
-            </View>
-          ))}
-        </View>
-
-        {scan.device ? (
-          <Txt variant="caption" color="faint" numberOfLines={1} style={styles.device}>
-            {scan.device}
-          </Txt>
+            ))}
+          </View>
         ) : null}
       </Pressable>
 
       <IconButton
         icon="trash-outline"
         variant="plain"
-        size={18}
+        size={17}
         onPress={onDelete}
         accessibilityLabel={t('rowDelete', { day })}
-        style={styles.delete}
       />
     </View>
   );
@@ -133,38 +121,29 @@ const styles = StyleSheet.create({
   row: {
     alignItems: 'center',
     flexDirection: 'row',
-    minHeight: 72,
-    paddingEnd: spacing.sm,
+    minHeight: 60,
   },
   tapTarget: {
     alignSelf: 'stretch',
     flex: 1,
     justifyContent: 'center',
-    paddingHorizontal: spacing.lg,
+    paddingEnd: spacing.sm,
     paddingVertical: spacing.md,
-    rowGap: spacing.sm,
+    rowGap: spacing.xs,
   },
   head: {
-    alignItems: 'center',
-    columnGap: spacing.sm,
+    alignItems: 'baseline',
+    columnGap: spacing.md,
     flexDirection: 'row',
+    justifyContent: 'space-between',
   },
   day: {
     flexShrink: 1,
   },
-  stats: {
-    columnGap: spacing.xl,
+  figures: {
+    columnGap: spacing.lg,
     flexDirection: 'row',
     flexWrap: 'wrap',
-    rowGap: spacing.xs,
-  },
-  stat: {
-    rowGap: 1,
-  },
-  device: {
-    marginTop: -spacing.xs,
-  },
-  delete: {
-    marginStart: spacing.xs,
+    rowGap: 2,
   },
 });

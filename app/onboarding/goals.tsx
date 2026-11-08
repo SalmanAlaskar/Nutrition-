@@ -6,20 +6,19 @@ import { StyleSheet, View } from 'react-native';
 import {
   AppHeader,
   Button,
-  Card,
   LoadingView,
   OptionRow,
   Screen,
+  Section,
   Txt,
 } from '@/components/ui';
 import { formatCount, formatPercent } from '@/domain/format';
 import { GOAL_FACTORS, totalDailyEnergyExpenditure } from '@/domain/nutrition';
 import { mirrorIcon, useDirection } from '@/i18n';
-import { spacing } from '@/theme';
+import { layout, spacing } from '@/theme';
 import type { ActivityLevel, Goal } from '@/types';
 
 import {
-  Eyebrow,
   StepProgress,
   bodyDraftParams,
   parseBodyDraft,
@@ -28,61 +27,47 @@ import {
   type PlanDraft,
 } from './_layout';
 
-/** Lightest week first, so the list reads as a ramp. */
+/**
+ * Lightest week first, so the list reads as a ramp. No glyphs: a bed beside
+ * "Sedentary" says nothing the word has not already said.
+ */
 const ACTIVITY_ORDER = [
   {
     value: 'sedentary',
-    icon: 'bed-outline',
     labelKey: 'onboarding:activitySedentary',
     hintKey: 'onboarding:activitySedentaryHint',
   },
   {
     value: 'light',
-    icon: 'walk-outline',
     labelKey: 'onboarding:activityLight',
     hintKey: 'onboarding:activityLightHint',
   },
   {
     value: 'moderate',
-    icon: 'bicycle-outline',
     labelKey: 'onboarding:activityModerate',
     hintKey: 'onboarding:activityModerateHint',
   },
   {
     value: 'active',
-    icon: 'barbell-outline',
     labelKey: 'onboarding:activityActive',
     hintKey: 'onboarding:activityActiveHint',
   },
   {
     value: 'very_active',
-    icon: 'flame-outline',
     labelKey: 'onboarding:activityVeryActive',
     hintKey: 'onboarding:activityVeryActiveHint',
   },
 ] as const satisfies readonly {
   value: ActivityLevel;
-  icon: string;
   labelKey: string;
   hintKey: string;
 }[];
 
 const GOAL_ORDER = [
-  { value: 'lose', icon: 'trending-down-outline', labelKey: 'onboarding:goalLose' },
-  { value: 'maintain', icon: 'remove-outline', labelKey: 'onboarding:goalMaintain' },
-  { value: 'gain', icon: 'trending-up-outline', labelKey: 'onboarding:goalGain' },
-] as const satisfies readonly { value: Goal; icon: string; labelKey: string }[];
-
-function Section({ title, hint }: { title: string; hint: string }) {
-  return (
-    <View style={styles.section}>
-      <Eyebrow label={title} />
-      <Txt variant="label" color="muted" style={styles.sectionHint}>
-        {hint}
-      </Txt>
-    </View>
-  );
-}
+  { value: 'lose', labelKey: 'onboarding:goalLose' },
+  { value: 'maintain', labelKey: 'onboarding:goalMaintain' },
+  { value: 'gain', labelKey: 'onboarding:goalGain' },
+] as const satisfies readonly { value: Goal; labelKey: string }[];
 
 export default function GoalsStep() {
   const router = useRouter();
@@ -152,58 +137,59 @@ export default function GoalsStep() {
 
       <StepProgress current={2} />
 
-      <Section
-        title={t('onboarding:activityTitle')}
-        hint={t('onboarding:activityHint')}
-      />
-      <View style={styles.options}>
-        {ACTIVITY_ORDER.map((level) => (
-          <OptionRow
-            key={level.value}
-            title={t(level.labelKey)}
-            subtitle={t(level.hintKey)}
-            icon={level.icon}
-            selected={activityLevel === level.value}
-            onPress={() => setActivityLevel(level.value)}
-          />
-        ))}
-      </View>
+      <Section title={t('onboarding:activityTitle')} subtitle={t('onboarding:activityHint')}>
+        <View style={styles.options}>
+          {ACTIVITY_ORDER.map((level) => (
+            <OptionRow
+              key={level.value}
+              title={t(level.labelKey)}
+              subtitle={t(level.hintKey)}
+              selected={activityLevel === level.value}
+              onPress={() => setActivityLevel(level.value)}
+            />
+          ))}
+        </View>
 
-      <Card style={styles.estimate}>
+        {/*
+          The estimate belongs to the list above it, so it sits inside the same
+          section rather than in a box of its own: pick a week, read the number.
+        */}
         <View
           accessible
           accessibilityLabel={t('onboarding:maintenanceSpoken', {
             calories: formatCount(maintenance),
           })}
+          style={styles.estimate}
         >
-          <Eyebrow label={t('onboarding:maintenanceLabel')} />
-          <View style={styles.estimateRow}>
-            <Txt variant="title" color="accent" tabular numberOfLines={1}>
-              {formatCount(maintenance)}
-            </Txt>
-            <Txt variant="label" color="muted" numberOfLines={1}>
-              {t('onboarding:caloriesPerDay')}
-            </Txt>
-          </View>
           <Txt variant="label" color="muted">
+            {t('onboarding:maintenanceLabel')}
+          </Txt>
+          {/* Figure and unit are one text run, never two elements in a row. */}
+          <Txt variant="metric" tabular numberOfLines={1} style={styles.estimateValue}>
+            {formatCount(maintenance)}
+            <Txt variant="label" color="faint" weight="medium">
+              {` ${t('onboarding:caloriesPerDay')}`}
+            </Txt>
+          </Txt>
+          <Txt variant="label" color="muted" style={styles.estimateNote}>
             {t('onboarding:maintenanceNote')}
           </Txt>
         </View>
-      </Card>
+      </Section>
 
-      <Section title={t('onboarding:goalTitle')} hint={t('onboarding:goalHint')} />
-      <View style={styles.options}>
-        {GOAL_ORDER.map((option) => (
-          <OptionRow
-            key={option.value}
-            title={t(option.labelKey)}
-            subtitle={goalHint(option.value)}
-            icon={option.icon}
-            selected={goal === option.value}
-            onPress={() => setGoal(option.value)}
-          />
-        ))}
-      </View>
+      <Section title={t('onboarding:goalTitle')} subtitle={t('onboarding:goalHint')}>
+        <View style={styles.options}>
+          {GOAL_ORDER.map((option) => (
+            <OptionRow
+              key={option.value}
+              title={t(option.labelKey)}
+              subtitle={goalHint(option.value)}
+              selected={goal === option.value}
+              onPress={() => setGoal(option.value)}
+            />
+          ))}
+        </View>
+      </Section>
 
       <View style={styles.spacer} />
 
@@ -221,29 +207,22 @@ export default function GoalsStep() {
 }
 
 const styles = StyleSheet.create({
-  section: {
-    marginBottom: spacing.md,
-    marginTop: spacing.xl,
-  },
-  sectionHint: {
-    marginTop: 2,
-  },
   options: {
     rowGap: spacing.sm,
   },
   estimate: {
-    marginTop: spacing.lg,
+    marginTop: spacing.xl,
   },
-  estimateRow: {
-    alignItems: 'baseline',
-    columnGap: spacing.sm,
-    flexDirection: 'row',
-    marginBottom: spacing.xs,
+  estimateValue: {
     marginTop: spacing.xs,
+  },
+  estimateNote: {
+    marginTop: spacing.sm,
+    maxWidth: layout.maxTextWidth,
   },
   spacer: {
     flexGrow: 1,
-    minHeight: spacing.xl,
+    minHeight: spacing.xxl,
   },
   continue: {
     marginTop: spacing.xl,

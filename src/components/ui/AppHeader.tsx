@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { StyleSheet, View } from 'react-native';
 
 import { mirrorIcon, useDirection } from '@/i18n';
-import { spacing } from '@/theme';
+import { layout, spacing } from '@/theme';
 
 import { IconButton } from './IconButton';
 import { Txt } from './Txt';
@@ -85,8 +85,8 @@ export function AppHeader({
 
 const styles = StyleSheet.create({
   wrapper: {
-    paddingBottom: spacing.md,
-    paddingTop: spacing.sm,
+    paddingBottom: spacing.lg,
+    paddingTop: layout.screenTop,
   },
   bar: {
     alignItems: 'center',
@@ -114,7 +114,7 @@ const styles = StyleSheet.create({
     marginStart: -spacing.xs,
   },
   largeText: {
-    marginTop: spacing.xs,
+    marginTop: spacing.sm,
   },
   subtitle: {
     marginTop: 2,

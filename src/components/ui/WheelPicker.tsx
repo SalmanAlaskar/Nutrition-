@@ -545,7 +545,8 @@ export function WheelPicker({
             top: padding,
             height: itemHeight,
             backgroundColor: colors.surfaceAlt,
-            borderColor: colors.border,
+            // The band is the one line on a wheel that has to be seen.
+            borderColor: colors.borderStrong,
           },
         ]}
       >

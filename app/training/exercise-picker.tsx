@@ -8,12 +8,12 @@ import {
   AppHeader,
   Badge,
   Button,
-  Card,
   Chip,
   Divider,
   EmptyState,
   ListRow,
   Screen,
+  Section,
   TextField,
   Txt,
 } from '@/components/ui';
@@ -21,12 +21,15 @@ import { EQUIPMENT_KEYS, searchExercises } from '@/data/exercises';
 import { makeId } from '@/domain/id';
 import { SESSION_LABEL_KEYS } from '@/domain/training';
 import { useApp } from '@/state/AppStore';
-import { spacing, useTheme } from '@/theme';
+import { layout, spacing, useTheme } from '@/theme';
 import type { Equipment, Exercise, SessionType } from '@/types';
 
 const SEARCH_DEBOUNCE_MS = 120;
 const RESULT_LIMIT = 40;
 const NAME_MAX = 60;
+
+/** Between two facts on one line. Punctuation, so it is the same in both languages. */
+const SEPARATOR = ' · ';
 
 const SESSION_TYPES = Object.keys(SESSION_LABEL_KEYS) as SessionType[];
 const EQUIPMENT_KINDS = Object.keys(EQUIPMENT_KEYS) as Equipment[];
@@ -47,7 +50,7 @@ interface ResultRowProps {
   onPress: (exercise: Exercise) => void;
 }
 
-/** One search hit: what it is called, what it works and what it needs. */
+/** One search hit: its name, then everything else on one quiet second line. */
 function ResultRow({ exercise, custom, onPress }: ResultRowProps) {
   const { colors } = useTheme();
   const { t } = useTranslation('training');
@@ -56,6 +59,7 @@ function ResultRow({ exercise, custom, onPress }: ResultRowProps) {
   const name = text.name(exercise);
   const altName = text.altName(exercise);
   const meta = text.meta(exercise);
+  const about = [altName, meta].filter((part): part is string => Boolean(part)).join(SEPARATOR);
 
   return (
     <Pressable
@@ -70,22 +74,15 @@ function ResultRow({ exercise, custom, onPress }: ResultRowProps) {
         pressed ? { backgroundColor: colors.surfaceAlt } : null,
       ]}
     >
-      <View style={styles.resultText}>
-        <View style={styles.resultTitle}>
-          <Txt weight="semibold" numberOfLines={1} style={styles.resultName}>
-            {name}
-          </Txt>
-          {custom ? <Badge label={t('badgeCustom')} tone="accent" /> : null}
-        </View>
-        {altName ? (
-          <Txt variant="label" color="muted" numberOfLines={1} style={styles.resultLine}>
-            {altName}
-          </Txt>
-        ) : null}
-        <Txt variant="caption" color="faint" numberOfLines={1} style={styles.resultLine}>
-          {meta}
+      <View style={styles.resultTitle}>
+        <Txt numberOfLines={1} style={styles.resultName}>
+          {name}
         </Txt>
+        {custom ? <Badge label={t('badgeCustom')} variant="plain" /> : null}
       </View>
+      <Txt variant="label" color="faint" numberOfLines={1} style={styles.resultLine}>
+        {about}
+      </Txt>
     </Pressable>
   );
 }
@@ -208,31 +205,28 @@ export default function ExercisePickerScreen() {
           }}
         />
 
-        <Card>
-          <TextField
-            label={t('nameEnglish')}
-            value={name}
-            onChangeText={setName}
-            placeholder={t('nameEnglishPlaceholder')}
-            maxLength={NAME_MAX}
-            autoCapitalize="words"
-            error={nameError ?? undefined}
-          />
+        <TextField
+          label={t('nameEnglish')}
+          value={name}
+          onChangeText={setName}
+          placeholder={t('nameEnglishPlaceholder')}
+          maxLength={NAME_MAX}
+          autoCapitalize="words"
+          error={nameError ?? undefined}
+        />
 
-          <TextField
-            label={t('nameArabic')}
-            value={nameAr}
-            onChangeText={setNameAr}
-            placeholder={t('nameArabicPlaceholder')}
-            maxLength={NAME_MAX}
-            autoCapitalize="none"
-            hint={t('nameArabicHint')}
-            style={styles.field}
-          />
+        <TextField
+          label={t('nameArabic')}
+          value={nameAr}
+          onChangeText={setNameAr}
+          placeholder={t('nameArabicPlaceholder')}
+          maxLength={NAME_MAX}
+          autoCapitalize="none"
+          hint={t('nameArabicHint')}
+          style={styles.field}
+        />
 
-          <Txt variant="label" color="muted" weight="semibold" style={styles.groupLabel}>
-            {t('groupDayType')}
-          </Txt>
+        <Section title={t('groupDayType')} gap="tight">
           <View style={styles.chipWrap}>
             {SESSION_TYPES.map((type) => (
               <Chip
@@ -243,10 +237,9 @@ export default function ExercisePickerScreen() {
               />
             ))}
           </View>
+        </Section>
 
-          <Txt variant="label" color="muted" weight="semibold" style={styles.groupLabel}>
-            {t('groupEquipment')}
-          </Txt>
+        <Section title={t('groupEquipment')} gap="tight">
           <View style={styles.chipWrap}>
             {EQUIPMENT_KINDS.map((kind) => (
               <Chip
@@ -257,7 +250,9 @@ export default function ExercisePickerScreen() {
               />
             ))}
           </View>
+        </Section>
 
+        <Section>
           {saveError ? (
             <Txt variant="label" color="danger" style={styles.saveError}>
               {saveError}
@@ -266,13 +261,12 @@ export default function ExercisePickerScreen() {
 
           <Button
             label={t('saveAndAdd')}
-            icon="checkmark"
             onPress={() => void saveCustom()}
             loading={saving}
+            size="lg"
             fullWidth
-            style={styles.save}
           />
-        </Card>
+        </Section>
       </Screen>
     );
   }
@@ -335,17 +329,18 @@ export default function ExercisePickerScreen() {
         }
         ListFooterComponent={
           results.length > 0 ? (
-            <Card padded={false} style={styles.customCard}>
+            <View style={styles.footer}>
+              <Divider />
               <ListRow
                 title={t('createExercise')}
                 subtitle={
                   trimmedQuery ? t('createWithQuery', { query: trimmedQuery }) : t('createSubtitle')
                 }
-                icon="add-circle-outline"
                 onPress={startCreating}
                 chevron
+                style={styles.footerRow}
               />
-            </Card>
+            </View>
           ) : null
         }
       />
@@ -355,31 +350,28 @@ export default function ExercisePickerScreen() {
 
 const styles = StyleSheet.create({
   top: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.gutter,
   },
   filterStrip: {
     flexGrow: 0,
-    marginTop: spacing.md,
+    marginTop: spacing.lg,
   },
   filters: {
     columnGap: spacing.sm,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.gutter,
   },
   list: {
     flex: 1,
-    marginTop: spacing.sm,
+    marginTop: spacing.md,
   },
   listContent: {
-    paddingBottom: spacing.xl,
+    paddingBottom: spacing.xxl,
   },
   result: {
     justifyContent: 'center',
     minHeight: 64,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.gutter,
     paddingVertical: spacing.md,
-  },
-  resultText: {
-    flex: 1,
   },
   resultTitle: {
     alignItems: 'center',
@@ -390,20 +382,18 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   resultLine: {
-    marginTop: 2,
+    marginTop: 3,
   },
   empty: {
     paddingTop: spacing.xxl,
   },
-  customCard: {
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.lg,
+  footer: {
+    marginTop: spacing.xl,
+  },
+  footerRow: {
+    paddingHorizontal: layout.gutter,
   },
   field: {
-    marginTop: spacing.lg,
-  },
-  groupLabel: {
-    marginBottom: spacing.sm,
     marginTop: spacing.lg,
   },
   chipWrap: {
@@ -413,9 +403,6 @@ const styles = StyleSheet.create({
     rowGap: spacing.sm,
   },
   saveError: {
-    marginTop: spacing.lg,
-  },
-  save: {
-    marginTop: spacing.xl,
+    marginBottom: spacing.md,
   },
 });

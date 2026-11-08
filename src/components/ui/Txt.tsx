@@ -9,9 +9,21 @@ import {
   type TextStyle,
 } from 'react-native';
 
+import { useDirection } from '@/i18n';
 import { fontSize, fontWeight, useTheme, type Palette } from '@/theme';
 
-export type TxtVariant = 'display' | 'title' | 'heading' | 'body' | 'label' | 'caption';
+/**
+ * `metric` is the size a figure is read at: large, tight and quiet. It sits a
+ * clear step above `heading` so a value never looks like a title.
+ */
+export type TxtVariant =
+  | 'display'
+  | 'title'
+  | 'metric'
+  | 'heading'
+  | 'body'
+  | 'label'
+  | 'caption';
 export type TxtWeight = 'regular' | 'medium' | 'semibold' | 'bold';
 /**
  * 'start' and 'end' follow the reading direction and are what screens should
@@ -56,17 +68,40 @@ const COLOR_KEYS: Record<TxtColorName, keyof Palette> = {
 export const tabularNums: TextStyle = { fontVariant: ['tabular-nums'] };
 
 const VARIANT_STYLE: Record<TxtVariant, TextStyle> = {
-  display: { fontSize: fontSize.display, lineHeight: 44, letterSpacing: -1.4 },
-  title: { fontSize: fontSize.xxl, lineHeight: 34, letterSpacing: -0.7 },
-  heading: { fontSize: fontSize.xl, lineHeight: 28, letterSpacing: -0.35 },
-  body: { fontSize: fontSize.md, lineHeight: 21, letterSpacing: -0.1 },
-  label: { fontSize: fontSize.sm, lineHeight: 18, letterSpacing: 0.1 },
-  caption: { fontSize: fontSize.xs, lineHeight: 15, letterSpacing: 0.45 },
+  display: { fontSize: fontSize.display, lineHeight: 48, letterSpacing: -1.6 },
+  title: { fontSize: fontSize.xxl, lineHeight: 36, letterSpacing: -0.8 },
+  metric: { fontSize: fontSize.metric, lineHeight: 32, letterSpacing: -0.7 },
+  heading: { fontSize: fontSize.lg + 2, lineHeight: 26, letterSpacing: -0.3 },
+  body: { fontSize: fontSize.md, lineHeight: 22, letterSpacing: -0.1 },
+  label: { fontSize: fontSize.sm, lineHeight: 19, letterSpacing: 0 },
+  caption: { fontSize: fontSize.xs, lineHeight: 15, letterSpacing: 0.2 },
 };
+
+/**
+ * Arabic is cursive: letter spacing opens gaps inside a joined word, and the
+ * script carries taller ascenders and lower descenders than Latin. So the
+ * tracking goes to zero and every line gets a little more air.
+ */
+const ARABIC_LEADING = 1.18;
+
+const VARIANT_STYLE_AR: Record<TxtVariant, TextStyle> = Object.fromEntries(
+  (Object.keys(VARIANT_STYLE) as TxtVariant[]).map((key) => {
+    const base = VARIANT_STYLE[key];
+    return [
+      key,
+      {
+        fontSize: base.fontSize,
+        lineHeight: Math.round((base.lineHeight ?? 0) * ARABIC_LEADING),
+        letterSpacing: 0,
+      },
+    ];
+  }),
+) as Record<TxtVariant, TextStyle>;
 
 const VARIANT_WEIGHT: Record<TxtVariant, TxtWeight> = {
   display: 'bold',
   title: 'bold',
+  metric: 'semibold',
   heading: 'semibold',
   body: 'regular',
   label: 'medium',
@@ -106,14 +141,16 @@ export function Txt({
   ...rest
 }: TxtProps) {
   const { colors } = useTheme();
+  const { language } = useDirection();
   const resolvedWeight = weight ?? VARIANT_WEIGHT[variant];
+  const metrics = language === 'ar' ? VARIANT_STYLE_AR[variant] : VARIANT_STYLE[variant];
 
   return (
     <Text
       numberOfLines={numberOfLines}
       style={[
         styles.base,
-        VARIANT_STYLE[variant],
+        metrics,
         { color: resolveColor(colors, color), fontWeight: fontWeight[resolvedWeight] },
         alignStyle(align),
         tabular ? tabularNums : null,

@@ -23,15 +23,19 @@ const DECORATIVE: AccessibilityProps =
     ? { 'aria-hidden': true }
     : { accessibilityElementsHidden: true, importantForAccessibility: 'no-hide-descendants' };
 
-/** The tick is the one thing that has to be hit without looking. */
-const TICK_SIZE = 52;
+/** The tick is the one thing that has to be hit without looking, standing up. */
+const TICK_SIZE = 56;
+const TICK_DISC = 38;
 const MAX_REPS = 500;
 const MAX_WEIGHT_KG = 500;
+
+/** Between two facts on one line. Punctuation, so it is the same in both languages. */
+const SEPARATOR = ' · ';
 
 export interface ExerciseRowProps {
   /** Leading name, already in the reading language. */
   name: string;
-  /** The other name, shown quietly underneath. */
+  /** The other name, shown quietly once the row is open. */
   altName?: string;
   /** Muscles and kit, e.g. 'Chest, triceps · Barbell'. */
   meta?: string;
@@ -56,8 +60,9 @@ function filledSets(sets: SetLog[]): number {
 }
 
 /**
- * One exercise inside a session. Ticking it is a single tap and is all the
- * logging that is ever required; reps and load live behind the expander.
+ * One exercise inside a session. Collapsed it says three things — name, planned
+ * volume, done or not — so the list scans at a glance; reps, load, the other
+ * name and the form cue all stay behind the expander until they are wanted.
  */
 export function ExerciseRow({
   name,
@@ -90,7 +95,9 @@ export function ExerciseRow({
       : null,
   ]
     .filter((part): part is string => Boolean(part))
-    .join(' · ');
+    .join(SEPARATOR);
+
+  const about = [altName, meta].filter((part): part is string => Boolean(part)).join(SEPARATOR);
 
   const handleToggle = () => {
     if (Platform.OS !== 'web') {
@@ -100,16 +107,7 @@ export function ExerciseRow({
   };
 
   return (
-    <View
-      style={[
-        styles.wrapper,
-        {
-          backgroundColor: done ? colors.accentSoft : colors.surface,
-          borderColor: done ? colors.accent : colors.border,
-        },
-        style,
-      ]}
-    >
+    <View style={[styles.wrapper, style]}>
       <View style={styles.row}>
         <Pressable
           onPress={handleToggle}
@@ -124,87 +122,83 @@ export function ExerciseRow({
               styles.tickDisc,
               {
                 backgroundColor: done ? colors.accent : 'transparent',
-                borderColor: done ? colors.accent : colors.border,
+                borderColor: done ? colors.accent : colors.borderStrong,
               },
             ]}
             {...DECORATIVE}
           >
-            <Ionicons
-              name="checkmark"
-              size={20}
-              color={done ? colors.accentText : colors.textFaint}
-            />
+            {done ? <Ionicons name="checkmark" size={22} color={colors.accentText} /> : null}
           </View>
         </Pressable>
 
-        <View style={styles.text}>
-          <Txt weight="semibold" numberOfLines={2}>
-            {name}
-          </Txt>
-          {altName ? (
-            <Txt variant="caption" color="faint" numberOfLines={1} style={styles.line}>
-              {altName}
-            </Txt>
-          ) : null}
-          {detail ? (
-            <Txt variant="label" color="muted" numberOfLines={1} style={styles.line}>
-              {detail}
-            </Txt>
-          ) : null}
-          {meta ? (
-            <Txt variant="caption" color="faint" numberOfLines={1} style={styles.line}>
-              {meta}
-            </Txt>
-          ) : null}
-        </View>
-
-        <IconButton
-          icon={expanded ? 'chevron-up' : 'chevron-down'}
+        {/* One target for the whole text block and its chevron: a disclosure
+            arrow beside a tappable title would be a second way to do one thing. */}
+        <Pressable
           onPress={onToggleExpanded}
+          accessibilityRole="button"
           accessibilityLabel={
             expanded ? t('training:hideSets', { name }) : t('training:showSets', { name })
           }
-          size={18}
-        />
+          accessibilityState={{ expanded }}
+          style={({ pressed }) => [styles.main, pressed ? styles.pressed : null]}
+        >
+          <View style={styles.text}>
+            <Txt weight="medium" numberOfLines={2}>
+              {name}
+            </Txt>
+            {detail ? (
+              <Txt variant="label" color="muted" numberOfLines={1} tabular style={styles.line}>
+                {detail}
+              </Txt>
+            ) : null}
+          </View>
+          <View style={styles.chevron} {...DECORATIVE}>
+            <Ionicons
+              name={expanded ? 'chevron-up' : 'chevron-down'}
+              size={16}
+              color={colors.textFaint}
+            />
+          </View>
+        </Pressable>
       </View>
 
       {expanded ? (
         <View style={styles.details}>
           <Divider style={styles.divider} />
 
+          {about ? (
+            <Txt variant="label" color="faint" numberOfLines={2} style={styles.about}>
+              {about}
+            </Txt>
+          ) : null}
+
           {cue ? (
-            <View style={[styles.cue, { backgroundColor: colors.surfaceAlt }]}>
-              <Txt variant="caption" color="faint" weight="bold">
-                {t('training:cueLabel').toUpperCase()}
-              </Txt>
-              <Txt variant="label" color="muted" style={styles.cueText}>
-                {cue}
-              </Txt>
-            </View>
+            <Txt
+              variant="label"
+              color="muted"
+              style={styles.cue}
+              accessibilityLabel={`${t('training:cueLabel')}: ${cue}`}
+            >
+              {cue}
+            </Txt>
           ) : null}
 
           {/* The fields are too narrow to carry their own unit, so the columns
               are named once at the top instead. */}
           <View style={styles.setHeader} {...DECORATIVE}>
             <View style={styles.setLabel} />
-            <Txt variant="caption" color="faint" weight="bold" style={styles.field}>
-              {t('training:colReps').toUpperCase()}
+            <Txt variant="caption" color="faint" style={styles.field}>
+              {t('training:colReps')}
             </Txt>
-            <Txt variant="caption" color="faint" weight="bold" style={styles.field}>
-              {t('training:colLoad').toUpperCase()}
+            <Txt variant="caption" color="faint" style={styles.field}>
+              {t('training:colLoad')}
             </Txt>
             <View style={styles.headerSpacer} />
           </View>
 
           {sets.map((set, index) => (
             <View key={index} style={styles.setRow}>
-              <Txt
-                variant="label"
-                color="muted"
-                weight="semibold"
-                numberOfLines={1}
-                style={styles.setLabel}
-              >
+              <Txt variant="label" color="muted" numberOfLines={1} style={styles.setLabel}>
                 {t('training:setNumber', { number: formatCount(index + 1) })}
               </Txt>
               <NumberField
@@ -232,6 +226,7 @@ export function ExerciseRow({
                   name,
                 })}
                 size={16}
+                color={colors.textFaint}
               />
             </View>
           ))}
@@ -242,7 +237,6 @@ export function ExerciseRow({
               onPress={onAddSet}
               variant="secondary"
               size="sm"
-              icon="add"
               accessibilityHint={t('training:addSetHint', { name })}
             />
             <Button
@@ -250,7 +244,6 @@ export function ExerciseRow({
               onPress={onRemove}
               variant="danger"
               size="sm"
-              icon="trash-outline"
               accessibilityHint={t('training:removeExerciseHint', { name })}
             />
           </View>
@@ -262,10 +255,7 @@ export function ExerciseRow({
 
 const styles = StyleSheet.create({
   wrapper: {
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.xs,
   },
   row: {
     alignItems: 'center',
@@ -276,40 +266,50 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     height: TICK_SIZE,
     justifyContent: 'center',
-    marginStart: -spacing.xs,
+    marginStart: -spacing.sm,
     width: TICK_SIZE,
   },
   tickDisc: {
     alignItems: 'center',
     borderRadius: radius.pill,
-    borderWidth: 1.5,
-    height: 34,
+    borderWidth: 2,
+    height: TICK_DISC,
     justifyContent: 'center',
-    width: 34,
+    width: TICK_DISC,
   },
   pressed: {
     opacity: 0.7,
+  },
+  main: {
+    alignItems: 'center',
+    columnGap: spacing.sm,
+    flex: 1,
+    flexDirection: 'row',
+    minHeight: TICK_SIZE,
+    paddingVertical: spacing.xs,
   },
   text: {
     flex: 1,
   },
   line: {
-    marginTop: 2,
+    marginTop: 3,
+  },
+  chevron: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 20,
   },
   details: {
     marginTop: spacing.sm,
   },
   divider: {
-    marginBottom: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  about: {
+    marginBottom: spacing.sm,
   },
   cue: {
-    borderRadius: radius.md,
-    marginBottom: spacing.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  cueText: {
-    marginTop: 2,
+    marginBottom: spacing.lg,
   },
   setHeader: {
     alignItems: 'center',
@@ -336,6 +336,6 @@ const styles = StyleSheet.create({
   actions: {
     columnGap: spacing.sm,
     flexDirection: 'row',
-    marginTop: spacing.xs,
+    marginTop: spacing.sm,
   },
 });

@@ -9,15 +9,16 @@ import {
   AppHeader,
   Badge,
   Button,
-  Card,
+  Divider,
   LoadingView,
   Screen,
+  Section,
   TextField,
   Txt,
 } from '@/components/ui';
 import { exerciseById } from '@/data/exercises';
 import { todayKey } from '@/domain/date';
-import { formatCount, formatPercent } from '@/domain/format';
+import { formatCount } from '@/domain/format';
 import { makeId } from '@/domain/id';
 import { dayForDate, fallbackExerciseName, sessionFromDay } from '@/domain/training';
 import { useApp } from '@/state/AppStore';
@@ -420,26 +421,17 @@ export default function SessionScreen() {
         title={title}
         subtitle={`${text.date(date)} · ${muscles}`}
         onBack={close}
-        right={completed ? <Badge label={t('statusDone')} tone="success" /> : undefined}
+        right={completed ? <Badge label={t('statusDone')} variant="plain" tone="success" /> : undefined}
       />
 
-      <Card>
-        <View style={styles.progressTop}>
-          <Txt
-            variant="label"
-            color="muted"
-            weight="semibold"
-            numberOfLines={1}
-            style={styles.progressLabel}
-          >
-            {total > 0
-              ? t('progressDone', { done: formatCount(doneCount), total: formatCount(total) })
-              : t('progressEmpty')}
-          </Txt>
-          <Txt variant="label" color="muted" tabular>
-            {formatPercent(ratio)}
-          </Txt>
-        </View>
+      {/* Progress is a single line and a single rule: the ticks below are the
+          thing being read, and this only has to say how far they have got. */}
+      <View style={styles.progress}>
+        <Txt variant="label" color="muted" numberOfLines={1}>
+          {total > 0
+            ? t('progressDone', { done: formatCount(doneCount), total: formatCount(total) })
+            : t('progressEmpty')}
+        </Txt>
         <View
           style={[styles.track, { backgroundColor: colors.track }]}
           accessibilityRole="progressbar"
@@ -453,87 +445,83 @@ export default function SessionScreen() {
             ]}
           />
         </View>
-      </Card>
+      </View>
 
       <View style={styles.list}>
         {session.exercises.map((exercise, index) => {
           const catalogue = exerciseById(exercise.exerciseId, customExercises);
           const planned = plannedById[exercise.exerciseId];
           return (
-            <ExerciseRow
-              key={`${exercise.exerciseId}-${index}`}
-              name={catalogue ? text.name(catalogue) : exercise.name}
-              altName={catalogue ? text.altName(catalogue) : undefined}
-              meta={catalogue ? text.meta(catalogue) : undefined}
-              planned={planned ? text.planned(planned) : undefined}
-              cue={catalogue ? text.cue(catalogue) : undefined}
-              done={exercise.done}
-              onToggleDone={() => toggleDone(index)}
-              sets={exercise.sets}
-              expanded={openIndex === index}
-              onToggleExpanded={() => setOpenIndex(openIndex === index ? null : index)}
-              onChangeSet={(setIndex, patch) => changeSet(index, setIndex, patch)}
-              onAddSet={() => addSet(index)}
-              onRemoveSet={(setIndex) => removeSet(index, setIndex)}
-              onRemove={() => removeExercise(index)}
-              style={styles.row}
-            />
+            <React.Fragment key={`${exercise.exerciseId}-${index}`}>
+              {index > 0 ? <Divider /> : null}
+              <ExerciseRow
+                name={catalogue ? text.name(catalogue) : exercise.name}
+                altName={catalogue ? text.altName(catalogue) : undefined}
+                meta={catalogue ? text.meta(catalogue) : undefined}
+                planned={planned ? text.planned(planned) : undefined}
+                cue={catalogue ? text.cue(catalogue) : undefined}
+                done={exercise.done}
+                onToggleDone={() => toggleDone(index)}
+                sets={exercise.sets}
+                expanded={openIndex === index}
+                onToggleExpanded={() => setOpenIndex(openIndex === index ? null : index)}
+                onChangeSet={(setIndex, patch) => changeSet(index, setIndex, patch)}
+                onAddSet={() => addSet(index)}
+                onRemoveSet={(setIndex) => removeSet(index, setIndex)}
+                onRemove={() => removeExercise(index)}
+              />
+            </React.Fragment>
           );
         })}
       </View>
 
-      <Button
-        label={t('addExercise')}
-        icon="add"
-        onPress={openPicker}
-        variant="secondary"
-        fullWidth
-        style={styles.add}
-      />
+      <Section>
+        <Button
+          label={t('addExercise')}
+          onPress={openPicker}
+          variant="secondary"
+          fullWidth
+        />
+      </Section>
 
-      <TextField
-        label={t('noteLabel')}
-        value={session.note ?? ''}
-        onChangeText={changeNote}
-        placeholder={t('notePlaceholder')}
-        multiline
-        maxLength={NOTE_MAX}
-        style={styles.note}
-      />
+      <Section>
+        <TextField
+          label={t('noteLabel')}
+          value={session.note ?? ''}
+          onChangeText={changeNote}
+          placeholder={t('notePlaceholder')}
+          multiline
+          maxLength={NOTE_MAX}
+        />
+      </Section>
 
-      {error ? (
-        <Txt variant="label" color="danger" style={styles.error}>
-          {error}
-        </Txt>
-      ) : null}
+      <Section>
+        {error ? (
+          <Txt variant="label" color="danger" style={styles.error}>
+            {error}
+          </Txt>
+        ) : null}
 
-      <Button
-        label={completed ? t('saveChanges') : t('finishSession')}
-        icon="checkmark"
-        onPress={finish}
-        loading={leaving}
-        fullWidth
-        accessibilityHint={completed ? t('saveChangesHint') : t('finishHint')}
-        style={styles.finish}
-      />
+        <Button
+          label={completed ? t('saveChanges') : t('finishSession')}
+          onPress={finish}
+          loading={leaving}
+          size="lg"
+          fullWidth
+          accessibilityHint={completed ? t('saveChangesHint') : t('finishHint')}
+        />
+      </Section>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  progressTop: {
-    alignItems: 'center',
-    columnGap: spacing.sm,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: spacing.sm,
-  },
-  progressLabel: {
-    flexShrink: 1,
+  progress: {
+    rowGap: spacing.sm,
   },
   track: {
     borderRadius: radius.pill,
-    height: 8,
+    height: 4,
     overflow: 'hidden',
     width: '100%',
   },
@@ -542,22 +530,9 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   list: {
-    marginTop: spacing.lg,
-    rowGap: spacing.sm,
-  },
-  row: {
-    width: '100%',
-  },
-  add: {
-    marginTop: spacing.lg,
-  },
-  note: {
     marginTop: spacing.xl,
   },
   error: {
-    marginTop: spacing.md,
-  },
-  finish: {
-    marginTop: spacing.xl,
+    marginBottom: spacing.md,
   },
 });

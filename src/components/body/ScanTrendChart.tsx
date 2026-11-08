@@ -76,6 +76,8 @@ const TOP = 16;
 const BOTTOM = HEIGHT - 16;
 const GUTTER = 44;
 const RIGHT_INSET = 10;
+/** Thin enough to read as a measurement rather than as a ribbon. */
+const LINE_WIDTH = 1.5;
 
 /** Decoration is hidden from assistive tech; the DOM only understands aria-hidden. */
 const DECORATIVE: AccessibilityProps =
@@ -181,17 +183,16 @@ export function ScanTrendChart({ scans, style }: ScanTrendChartProps) {
         </Txt>
       ) : series.length === 1 ? (
         <View style={styles.single}>
-          <Txt variant="caption" color="faint" weight="semibold">
-            {label.toUpperCase()}
+          <Txt variant="label" color="muted">
+            {label}
           </Txt>
-          <View style={styles.singleRow}>
-            <Txt variant="title" tabular>
-              {formatAmount(latest?.value ?? 0, def.decimals)}
+          {/* The unit is nested, never a sibling: Arabic would reorder two runs. */}
+          <Txt variant="metric" tabular numberOfLines={1} style={styles.singleValue}>
+            {formatAmount(latest?.value ?? 0, def.decimals)}
+            <Txt variant="label" color="faint" weight="medium">
+              {` ${unit}`}
             </Txt>
-            <Txt variant="label" color="faint" weight="medium" style={styles.unit}>
-              {unit}
-            </Txt>
-          </View>
+          </Txt>
           <Txt variant="caption" color="faint">
             {t('trendSingle', { day: shortDay(model.lastDate) })}
           </Txt>
@@ -207,6 +208,7 @@ export function ScanTrendChart({ scans, style }: ScanTrendChartProps) {
           >
             {width > 0 ? (
               <Svg width={width} height={HEIGHT}>
+                {/* Horizontal rules only: a time axis needs no vertical grid. */}
                 <Line
                   x1={GUTTER}
                   x2={width - RIGHT_INSET}
@@ -214,7 +216,6 @@ export function ScanTrendChart({ scans, style }: ScanTrendChartProps) {
                   y2={model.yHigh}
                   stroke={colors.border}
                   strokeWidth={1}
-                  strokeDasharray="4 5"
                 />
                 <SvgText x={0} y={model.yHigh - 5} fill={colors.textFaint} fontSize={fontSize.xs}>
                   {formatAmount(model.highest, def.decimals)}
@@ -229,7 +230,6 @@ export function ScanTrendChart({ scans, style }: ScanTrendChartProps) {
                       y2={model.yLow}
                       stroke={colors.border}
                       strokeWidth={1}
-                      strokeDasharray="4 5"
                     />
                     <SvgText x={0} y={model.yLow + 13} fill={colors.textFaint} fontSize={fontSize.xs}>
                       {formatAmount(model.lowest, def.decimals)}
@@ -240,8 +240,8 @@ export function ScanTrendChart({ scans, style }: ScanTrendChartProps) {
                 <Polyline
                   points={model.polyline}
                   fill="none"
-                  stroke={colors.accent}
-                  strokeWidth={2}
+                  stroke={colors.text}
+                  strokeWidth={LINE_WIDTH}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 />
@@ -253,10 +253,10 @@ export function ScanTrendChart({ scans, style }: ScanTrendChartProps) {
                       key={point.key}
                       cx={point.x}
                       cy={point.y}
-                      r={last ? 4.5 : 3}
-                      fill={last ? colors.accent : colors.bg}
-                      stroke={colors.accent}
-                      strokeWidth={last ? 0 : 2}
+                      r={last ? 3.5 : 2.5}
+                      fill={last ? colors.text : colors.bg}
+                      stroke={colors.text}
+                      strokeWidth={last ? 0 : LINE_WIDTH}
                     />
                   );
                 })}
@@ -283,17 +283,13 @@ const styles = StyleSheet.create({
   },
   single: {
     marginTop: spacing.lg,
-    rowGap: 2,
   },
-  singleRow: {
-    alignItems: 'baseline',
-    flexDirection: 'row',
-  },
-  unit: {
-    marginStart: spacing.xs + 1,
+  singleValue: {
+    marginBottom: 2,
+    marginTop: spacing.xs,
   },
   plot: {
-    marginTop: spacing.md,
+    marginTop: spacing.lg,
     width: '100%',
   },
   // Physical padding on purpose: it lines the labels up with a plot that does

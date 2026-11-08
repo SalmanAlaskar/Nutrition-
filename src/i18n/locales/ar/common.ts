@@ -9,7 +9,7 @@ export const common = {
   add: 'إضافة',
   back: 'رجوع',
   close: 'إغلاق',
-  retry: 'حاول مرة أخرى',
+  retry: 'أعد المحاولة',
   confirm: 'تأكيد',
   continue: 'متابعة',
   reset: 'إعادة تعيين',
@@ -18,12 +18,20 @@ export const common = {
   today: 'اليوم',
   yesterday: 'أمس',
   tomorrow: 'غداً',
-  loading: 'جاري التحميل',
+  loading: 'جارٍ التحميل',
   none: 'لا شيء',
   optional: 'اختياري',
   more: 'المزيد',
   notLoggedYet: 'لم تسجّل شيئاً بعد',
   seeAll: 'عرض الكل',
+
+  /* مفردات مشتركة للأقسام والأرقام حتى تتّفق الشاشات على نفس الصياغة. */
+  showMore: 'عرض المزيد',
+  showLess: 'عرض أقل',
+  total: 'الإجمالي',
+  average: 'المتوسط',
+  target: 'الهدف',
+  remaining: 'المتبقي',
 
   /* الحالة الفارغة الافتراضية حين لا تمرّر الشاشة نصاً خاصاً بها. */
   emptyTitle: 'لا يوجد شيء بعد',

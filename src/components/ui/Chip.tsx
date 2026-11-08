@@ -25,6 +25,13 @@ const DECORATIVE: AccessibilityProps = Platform.select<AccessibilityProps>({
   },
 });
 
+/**
+ * A filter row is never the most important thing on a screen, so a selected
+ * chip reads as ink on a tone by default. 'accent' is there for the rare chip
+ * row that *is* the screen's one accent.
+ */
+export type ChipTone = 'neutral' | 'accent';
+
 export interface ChipProps {
   label: string;
   selected?: boolean;
@@ -33,6 +40,8 @@ export interface ChipProps {
   icon?: string;
   /** Accent colour for the selected state; defaults to the theme accent. */
   color?: string;
+  /** How the selected state is coloured. Defaults to ink on a tone. */
+  tone?: ChipTone;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -44,13 +53,26 @@ const CHIP_HEIGHT = 34;
 /** The chip stays compact; the slop is what carries the target to 44 points. */
 const VERTICAL_SLOP = Math.ceil((MIN_TARGET - CHIP_HEIGHT) / 2);
 
-export function Chip({ label, selected = false, onPress, icon, color, style }: ChipProps) {
+export function Chip({
+  label,
+  selected = false,
+  onPress,
+  icon,
+  color,
+  tone = 'neutral',
+  style,
+}: ChipProps) {
   const { colors } = useTheme();
-  const tone = color ?? colors.accent;
 
-  const background = selected && !color ? colors.accentSoft : colors.surfaceAlt;
-  const borderColor = selected ? tone : 'transparent';
-  const foreground = selected ? tone : colors.textMuted;
+  // An explicit colour always wins: that is how a macro chip keeps its macro.
+  const selectedColor = color ?? (tone === 'accent' ? colors.accent : colors.text);
+  const foreground = selected ? selectedColor : colors.textMuted;
+  const background = selected
+    ? tone === 'accent' && !color
+      ? colors.accentSoft
+      : colors.surfaceAlt
+    : 'transparent';
+  const borderColor = selected ? colors.borderStrong : colors.border;
 
   const body = (
     <>
@@ -61,7 +83,7 @@ export function Chip({ label, selected = false, onPress, icon, color, style }: C
       ) : null}
       <Txt
         variant="label"
-        weight="semibold"
+        weight={selected ? 'semibold' : 'regular'}
         color={foreground}
         numberOfLines={1}
         tabular={HAS_DIGIT.test(label)}
@@ -87,7 +109,7 @@ export function Chip({ label, selected = false, onPress, icon, color, style }: C
       style={({ pressed }) => [
         styles.chip,
         { backgroundColor: background, borderColor },
-        pressed ? [styles.pressed, { backgroundColor: selected ? background : colors.border }] : null,
+        pressed ? [styles.pressed, { backgroundColor: colors.surfaceAlt }] : null,
         style,
       ]}
     >
@@ -101,15 +123,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     alignSelf: 'flex-start',
     borderRadius: radius.pill,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     columnGap: spacing.xs + 2,
     flexDirection: 'row',
     minHeight: CHIP_HEIGHT,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.md + 2,
     paddingVertical: spacing.sm - 2,
   },
   pressed: {
-    opacity: 0.8,
-    transform: [{ scale: 0.96 }],
+    opacity: 0.75,
   },
 });

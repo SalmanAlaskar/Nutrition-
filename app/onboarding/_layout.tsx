@@ -1,19 +1,11 @@
 import { Stack } from 'expo-router';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Platform,
-  StyleSheet,
-  View,
-  type AccessibilityProps,
-  type StyleProp,
-  type TextStyle,
-} from 'react-native';
+import { Platform, StyleSheet, View, type AccessibilityProps } from 'react-native';
 
 import { Txt } from '@/components/ui';
 import { formatCount } from '@/domain/format';
 import { isValidProfileInput } from '@/domain/nutrition';
-import { useDirection } from '@/i18n';
 import { radius, spacing, useTheme } from '@/theme';
 import type { ActivityLevel, Goal, Sex, UnitSystem } from '@/types';
 
@@ -114,9 +106,6 @@ export function planDraftParams(draft: PlanDraft): Record<string, string> {
   };
 }
 
-/** Re-exported so existing imports keep working; the implementation moved. */
-export { formatCount };
-
 /* ------------------------------------------------------------- chrome -- */
 
 /** Decoration is hidden from assistive tech; the DOM only understands aria-hidden. */
@@ -132,32 +121,10 @@ const DECORATIVE: AccessibilityProps = Platform.select<AccessibilityProps>({
 export const ONBOARDING_STEPS = 3;
 
 /**
- * Small section label above a group. Latin copy gets the caps-and-tracking
- * treatment; Arabic is cursive, so tracking is removed rather than added.
+ * Where the person is in the three steps. It sits above the title as a quiet
+ * line of type: the step count is orientation, never the point of the screen,
+ * so the bars are neutral and the accent is left for the button below.
  */
-export function Eyebrow({
-  label,
-  style,
-}: {
-  label: string;
-  style?: StyleProp<TextStyle>;
-}) {
-  const { isRTL } = useDirection();
-
-  return (
-    <Txt
-      variant="caption"
-      color="faint"
-      weight="semibold"
-      numberOfLines={1}
-      style={[isRTL ? chrome.eyebrowArabic : chrome.eyebrowLatin, style]}
-    >
-      {label}
-    </Txt>
-  );
-}
-
-/** Where the person is in the three steps: filled bars plus the count. */
 export function StepProgress({ current }: { current: number }) {
   const { colors } = useTheme();
   const { t } = useTranslation('onboarding');
@@ -169,47 +136,41 @@ export function StepProgress({ current }: { current: number }) {
 
   return (
     <View accessible accessibilityLabel={label} style={chrome.stepRow}>
+      <Txt variant="caption" color="faint" weight="medium" numberOfLines={1}>
+        {label}
+      </Txt>
       <View style={chrome.stepBars} {...DECORATIVE}>
         {Array.from({ length: ONBOARDING_STEPS }, (_, index) => (
           <View
             key={index}
             style={[
               chrome.stepBar,
-              { backgroundColor: index < current ? colors.accent : colors.track },
+              { backgroundColor: index < current ? colors.textMuted : colors.track },
             ]}
           />
         ))}
       </View>
-      <Txt variant="caption" color="faint" weight="medium" numberOfLines={1}>
-        {label}
-      </Txt>
     </View>
   );
 }
 
 const chrome = StyleSheet.create({
-  eyebrowLatin: {
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-  },
-  eyebrowArabic: {
-    letterSpacing: 0,
-  },
   stepRow: {
     alignItems: 'center',
     columnGap: spacing.md,
     flexDirection: 'row',
-    marginBottom: spacing.xl,
+    paddingTop: spacing.sm,
   },
   stepBars: {
     columnGap: spacing.xs,
     flex: 1,
     flexDirection: 'row',
+    maxWidth: 120,
   },
   stepBar: {
     borderRadius: radius.pill,
     flex: 1,
-    height: spacing.xs,
+    height: 2,
   },
 });
 

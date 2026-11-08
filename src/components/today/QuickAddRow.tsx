@@ -5,18 +5,17 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
-  View,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
 
 import { useFoodLabels } from '@/components/meal/useFoodLabels';
-import { Chip, Txt } from '@/components/ui';
+import { Chip, Section } from '@/components/ui';
 import { defaultServing, entryFromFood, popularFoods } from '@/data/foodSearch';
 import { currentSlot } from '@/domain/date';
 import { makeId } from '@/domain/id';
 import { useApp } from '@/state/AppStore';
-import { spacing, useTheme } from '@/theme';
+import { layout, spacing, useTheme } from '@/theme';
 import type { FoodItem, Meal } from '@/types';
 
 export interface QuickAddRowProps {
@@ -95,16 +94,12 @@ export function QuickAddRow({ date, style }: QuickAddRowProps) {
   if (foods.length === 0) return null;
 
   return (
-    <View style={style}>
-      <View style={styles.heading}>
-        <Txt variant="caption" color="faint" weight="semibold">
-          {t('quickAddTitle')}
-        </Txt>
-        <Txt variant="label" color="muted" style={styles.hint}>
-          {t('quickAddHint', { slot: labels.slot(slot) })}
-        </Txt>
-      </View>
-
+    <Section
+      title={t('quickAddTitle')}
+      subtitle={t('quickAddHint', { slot: labels.slot(slot) })}
+      style={style}
+      contentStyle={styles.bleed}
+    >
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -113,17 +108,14 @@ export function QuickAddRow({ date, style }: QuickAddRowProps) {
         {foods.map((food) => {
           const state = feedback?.foodId === food.id ? feedback : null;
           // The chip carries its own result for a beat: the list is long and a
-          // toast somewhere else would not say which food landed.
+          // toast somewhere else would not say which food landed. Idle chips
+          // carry no glyph — twelve plus signs say nothing the row has not.
           const label = state
             ? state.ok
               ? t('quickAddDone')
               : t('quickAddFailed')
             : labels.name(food);
-          const icon = state
-            ? state.ok
-              ? 'checkmark-circle'
-              : 'alert-circle'
-            : 'add-circle-outline';
+          const icon = state ? (state.ok ? 'checkmark' : 'alert-circle') : undefined;
 
           return (
             <Chip
@@ -140,24 +132,21 @@ export function QuickAddRow({ date, style }: QuickAddRowProps) {
           );
         })}
       </ScrollView>
-    </View>
+    </Section>
   );
 }
 
 const styles = StyleSheet.create({
-  heading: {
-    paddingHorizontal: spacing.lg,
-    rowGap: 2,
-  },
-  hint: {
-    marginTop: 1,
+  // The row runs to both screen edges, so it reads as something to scroll
+  // rather than as a block that stops short of the margin.
+  bleed: {
+    marginHorizontal: -layout.gutter,
   },
   content: {
     columnGap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
+    paddingHorizontal: layout.gutter,
   },
   chip: {
-    minHeight: 44,
+    minHeight: layout.minTarget,
   },
 });

@@ -9,7 +9,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
-import { fontSize, radius, spacing, useTheme } from '@/theme';
+import { radius, spacing, useTheme } from '@/theme';
 
 import { Txt } from './Txt';
 
@@ -25,6 +25,12 @@ const DECORATIVE: AccessibilityProps = Platform.select<AccessibilityProps>({
 });
 
 export type StatTone = 'default' | 'accent' | 'danger' | 'warning';
+/**
+ * 'plain' is the default: the figure sits on the page with nothing drawn round
+ * it, and space does the grouping. 'tile' puts it back on a tonal surface, for
+ * the few places a figure really is a bounded object you could point at.
+ */
+export type StatTileVariant = 'plain' | 'tile';
 
 export interface StatTileProps {
   label: string;
@@ -32,25 +38,41 @@ export interface StatTileProps {
   /** Small unit printed after the value, e.g. "kcal". */
   unit?: string;
   hint?: string;
-  /** Ionicons glyph shown in the corner bubble. */
+  /** Ionicons glyph. Drawn only when `showIcon` is on; a figure rarely needs one. */
   icon?: string;
   tone?: StatTone;
+  variant?: StatTileVariant;
+  /** Draws `icon` beside the label. Off by default: the label already says it. */
+  showIcon?: boolean;
+  align?: 'start' | 'center';
   style?: StyleProp<ViewStyle>;
 }
 
-export function StatTile({ label, value, unit, hint, icon, tone = 'default', style }: StatTileProps) {
+export function StatTile({
+  label,
+  value,
+  unit,
+  hint,
+  icon,
+  tone = 'default',
+  variant = 'plain',
+  showIcon = false,
+  align = 'start',
+  style,
+}: StatTileProps) {
   const { colors } = useTheme();
 
-  const toneColor =
+  const valueColor =
     tone === 'accent'
       ? colors.accent
       : tone === 'danger'
         ? colors.danger
         : tone === 'warning'
           ? colors.warning
-          : colors.textMuted;
+          : colors.text;
 
   const spoken = [label, `${value}${unit ? ` ${unit}` : ''}`, hint].filter(Boolean).join('. ');
+  const centred = align === 'center';
 
   return (
     <View
@@ -58,52 +80,59 @@ export function StatTile({ label, value, unit, hint, icon, tone = 'default', sty
       accessibilityLabel={spoken}
       style={[
         styles.tile,
-        { backgroundColor: colors.surface, borderColor: colors.border },
+        centred ? styles.centred : null,
+        variant === 'tile'
+          ? [styles.boxed, { backgroundColor: colors.surface }]
+          : null,
         style,
       ]}
     >
-      {/* A tone reads as a stripe down the leading edge, not as coloured body text. */}
-      {tone !== 'default' ? (
-        <View style={[styles.stripe, { backgroundColor: toneColor }]} {...DECORATIVE} />
-      ) : null}
-
-      <View style={styles.top}>
-        <Txt variant="caption" color="faint" weight="bold" numberOfLines={1} style={styles.label}>
-          {label.toUpperCase()}
-        </Txt>
-        {icon ? (
-          <View
-            style={[
-              styles.bubble,
-              { backgroundColor: tone === 'default' ? colors.surfaceAlt : colors.accentSoft },
-            ]}
-            {...DECORATIVE}
-          >
-            <Ionicons name={icon as IconName} size={14} color={toneColor} />
-          </View>
-        ) : null}
-      </View>
-
-      <View style={styles.valueRow}>
-        <Txt
-          variant="heading"
-          weight="bold"
-          color={tone === 'default' ? 'text' : toneColor}
-          numberOfLines={1}
-          tabular
-          style={styles.value}
-        >
-          {value}
-        </Txt>
+      {/*
+        The figure leads. Its unit is nested inside the same text run, never a
+        sibling: laid out as two elements Arabic reorders them and a unit that
+        starts with a digit would glue itself onto the number.
+      */}
+      <Txt
+        variant="metric"
+        color={valueColor}
+        numberOfLines={1}
+        tabular
+        align={centred ? 'center' : 'start'}
+        style={styles.value}
+      >
+        {value}
         {unit ? (
-          <Txt variant="caption" color="faint" weight="semibold" style={styles.unit}>
-            {unit}
+          <Txt variant="label" color="faint" weight="medium">
+            {` ${unit}`}
           </Txt>
         ) : null}
+      </Txt>
+
+      <View style={[styles.labelRow, centred ? styles.centredRow : null]}>
+        {showIcon && icon ? (
+          <View {...DECORATIVE}>
+            <Ionicons name={icon as IconName} size={13} color={colors.textFaint} />
+          </View>
+        ) : null}
+        <Txt
+          variant="label"
+          color="muted"
+          numberOfLines={1}
+          align={centred ? 'center' : 'start'}
+          style={styles.label}
+        >
+          {label}
+        </Txt>
       </View>
 
       {hint ? (
-        <Txt variant="caption" color="muted" numberOfLines={2} style={styles.hint}>
+        <Txt
+          variant="caption"
+          color="faint"
+          numberOfLines={2}
+          align={centred ? 'center' : 'start'}
+          style={styles.hint}
+        >
           {hint}
         </Txt>
       ) : null}
@@ -113,56 +142,35 @@ export function StatTile({ label, value, unit, hint, icon, tone = 'default', sty
 
 const styles = StyleSheet.create({
   tile: {
-    borderRadius: radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
     flexGrow: 1,
     flexShrink: 1,
-    minWidth: 120,
-    overflow: 'hidden',
-    paddingBottom: spacing.lg,
-    paddingStart: spacing.lg,
-    paddingEnd: spacing.md,
-    paddingTop: spacing.md,
+    minWidth: 104,
   },
-  stripe: {
-    bottom: 0,
-    position: 'absolute',
-    // Logical inset: the accent stripe stays on the reading edge in Arabic.
-    start: 0,
-    top: 0,
-    width: 3,
-  },
-  top: {
+  centred: {
     alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    minHeight: 24,
   },
-  label: {
-    flexShrink: 1,
-    marginEnd: spacing.sm,
+  boxed: {
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
   },
-  bubble: {
+  value: {
+    // A figure never shrinks or wraps to fit its column.
+    flexShrink: 0,
+  },
+  labelRow: {
     alignItems: 'center',
-    borderRadius: radius.pill,
-    height: 24,
-    justifyContent: 'center',
-    width: 24,
-  },
-  valueRow: {
-    alignItems: 'baseline',
+    columnGap: spacing.xs + 2,
     flexDirection: 'row',
     marginTop: spacing.xs,
   },
-  value: {
-    flexShrink: 1,
-    fontSize: fontSize.xl + 2,
-    letterSpacing: -0.6,
+  centredRow: {
+    justifyContent: 'center',
   },
-  unit: {
-    marginStart: spacing.xs + 1,
+  label: {
+    flexShrink: 1,
   },
   hint: {
-    marginTop: spacing.xs + 2,
+    marginTop: spacing.xs,
   },
 });

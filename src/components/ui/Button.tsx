@@ -71,11 +71,13 @@ export function Button({
   const metrics = SIZES[size];
   const inert = disabled || loading;
 
+  // Tone, not outline. Only the primary button carries the accent, and it is
+  // the one thing on a screen allowed to.
   const palette = {
     primary: { bg: colors.accent, border: colors.accent, fg: colors.accentText },
-    secondary: { bg: colors.surfaceAlt, border: colors.border, fg: colors.text },
-    ghost: { bg: 'transparent', border: 'transparent', fg: colors.accent },
-    danger: { bg: 'transparent', border: colors.danger, fg: colors.danger },
+    secondary: { bg: colors.surfaceAlt, border: 'transparent', fg: colors.text },
+    ghost: { bg: 'transparent', border: 'transparent', fg: colors.text },
+    danger: { bg: colors.dangerSoft, border: 'transparent', fg: colors.danger },
   }[variant];
 
   // Pressing shifts the surface a step as well as dimming, so the state is felt
@@ -84,7 +86,7 @@ export function Button({
     primary: colors.accent,
     secondary: colors.surface,
     ghost: colors.surfaceAlt,
-    danger: colors.surfaceAlt,
+    danger: colors.surface,
   }[variant];
 
   // A short button keeps its drawn height but never a target under 44pt.

@@ -33,8 +33,12 @@ export interface ListRowProps {
   left?: React.ReactNode;
   right?: React.ReactNode;
   onPress?: () => void;
-  /** Ionicons glyph shown in a leading bubble. */
+  /** Ionicons glyph at the leading edge. Drawn flat unless `iconBubble` is on. */
   icon?: string;
+  /** Puts the leading glyph back in a tonal bubble, for rows that are objects. */
+  iconBubble?: boolean;
+  /** Indents the row from its container. Off by default: the page has a gutter. */
+  inset?: boolean;
   /** Paints the title and icon with the danger colour. */
   destructive?: boolean;
   chevron?: boolean;
@@ -60,6 +64,8 @@ export function ListRow({
   right,
   onPress,
   icon,
+  iconBubble = false,
+  inset = false,
   destructive = false,
   chevron = false,
   style,
@@ -68,22 +74,26 @@ export function ListRow({
   const { isRTL } = useDirection();
   const titleColor = destructive ? colors.danger : colors.text;
   const splitRight = Boolean(onPress) && isInteractive(right);
+  const glyphColor = destructive ? colors.danger : colors.textMuted;
 
   const leading =
     left ??
     (icon ? (
-      <View style={[styles.bubble, { backgroundColor: colors.surfaceAlt }]} {...DECORATIVE}>
-        <Ionicons
-          name={icon as IconName}
-          size={18}
-          color={destructive ? colors.danger : colors.textMuted}
-        />
-      </View>
+      iconBubble ? (
+        <View style={[styles.bubble, { backgroundColor: colors.surfaceAlt }]} {...DECORATIVE}>
+          <Ionicons name={icon as IconName} size={17} color={glyphColor} />
+        </View>
+      ) : (
+        <View style={styles.glyph} {...DECORATIVE}>
+          <Ionicons name={icon as IconName} size={19} color={glyphColor} />
+        </View>
+      )
     ) : null);
 
   const text = (
     <View style={styles.text}>
-      <Txt weight="semibold" color={titleColor} numberOfLines={1}>
+      {/* Size and colour separate the two lines; the title needs no extra weight. */}
+      <Txt color={titleColor} numberOfLines={1}>
         {title}
       </Txt>
       {subtitle ? (
@@ -99,17 +109,18 @@ export function ListRow({
     <View {...DECORATIVE}>
       <Ionicons
         name={mirrorIcon('chevron-forward', isRTL) as IconName}
-        size={18}
+        size={16}
         color={colors.textFaint}
       />
     </View>
   ) : null;
 
   const label = subtitle ? `${title}. ${subtitle}` : title;
+  const pad = inset ? styles.rowInset : styles.rowFlush;
 
   if (!onPress) {
     return (
-      <View style={[styles.row, styles.rowPadded, style]}>
+      <View style={[styles.row, pad, style]}>
         {leading}
         {text}
         {right}
@@ -126,8 +137,8 @@ export function ListRow({
         accessibilityLabel={label}
         style={({ pressed }) => [
           styles.row,
-          styles.rowPadded,
-          pressed ? { backgroundColor: colors.surfaceAlt } : null,
+          pad,
+          pressed ? [styles.pressed, { backgroundColor: colors.surfaceAlt }] : null,
           style,
         ]}
       >
@@ -140,7 +151,7 @@ export function ListRow({
   }
 
   return (
-    <View style={[styles.row, styles.rowSplit, style]}>
+    <View style={[styles.row, inset ? styles.splitInset : null, style]}>
       <Pressable
         onPress={onPress}
         accessibilityRole="button"
@@ -148,7 +159,8 @@ export function ListRow({
         style={({ pressed }) => [
           styles.row,
           styles.tapTarget,
-          pressed ? { backgroundColor: colors.surfaceAlt } : null,
+          inset ? styles.tapTargetInset : null,
+          pressed ? [styles.pressed, { backgroundColor: colors.surfaceAlt }] : null,
         ]}
       >
         {leading}
@@ -167,25 +179,38 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     minHeight: 56,
   },
-  rowPadded: {
+  rowFlush: {
+    paddingVertical: spacing.md,
+  },
+  rowInset: {
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
-  rowSplit: {
+  splitInset: {
     paddingEnd: spacing.md,
   },
   tapTarget: {
     alignSelf: 'stretch',
     flex: 1,
-    paddingStart: spacing.lg,
     paddingVertical: spacing.md,
+  },
+  tapTargetInset: {
+    paddingStart: spacing.lg,
+  },
+  pressed: {
+    borderRadius: radius.md,
   },
   bubble: {
     alignItems: 'center',
     borderRadius: radius.md,
-    height: 36,
+    height: 34,
     justifyContent: 'center',
-    width: 36,
+    width: 34,
+  },
+  glyph: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 22,
   },
   text: {
     flex: 1,

@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 
 import { useFoodLabels } from '@/components/meal/useFoodLabels';
-import { Card, Divider, IconButton, Txt } from '@/components/ui';
+import { Divider, IconButton, Txt } from '@/components/ui';
 import { formatCount } from '@/domain/format';
 import { mealMacros } from '@/domain/totals';
 import { radius, spacing, useTheme } from '@/theme';
@@ -36,6 +36,7 @@ export interface MealSectionProps {
   style?: StyleProp<ViewStyle>;
 }
 
+/** A slot glyph is the fastest way to tell four meals apart, so it stays. */
 const SLOT_GLYPHS: Record<MealSlot, IconName> = {
   breakfast: 'partly-sunny-outline',
   lunch: 'sunny-outline',
@@ -52,9 +53,9 @@ const DECORATIVE: AccessibilityProps = Platform.select<AccessibilityProps>({
   },
 });
 
-function itemCount(meals: Meal[]): number {
-  return meals.reduce((count, meal) => count + meal.entries.length, 0);
-}
+/** Thumbnail size, and the indent everything under a slot header lines up to. */
+const THUMB = 38;
+const ROW_INDENT = THUMB + spacing.md;
 
 interface DeletePrompt {
   title: string;
@@ -77,6 +78,10 @@ function confirmDelete(prompt: DeletePrompt): void {
   ]);
 }
 
+/**
+ * One slot of the day as a run of list rows: a header line, then a meal per
+ * row. No card — the four slots are a single list, not four boxes.
+ */
 export function MealSection({
   slot,
   meals,
@@ -125,17 +130,18 @@ export function MealSection({
     [onDelete, summarize, t],
   );
 
+  // Flat and muted: four accent bubbles would be four accents on one screen.
   const glyph = (
-    <View style={[styles.glyph, { backgroundColor: colors.surfaceAlt }]} {...DECORATIVE}>
-      <Ionicons name={SLOT_GLYPHS[slot]} size={18} color={colors.accent} />
+    <View style={styles.glyph} {...DECORATIVE}>
+      <Ionicons name={SLOT_GLYPHS[slot]} size={19} color={colors.textMuted} />
     </View>
   );
 
-  // An empty slot is one quiet affordance: the whole header is the tap target,
+  // An empty slot is one quiet affordance: the whole line is the tap target,
   // so there is no button inside a button and nothing extra to read out.
   if (empty) {
     return (
-      <Card padded={false} style={style}>
+      <View style={style}>
         <Pressable
           onPress={onAdd}
           accessibilityRole="button"
@@ -143,37 +149,32 @@ export function MealSection({
           accessibilityHint={t('today:logSlotHint')}
           style={({ pressed }) => [
             styles.header,
-            pressed ? { backgroundColor: colors.surfaceAlt } : null,
+            pressed ? [styles.pressed, { backgroundColor: colors.surfaceAlt }] : null,
           ]}
         >
           {glyph}
-          <View style={styles.headerText}>
-            <Txt weight="semibold">{label}</Txt>
-            <Txt variant="label" color="faint">
-              {t('common:notLoggedYet')}
-            </Txt>
-          </View>
-          <View style={styles.addHint} {...DECORATIVE}>
+          <Txt weight="semibold" numberOfLines={1} style={styles.headerTitle}>
+            {label}
+          </Txt>
+          <Txt variant="label" color="faint" numberOfLines={1}>
+            {t('common:notLoggedYet')}
+          </Txt>
+          <View style={styles.addGlyph} {...DECORATIVE}>
             <Ionicons name="add" size={20} color={colors.textFaint} />
           </View>
         </Pressable>
-      </Card>
+      </View>
     );
   }
 
-  const items = itemCount(meals);
-
   return (
-    <Card padded={false} style={style}>
+    <View style={style}>
       <View style={styles.header}>
         {glyph}
 
-        <View style={styles.headerText}>
-          <Txt weight="semibold">{label}</Txt>
-          <Txt variant="label" color="muted">
-            {foodLabels.items(items)}
-          </Txt>
-        </View>
+        <Txt weight="semibold" numberOfLines={1} style={styles.headerTitle}>
+          {label}
+        </Txt>
 
         <View
           accessible
@@ -181,13 +182,13 @@ export function MealSection({
             slot: label,
             value: formatCount(calories),
           })}
-          style={styles.subtotal}
         >
-          <Txt variant="label" weight="bold" tabular>
+          {/* Figure and unit in one run: as siblings Arabic reorders them. */}
+          <Txt variant="label" weight="semibold" tabular numberOfLines={1}>
             {formatCount(calories)}
-          </Txt>
-          <Txt variant="label" color="faint">
-            {t('units:kcal')}
+            <Txt variant="caption" color="faint" weight="regular">
+              {` ${t('units:kcal')}`}
+            </Txt>
           </Txt>
         </View>
 
@@ -195,8 +196,9 @@ export function MealSection({
           icon="add"
           onPress={onAdd}
           accessibilityLabel={t('today:addToSlot', { slot: label })}
-          variant="surface"
           size={18}
+          color={colors.textMuted}
+          style={styles.addButton}
         />
       </View>
 
@@ -208,7 +210,7 @@ export function MealSection({
 
         return (
           <View key={meal.id}>
-            <Divider inset={index > 0} />
+            {index > 0 ? <Divider style={styles.rowDivider} /> : null}
             {/* The row and its delete action are siblings: a Pressable nested
                 inside a Pressable renders an invalid <button> in <button>. */}
             <View style={styles.rowWrap}>
@@ -229,7 +231,7 @@ export function MealSection({
                 accessibilityHint={t('today:openMealHint')}
                 style={({ pressed }) => [
                   styles.row,
-                  pressed ? { backgroundColor: colors.surfaceAlt } : null,
+                  pressed ? [styles.pressed, { backgroundColor: colors.surfaceAlt }] : null,
                 ]}
               >
                 {meal.photoUri ? (
@@ -241,31 +243,27 @@ export function MealSection({
                     accessibilityIgnoresInvertColors
                   />
                 ) : (
+                  // A plain tone, not a repeat of the slot glyph above it: the
+                  // square is here to keep the list aligned, nothing more.
                   <View
-                    style={[styles.thumb, styles.thumbFallback, { backgroundColor: colors.surfaceAlt }]}
+                    style={[styles.thumb, { backgroundColor: colors.surfaceAlt }]}
                     {...DECORATIVE}
-                  >
-                    <Ionicons name={SLOT_GLYPHS[slot]} size={15} color={colors.textFaint} />
-                  </View>
+                  />
                 )}
 
                 <View style={styles.rowText}>
-                  <Txt weight="medium" numberOfLines={1}>
-                    {title}
-                  </Txt>
+                  <Txt numberOfLines={1}>{title}</Txt>
                   <Txt variant="label" color="muted" numberOfLines={1} style={styles.rowMeta}>
                     {time ? `${time} · ${countText}` : countText}
                   </Txt>
                 </View>
 
-                <View style={styles.rowValue}>
-                  <Txt variant="label" weight="semibold" tabular>
-                    {formatCount(mealCalories)}
-                  </Txt>
+                <Txt variant="label" tabular numberOfLines={1}>
+                  {formatCount(mealCalories)}
                   <Txt variant="caption" color="faint">
-                    {t('units:kcal')}
+                    {` ${t('units:kcal')}`}
                   </Txt>
-                </View>
+                </Txt>
               </Pressable>
 
               <IconButton
@@ -279,7 +277,7 @@ export function MealSection({
           </View>
         );
       })}
-    </Card>
+    </View>
   );
 }
 
@@ -288,64 +286,53 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     columnGap: spacing.md,
     flexDirection: 'row',
-    minHeight: 64,
-    paddingStart: spacing.lg,
-    paddingEnd: spacing.sm,
-    paddingVertical: spacing.md,
+    minHeight: 52,
+  },
+  headerTitle: {
+    flex: 1,
   },
   glyph: {
     alignItems: 'center',
-    borderRadius: radius.md,
-    height: 36,
     justifyContent: 'center',
-    width: 36,
+    width: THUMB,
   },
-  headerText: {
-    flex: 1,
-    rowGap: 1,
-  },
-  addHint: {
+  addGlyph: {
     alignItems: 'center',
-    height: 36,
+    height: 32,
     justifyContent: 'center',
-    width: 36,
+    width: 32,
   },
-  subtotal: {
-    alignItems: 'baseline',
-    columnGap: spacing.xs,
-    flexDirection: 'row',
+  addButton: {
+    marginEnd: -spacing.sm,
+  },
+  pressed: {
+    borderRadius: radius.md,
   },
   rowWrap: {
     alignItems: 'center',
     flexDirection: 'row',
-    paddingEnd: spacing.xs,
   },
   row: {
     alignItems: 'center',
     columnGap: spacing.md,
     flex: 1,
     flexDirection: 'row',
-    minHeight: 62,
-    paddingStart: spacing.lg,
-    paddingEnd: spacing.sm,
+    minHeight: 58,
     paddingVertical: spacing.sm,
+  },
+  rowDivider: {
+    marginStart: ROW_INDENT,
+    width: 'auto',
   },
   thumb: {
     borderRadius: radius.md,
-    height: 40,
-    width: 40,
-  },
-  thumbFallback: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    height: THUMB,
+    width: THUMB,
   },
   rowText: {
     flex: 1,
   },
   rowMeta: {
     marginTop: 2,
-  },
-  rowValue: {
-    alignItems: 'flex-end',
   },
 });

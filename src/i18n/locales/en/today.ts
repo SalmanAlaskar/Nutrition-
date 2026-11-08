@@ -69,13 +69,13 @@ export const today = {
   ringSpoken: '{{eaten}} of {{target}} calories. {{state}}.',
 
   /* ---------------------------------------------------------- quick add -- */
-  quickAddTitle: 'QUICK ADD',
-  quickAddHint: 'One tap logs a standard serving to {{slot}}',
+  quickAddTitle: 'Quick add',
+  quickAddHint: 'One tap logs a serving to {{slot}}',
   quickAddDone: 'Added',
   quickAddFailed: 'Try again',
 
   /* ----------------------------------------------------- training card -- */
-  trainingTitle: 'TRAINING',
+  trainingTitle: 'Training',
   restDay: 'Rest day',
   restDayBody: 'No session planned. Recovery is part of the week.',
   sessionDay: '{{label}} day',
@@ -93,7 +93,7 @@ export const today = {
   musclesCardio: 'Heart and lungs',
 
   /* ------------------------------------------------------ meal sections -- */
-  mealsTitle: 'MEALS',
+  mealsTitle: 'Meals',
   mealsTotal: '{{value}} kcal',
   itemsOne: '1 item',
   itemsOther: '{{value}} items',

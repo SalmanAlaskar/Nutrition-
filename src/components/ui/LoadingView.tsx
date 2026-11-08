@@ -2,7 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { radius, spacing, useTheme } from '@/theme';
+import { spacing, useTheme } from '@/theme';
 
 import { Txt } from './Txt';
 
@@ -24,9 +24,7 @@ export function LoadingView({ message, style }: LoadingViewProps) {
       accessibilityLabel={label}
       accessible
     >
-      <View style={[styles.disc, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <ActivityIndicator size="small" color={colors.accent} />
-      </View>
+      <ActivityIndicator size="small" color={colors.textMuted} />
       <Txt variant="label" color="muted" align="center" style={styles.message}>
         {label}
       </Txt>
@@ -41,14 +39,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.xxl,
-  },
-  disc: {
-    alignItems: 'center',
-    borderRadius: radius.pill,
-    borderWidth: StyleSheet.hairlineWidth,
-    height: 56,
-    justifyContent: 'center',
-    width: 56,
   },
   message: {
     marginTop: spacing.md,

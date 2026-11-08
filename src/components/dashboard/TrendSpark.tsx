@@ -30,16 +30,17 @@ export interface TrendSparkProps {
   style?: StyleProp<ViewStyle>;
 }
 
-const DEFAULT_HEIGHT = 28;
+const DEFAULT_HEIGHT = 18;
 /** Keeps the stroke and the end dot inside the measured box. */
-const INSET = 4;
+const INSET = 3;
 
 /**
  * The shape of a series, at the size of a line of text.
  *
- * Deliberately unlabelled: the figure beside it already carries the number, so
- * this only has to say which way the readings went. Geometry is left to right
- * in both languages, the way a time axis reads everywhere.
+ * Texture, not a chart: the figure beside it already carries the number, so
+ * this only has to say which way the readings went, and it stays small and
+ * quiet enough never to compete with it. Geometry is left to right in both
+ * languages, the way a time axis reads everywhere.
  */
 export function TrendSpark({ values, color, height = DEFAULT_HEIGHT, style }: TrendSparkProps) {
   const { colors } = useTheme();
@@ -88,12 +89,11 @@ export function TrendSpark({ values, color, height = DEFAULT_HEIGHT, style }: Tr
             points={model.polyline}
             fill="none"
             stroke={stroke}
-            strokeWidth={1.75}
+            strokeWidth={1.5}
             strokeLinecap="round"
             strokeLinejoin="round"
-            opacity={0.9}
           />
-          <Circle cx={last.x} cy={last.y} r={2.5} fill={stroke} />
+          <Circle cx={last.x} cy={last.y} r={2} fill={stroke} />
         </Svg>
       ) : (
         <View style={[styles.rule, { backgroundColor: colors.border }]} />
@@ -109,7 +109,7 @@ const styles = StyleSheet.create({
   },
   rule: {
     borderRadius: radius.pill,
-    height: 2,
+    height: 1,
     width: '100%',
   },
 });

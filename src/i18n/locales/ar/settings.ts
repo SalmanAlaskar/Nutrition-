@@ -97,6 +97,57 @@ export const settings = {
     'حدد كل ما في الصندوق وانسخه، ثم الصقه في ملف باسم nutrition-export.json.',
   exportSheetClose: 'إغلاق نافذة التصدير',
 
+  importTitle: 'استيراد بياناتي',
+  importHint:
+    'يقرأ ملف التصدير من جديد. وكل سجل يحمل معرّفاً موجوداً عندك يحلّ محلّه، فاستيراد الملف نفسه مرتين لا يغيّر شيئاً في المرة الثانية.',
+  importPick: 'اختر ملفاً',
+  importPickHint: 'يفتح ملفاتك لتختار ملف التصدير',
+  importPasteOpen: 'الصق الملف بدل اختياره',
+  importPasteLabel: 'محتوى ملف التصدير',
+  importPasteFieldHint: 'الصق الملف كاملاً، من أول قوس إلى آخر قوس.',
+  importPasteConfirm: 'استورد ما لصقته',
+  importPasteClose: 'إلغاء اللصق',
+  importBusy: 'نقرأ الملف',
+  importFileError: 'تعذر فتح الملف. اختره مرة أخرى أو الصق محتواه.',
+  importError: 'تعذر استيراد الملف. حاول بعد قليل.',
+
+  importReplaceTitle: 'بعض ما في الملف موجود عندك',
+  importReplaceMessage:
+    '{{value}} سجلات في هذا الملف تحمل معرّفات موجودة عندك، والاستيراد يستبدلها. وما عداها يُضاف.',
+  importReplaceMessageOne:
+    'سجل واحد في هذا الملف يحمل معرّفاً موجوداً عندك، والاستيراد يستبدله. وما عداه يُضاف.',
+  importReplaceAction: 'استورد على كل حال',
+
+  importDoneTitle: 'انتهى الاستيراد',
+  importFailedTitle: 'لم يُستورد شيء',
+  importTotals: 'المُضاف {{added}}، والمُستبدَل {{replaced}}، والمتروك {{skipped}}.',
+  importKindCounts: '{{kind}}: المُضاف {{added}}، والمُستبدَل {{replaced}}، والمتروك {{skipped}}.',
+  importNothingChanged: 'كل ما في الملف كان عندك أصلاً كما هو.',
+
+  importKindScans: 'قياسات الجسم',
+  importKindWeights: 'سجل الوزن',
+  importKindMeals: 'الوجبات',
+  importKindWorkouts: 'حصص التمرين',
+  importKindProgram: 'برنامج التمرين',
+  importKindCustomFoods: 'أطعمتك',
+  importKindCustomExercises: 'تمارينك',
+  importKindProfile: 'الملف الشخصي',
+  importKindSettings: 'الإعدادات',
+
+  importProblemNotJson: 'هذا الملف ليس بصيغة JSON، فلا شيء فيه يُقرأ.',
+  importProblemNotObject: 'الملف بصيغة JSON لكنه ليس ملف تصدير بيانات.',
+  importProblemVersion: 'الملف مكتوب بالصيغة {{value}}، والتطبيق يقرأ الصيغة 1.',
+  importProblemVersionUnknown: 'الملف يعلن صيغة لا يقرأها التطبيق، فلم يُمسّ شيء.',
+  importProblemNothing: 'لا شيء في هذا الملف يطابق ما يحفظه التطبيق.',
+  importProblemWrongShape: '{{kind}}: القيمة هنا من نوع غير متوقع، فلم يُقرأ منها شيء.',
+  importProblemWrongShapeDay: '{{kind}}: ما يخص يوم {{date}} ليس قائمة، فتُرك.',
+  importProblemBadRecord: '{{kind}}: السجل رقم {{position}} بلا معرّف، فتُرك.',
+  importProblemDuplicate: '{{kind}}: {{id}} مكرر في الملف، فقُرئ أوله فقط.',
+  importProblemBadDate: '{{kind}}: {{id}} بلا تاريخ بصيغة YYYY-MM-DD، فتُرك.',
+  importProblemBadWeight: '{{kind}}: {{id}} بلا وزن أكبر من صفر، فتُرك.',
+  importProblemBadFields: '{{kind}}: {{id}} ينقصه ما لا يستغني عنه، فتُرك.',
+  importProblemMore: 'وهناك {{value}} غيرها مثلها.',
+
   eraseTitle: 'مسح كل شيء',
   eraseBody:
     'يحذف ملفك وكل وجبة سجلتها وما يشير إليها من صور، وسجل وزنك وأطعمتك وإعداداتك والمفتاح المحفوظ. الصور الموجودة في معرض جهازك لا تُمس.',
