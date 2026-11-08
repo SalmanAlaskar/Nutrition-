@@ -77,5 +77,7 @@ export const common = {
   monthSep: 'Sep',
   monthOct: 'Oct',
   monthNov: 'Nov',
-  monthDec: 'Dec'
+  monthDec: 'Dec',
+  pickerDoneAction: 'Done',
+  pickerOpenHint: 'Opens the wheel so you can change it',
 } as const;

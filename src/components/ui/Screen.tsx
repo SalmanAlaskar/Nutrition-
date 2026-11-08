@@ -60,6 +60,10 @@ export function Screen({
         // A screen ends well clear of the tab bar; nothing should feel crowded
         // against the bottom edge.
         { paddingHorizontal: gutter, paddingBottom: bottom + (padded ? spacing.xxl : 0) },
+        // The app is designed for a phone. On a laptop the same layout stretched
+        // edge to edge across the whole window, so the content keeps a readable
+        // column and centres itself once there is more room than it needs.
+        styles.column,
         contentStyle,
       ]}
       keyboardShouldPersistTaps="handled"
@@ -113,5 +117,10 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
+  },
+  column: {
+    alignSelf: 'center',
+    maxWidth: layout.maxContentWidth,
+    width: '100%',
   },
 });

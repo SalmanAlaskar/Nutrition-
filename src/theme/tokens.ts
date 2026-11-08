@@ -122,6 +122,12 @@ export const radius = {
 export const layout = {
   /** Gutter from the screen edge to content. */
   gutter: 18,
+  /**
+   * The widest the content column ever gets. This is a phone app, and on a
+   * laptop the same layout stretched across the whole window: full-width
+   * segmented controls, and wheel pickers a metre wide.
+   */
+  maxContentWidth: 560,
   /** Space above the first thing on a screen. */
   screenTop: 8,
   /** Gap between two sections. Always larger than anything inside one. */

@@ -77,5 +77,7 @@ export const common = {
   monthSep: 'سبتمبر',
   monthOct: 'أكتوبر',
   monthNov: 'نوفمبر',
-  monthDec: 'ديسمبر'
+  monthDec: 'ديسمبر',
+  pickerDoneAction: 'تم',
+  pickerOpenHint: 'يفتح العجلة لتغيير القيمة',
 } as const;

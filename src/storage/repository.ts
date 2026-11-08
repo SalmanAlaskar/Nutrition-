@@ -364,12 +364,38 @@ export async function getBodyScans(): Promise<BodyScan[]> {
 }
 
 /** Replaces the scan carrying the same id, so re-saving an edit is safe. */
+/**
+ * Keeps the profile weight in step with body-composition readings.
+ *
+ * A scan measures the same thing the profile stores, so importing an InBody
+ * sheet and then seeing a stale weight on the profile is simply wrong. The
+ * newest reading only wins when nothing more recent exists: a weight logged by
+ * hand after the scan is the better number and is left alone.
+ */
+export async function syncProfileWeightFromScans(): Promise<Profile | null> {
+  const [profile, scans, logs] = await Promise.all([
+    getProfile(),
+    getBodyScans(),
+    getWeightLogs(),
+  ]);
+  if (!profile || scans.length === 0) return profile;
+
+  const latestScan = scans[scans.length - 1];
+  const latestLog = logs.length > 0 ? logs[logs.length - 1] : null;
+  if (latestLog && latestLog.date > latestScan.date) return profile;
+  if (!Number.isFinite(latestScan.weightKg) || latestScan.weightKg <= 0) return profile;
+  if (Math.abs(profile.weightKg - latestScan.weightKg) < 0.05) return profile;
+
+  return saveProfile({ ...profile, weightKg: latestScan.weightKg });
+}
+
 export async function saveBodyScan(scan: BodyScan): Promise<BodyScan[]> {
   const scans = await getBodyScans();
   const next = scans.filter((item) => item.id !== scan.id);
   next.push(scan);
   next.sort((a, b) => a.date.localeCompare(b.date));
   await writeJson(KEYS.scans, next);
+  await syncProfileWeightFromScans();
   return next;
 }
 
@@ -1223,6 +1249,7 @@ export async function importBundle(
           .concat([...staged.values()]);
         merged.sort((a, b) => a.date.localeCompare(b.date));
         await writeJson(KEYS.scans, merged);
+        await syncProfileWeightFromScans();
       }
     }
   }

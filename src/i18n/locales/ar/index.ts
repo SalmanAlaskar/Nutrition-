@@ -8,6 +8,7 @@ import { macros } from './macros';
 import { meals } from './meals';
 import { nav } from './nav';
 import { onboarding } from './onboarding';
+import { phases } from './phases';
 import { profile } from './profile';
 import { settings } from './settings';
 import { slots } from './slots';
@@ -25,6 +26,7 @@ export const ar = {
   meals,
   nav,
   onboarding,
+  phases,
   profile,
   settings,
   slots,
