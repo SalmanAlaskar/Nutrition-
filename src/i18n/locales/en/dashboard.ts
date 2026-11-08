@@ -1,7 +1,6 @@
 /** English copy for the dashboard area. Keys are shared with ar/dashboard.ts. */
 export const dashboard = {
   title: 'Dashboard',
-  subtitle: 'Your numbers, in one place',
   loading: 'Reading your numbers',
 
   rangeWeek: '7 days',
@@ -71,7 +70,7 @@ export const dashboard = {
   typeCardio: 'Cardio',
 
   nutritionTitle: 'Nutrition',
-  adherenceCaption: 'logged days inside {{band}}% of your calorie target',
+  adherenceCaption: 'of your logged days landed inside {{band}}% of the calorie target',
   adherenceSpoken:
     '{{hit}} of {{logged}} logged days landed within {{band}}% of the calorie target',
   avgCalories: 'Avg calories',
@@ -82,7 +81,7 @@ export const dashboard = {
   nutritionNoTarget: 'No target yet, so there is nothing to measure the averages against.',
   nutritionEmptyTitle: 'Nothing logged here yet',
   nutritionEmptyMessage:
-    'Log a day of meals and the averages, the adherence ring and the comparison with your target fill in.',
+    'Log a day of meals and the averages, the days you landed on target and the recent comparison fill in here.',
   nutritionEmptyAction: 'Log a meal',
 
   insightsTitle: 'Insights',

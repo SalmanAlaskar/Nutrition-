@@ -36,23 +36,14 @@ export const today = {
   timePm: 'م',
   dayWithMeals: '{{day}}، فيه وجبات مسجّلة',
 
-  /* --------------------------------------------------------- plan strip -- */
+  /* ----------------------------------------------------------- day rows -- */
   body: 'الجسم',
-  pillarSpoken: '{{label}}: {{value}}، {{detail}}',
-  planLogged: 'سعرة مسجّلة',
-  planLeft: 'يتبقى {{value}}',
-  planOver: 'تجاوزت {{value}}',
-  planRest: 'راحة',
-  planSession: 'تمرين',
-  planSessionLogged: 'مسجّل',
-  planNoSession: 'لا تمرين مجدول',
-  planDone: 'اكتمل',
-  planStarted: 'بدأ',
-  planNotLogged: 'لم يُسجّل',
+  rowSpoken: '{{label}}: {{value}}، {{detail}}',
+  rowSpokenEmpty: '{{label}}، {{detail}}',
   planNoReading: 'لا قياس بعد',
   planLastReading: 'آخر قياس',
   planBodyFat: 'دهون {{value}}%',
-  hintCalories: 'يفتح سجلك',
+  hintHistory: 'يفتح سجلك',
   hintTraining: 'يفتح تمرين هذا اليوم',
   hintBody: 'يفتح قياسات جسمك',
 
@@ -73,10 +64,9 @@ export const today = {
   quickAddDone: 'أُضيفت',
   quickAddFailed: 'أعد المحاولة',
 
-  /* ----------------------------------------------------- training card -- */
-  trainingTitle: 'التدريب',
+  /* ------------------------------------------------------ training row -- */
   restDay: 'يوم راحة',
-  restDayBody: 'لا تمرين اليوم. الراحة جزء من الأسبوع.',
+  restDayBody: 'الراحة جزء من الأسبوع',
   sessionDay: 'يوم {{label}}',
   sessionCard: '{{title}}، {{state}}. يفتح التمرين.',
   stateComplete: 'اكتمل',
@@ -93,10 +83,11 @@ export const today = {
 
   /* ------------------------------------------------------ meal sections -- */
   mealsTitle: 'الوجبات',
-  mealsTotal: '{{value}} سعرة',
+  slotTotal: '{{value}} سعرة',
   itemsOne: 'صنف واحد',
   itemsOther: '{{value}} أصناف',
   logSlot: 'سجّل {{slot}}',
+  logSlotPlan: 'سجّل {{slot}}. {{line}}',
   logSlotHint: 'يفتح بحث الأطعمة لهذه الوجبة',
   addToSlot: 'أضف طعاماً إلى {{slot}}',
   slotTotalSpoken: 'إجمالي {{slot}}، {{value}} سعرة',
@@ -120,7 +111,6 @@ export const today = {
 
   /* ------------------------------------------------------------ actions -- */
   scanMeal: 'صوّر وجبة',
-  scanMealHint: 'يفتح الكاميرا لتسجيل وجبة من صورة',
   addFood: 'أضف طعاماً',
   addFoodHint: 'يفتح بحث الأطعمة للوجبة الحالية',
 

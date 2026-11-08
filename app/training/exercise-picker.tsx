@@ -310,8 +310,13 @@ export default function ExercisePickerScreen() {
         keyExtractor={(item) => item.id}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
+        // Every other screen scrolls without a visible bar; this one is the
+        // same page and should not grow a rail down its edge.
+        showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
-        ItemSeparatorComponent={() => <Divider inset />}
+        // The rule between two hits lines up with the names it separates,
+        // rather than with the edge of the screen.
+        ItemSeparatorComponent={() => <Divider style={styles.separator} />}
         renderItem={({ item }) => (
           <ResultRow exercise={item} custom={customIds.has(item.id)} onPress={choose} />
         )}
@@ -366,6 +371,11 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingBottom: spacing.xxl,
+  },
+  separator: {
+    marginEnd: layout.gutter,
+    marginStart: layout.gutter,
+    width: 'auto',
   },
   result: {
     justifyContent: 'center',

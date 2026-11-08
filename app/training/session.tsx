@@ -424,8 +424,9 @@ export default function SessionScreen() {
         right={completed ? <Badge label={t('statusDone')} variant="plain" tone="success" /> : undefined}
       />
 
-      {/* Progress is a single line and a single rule: the ticks below are the
-          thing being read, and this only has to say how far they have got. */}
+      {/* Progress is a single line and a single rule, drawn in ink: the accent
+          on this screen belongs to the ticks and the button that ends the work,
+          so the bar only has to say how far they have got. */}
       <View style={styles.progress}>
         <Txt variant="label" color="muted" numberOfLines={1}>
           {total > 0
@@ -441,7 +442,7 @@ export default function SessionScreen() {
           <View
             style={[
               styles.fill,
-              { backgroundColor: colors.accent, width: `${Math.round(ratio * 100)}%` },
+              { backgroundColor: colors.textMuted, width: `${Math.round(ratio * 100)}%` },
             ]}
           />
         </View>

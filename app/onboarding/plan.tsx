@@ -48,10 +48,14 @@ const DECORATIVE: AccessibilityProps = Platform.select<AccessibilityProps>({
   },
 });
 
-/** A band is a word, not a colour wash: the tone only tints the word itself. */
+/**
+ * A band is a word, not a colour wash: the tone only tints the word itself,
+ * and a healthy band stays plain. The calorie figure is the one green on this
+ * screen, and a second green beside it would halve its weight.
+ */
 const BMI_TONE: Record<BmiCategory, BadgeTone> = {
   Underweight: 'warning',
-  Healthy: 'success',
+  Healthy: 'default',
   Overweight: 'warning',
   Obese: 'danger',
 };
@@ -250,11 +254,18 @@ export default function PlanStep() {
         <Txt variant="label" color="muted" numberOfLines={1}>
           {goalLabel}
         </Txt>
+        {/*
+          A run of digits with no letters in it resolves its own direction to
+          left-to-right, so a logical 'start' would pin the hero to the left
+          edge of an Arabic screen while every line around it stayed right.
+          The side is mirrored by hand, the way a typed number is in TextField.
+        */}
         <Txt
           variant="display"
           color="accent"
           tabular
           numberOfLines={1}
+          align={isRTL ? 'right' : 'left'}
           style={styles.heroValue}
         >
           {formatCount(targets.calories)}
@@ -305,10 +316,6 @@ export default function PlanStep() {
             </View>
           );
         })}
-
-        <Txt variant="caption" color="faint" style={styles.macroNote}>
-          {t('onboarding:macroNote')}
-        </Txt>
       </View>
 
       <Section title={t('onboarding:breakdown')} gap="tight">
@@ -335,7 +342,12 @@ export default function PlanStep() {
         <Divider />
         <DetailRow
           label={t('onboarding:healthyWeight')}
-          value={`${formatAmount(healthyLow)}–${formatAmount(healthyHigh)}`}
+          // A word between the two figures, not a dash: Arabic reorders a dash
+          // sitting between two numbers and the range reads back to front.
+          value={t('onboarding:healthyWeightValue', {
+            low: formatAmount(healthyLow),
+            high: formatAmount(healthyHigh),
+          })}
           unit={weightUnit}
           hint={t('onboarding:healthyWeightHint')}
         />
@@ -404,10 +416,6 @@ const styles = StyleSheet.create({
   },
   macroLabel: {
     flex: 1,
-  },
-  macroNote: {
-    marginTop: spacing.sm,
-    maxWidth: layout.maxTextWidth,
   },
   detailRow: {
     alignItems: 'center',

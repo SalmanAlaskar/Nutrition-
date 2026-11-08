@@ -4,19 +4,18 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Platform,
-  Pressable,
   StyleSheet,
   View,
   type AccessibilityProps,
   type LayoutChangeEvent,
+  type ViewStyle,
 } from 'react-native';
 
 import { InsightList } from '@/components/insights/InsightList';
-import { useFoodLabels } from '@/components/meal/useFoodLabels';
 import { CalorieSummary } from '@/components/today/CalorieSummary';
+import { DayRows } from '@/components/today/DayRows';
 import { DayStrip } from '@/components/today/DayStrip';
 import { MealSection } from '@/components/today/MealSection';
-import { PlanStrip } from '@/components/today/PlanStrip';
 import { QuickAddRow } from '@/components/today/QuickAddRow';
 import { useDayLabels } from '@/components/today/useDayLabels';
 import {
@@ -32,16 +31,13 @@ import { latestScan } from '@/domain/bodyScan';
 import { currentSlot, lastNDays, todayKey } from '@/domain/date';
 import { formatCount } from '@/domain/format';
 import { buildInsights } from '@/domain/insights';
-import { slotStatus, slotTargets, type SlotStatus } from '@/domain/mealPlan';
+import { slotTargets } from '@/domain/mealPlan';
 import { MEAL_SLOTS, loggingStreak, mealsBySlot } from '@/domain/totals';
-import { dayForDate, isSessionComplete } from '@/domain/training';
-import { mirrorIcon, useDirection } from '@/i18n';
+import { dayForDate } from '@/domain/training';
 import { getMealsForDates, getWorkoutsForDates } from '@/storage/repository';
 import { useApp } from '@/state/AppStore';
 import { layout, radius, spacing, useTheme } from '@/theme';
-import type { Meal, MealSlot, SessionType, WorkoutSession } from '@/types';
-
-type IconName = React.ComponentProps<typeof Ionicons>['name'];
+import type { Meal, MealSlot, WorkoutSession } from '@/types';
 
 /**
  * Height assumed for the floating actions until they report their own, so the
@@ -58,18 +54,28 @@ const ACTION_BAR_GAP = spacing.xl;
  */
 const INSIGHT_WINDOW_DAYS = 15;
 
-/**
- * Where a meal row's text begins, measured from the gutter. The slot's plan
- * line is indented to match so it reads as the foot of that slot's list.
- */
-const SLOT_INDENT = 50;
-
 /** Decoration is hidden from assistive tech; the DOM only understands aria-hidden. */
 const DECORATIVE: AccessibilityProps = Platform.select<AccessibilityProps>({
   web: { 'aria-hidden': true },
   default: {
     accessibilityElementsHidden: true,
     importantForAccessibility: 'no-hide-descendants',
+  },
+});
+
+/**
+ * The actions rest on the page rather than sitting in a bar, so they carry a
+ * soft shadow and no fill of their own. `shadow*` is deprecated on the web
+ * build, which wants the CSS property instead.
+ */
+const FLOAT: ViewStyle = Platform.select<ViewStyle>({
+  web: { boxShadow: '0 10px 24px rgba(0, 0, 0, 0.18)' },
+  android: { elevation: 6 },
+  default: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
   },
 });
 
@@ -80,24 +86,6 @@ interface History {
 }
 
 const EMPTY_HISTORY: History = { mealsByDate: {}, workoutsByDate: {} };
-
-/** Short word under a meal section saying how the slot is tracking. */
-const STATUS_KEYS = {
-  under: 'today:statusUnder',
-  'on-track': 'today:statusOnTrack',
-  over: 'today:statusOver',
-} as const satisfies Record<Exclude<SlotStatus, 'empty'>, string>;
-
-/** What each scheduled day works, keyed off the program day's own type. */
-const MUSCLE_KEYS = {
-  push: 'today:musclesPush',
-  pull: 'today:musclesPull',
-  legs: 'today:musclesLegs',
-  upper: 'today:musclesUpper',
-  lower: 'today:musclesLower',
-  full: 'today:musclesFull',
-  cardio: 'today:musclesCardio',
-} as const satisfies Record<SessionType, string>;
 
 export default function TodayScreen() {
   const {
@@ -118,9 +106,7 @@ export default function TodayScreen() {
   } = useApp();
   const { colors } = useTheme();
   const { t } = useTranslation(['today', 'units', 'common']);
-  const { isRTL } = useDirection();
   const dayLabels = useDayLabels();
-  const foodLabels = useFoodLabels();
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
   const [actionBarHeight, setActionBarHeight] = useState(ACTION_BAR_ESTIMATE);
@@ -138,9 +124,9 @@ export default function TodayScreen() {
   const title = dayLabels.day(selectedDate);
   const shortDate = dayLabels.shortDay(selectedDate);
 
-  // The bar floats over the scroll view, so its measured height plus the inset
-  // it sits on is exactly the room the content needs underneath. The tab bar
-  // is below the scene, not over it, and is already out of the way.
+  // The actions float over the scroll view, so their measured height plus the
+  // inset they sit on is exactly the room the content needs underneath. The
+  // tab bar is below the scene, not over it, and is already out of the way.
   const contentStyle = useMemo(
     () => ({ paddingBottom: actionBarHeight + spacing.lg + ACTION_BAR_GAP }),
     [actionBarHeight],
@@ -256,23 +242,6 @@ export default function TodayScreen() {
     );
   }
 
-  const sessionDone = todaysWorkouts.some((session) => isSessionComplete(session));
-  // Short enough to sit beside the muscle line on a phone. A rest day with
-  // nothing logged says nothing here; the row already reads "Rest day".
-  const sessionState = sessionDone
-    ? t('today:stateComplete')
-    : todaysWorkouts.length > 0
-      ? t('today:stateInProgress')
-      : scheduledDay
-        ? t('today:stateNotLogged')
-        : '';
-  const sessionSpokenState = sessionState || t('today:stateNoSession');
-  const sessionTitle = scheduledDay
-    ? t('today:sessionDay', {
-        label: isRTL ? scheduledDay.labelAr ?? scheduledDay.label : scheduledDay.label,
-      })
-    : t('today:restDay');
-
   return (
     <View style={styles.root}>
       <Screen
@@ -322,145 +291,40 @@ export default function TodayScreen() {
           style={styles.bleed}
         />
 
-        {/* The ring, with room around it. Everything below supports it. */}
+        {/* The ring, with room around it. Everything below supports it, and
+            nothing below repeats its figure. */}
         <CalorieSummary
           totals={totals}
           targets={targets}
           onFinishProfile={() => router.push('/onboarding')}
+          onOpenHistory={openHistory}
           style={styles.hero}
         />
 
-        <PlanStrip
-          totals={totals}
-          targets={targets}
+        <DayRows
           programDay={scheduledDay}
           sessions={todaysWorkouts}
           scan={scan}
-          onCalories={openHistory}
           onTraining={openSession}
           onBody={openBody}
-          style={styles.plan}
+          style={styles.rows}
         />
 
         <QuickAddRow date={selectedDate} />
 
-        <Section title={t('today:trainingTitle')} gap="tight">
-          <Pressable
-            onPress={openSession}
-            accessibilityRole="button"
-            accessibilityLabel={t('today:sessionCard', {
-              title: sessionTitle,
-              state: sessionSpokenState,
-            })}
-            style={({ pressed }) => [
-              styles.trainingRow,
-              pressed ? [styles.pressed, { backgroundColor: colors.surfaceAlt }] : null,
-            ]}
-          >
-            <View style={styles.trainingGlyph} {...DECORATIVE}>
-              <Ionicons
-                name={scheduledDay ? 'barbell-outline' : 'moon-outline'}
-                size={19}
-                color={colors.textMuted}
-              />
-            </View>
-
-            <View style={styles.trainingText}>
-              <Txt weight="semibold" numberOfLines={1}>
-                {sessionTitle}
-              </Txt>
-              <Txt variant="label" color="muted" numberOfLines={1} style={styles.trainingMeta}>
-                {scheduledDay ? t(MUSCLE_KEYS[scheduledDay.type]) : t('today:restDayBody')}
-              </Txt>
-            </View>
-
-            {sessionState ? (
-              <Txt variant="label" color={sessionDone ? 'text' : 'faint'} numberOfLines={1}>
-                {sessionState}
-              </Txt>
-            ) : null}
-
-            <Ionicons
-              // The chevron points the way the row opens, which is the
-              // reading direction.
-              name={mirrorIcon('chevron-forward', isRTL) as IconName}
-              size={15}
-              color={colors.textFaint}
-              {...DECORATIVE}
+        <Section title={t('today:mealsTitle')} contentStyle={styles.slots}>
+          {MEAL_SLOTS.map((slot) => (
+            <MealSection
+              key={slot}
+              slot={slot}
+              meals={grouped[slot]}
+              macros={totals.bySlot[slot]}
+              target={planTargets ? planTargets[slot] : null}
+              onAdd={() => openAdd(slot)}
+              onOpen={openMeal}
+              onDelete={handleDelete}
             />
-          </Pressable>
-        </Section>
-
-        <Section
-          title={t('today:mealsTitle')}
-          gap="tight"
-          action={
-            totals.mealCount > 0 ? (
-              <Txt variant="label" color="muted" tabular numberOfLines={1}>
-                {t('today:mealsTotal', { value: formatCount(totals.macros.calories) })}
-              </Txt>
-            ) : undefined
-          }
-        >
-          {MEAL_SLOTS.map((slot, index) => {
-            const eaten = totals.bySlot[slot];
-            const slotTarget = planTargets ? planTargets[slot] : null;
-            const status = slotTarget ? slotStatus(eaten, slotTarget) : 'empty';
-            const word = status === 'empty' ? '' : t(STATUS_KEYS[status]);
-            const planLine = slotTarget
-              ? t('today:slotPlan', {
-                  eaten: formatCount(eaten.calories),
-                  target: formatCount(slotTarget.calories),
-                })
-              : null;
-
-            return (
-              <View
-                key={slot}
-                style={index > 0 ? [styles.slotBreak, { borderColor: colors.border }] : null}
-              >
-                <MealSection
-                  slot={slot}
-                  meals={grouped[slot]}
-                  macros={eaten}
-                  onAdd={() => openAdd(slot)}
-                  onOpen={openMeal}
-                  onDelete={handleDelete}
-                />
-                {planLine ? (
-                  <View
-                    accessible
-                    accessibilityLabel={
-                      word
-                        ? t('today:slotPlanSpokenStatus', {
-                            slot: foodLabels.slot(slot),
-                            line: planLine,
-                            status: word,
-                          })
-                        : t('today:slotPlanSpoken', {
-                            slot: foodLabels.slot(slot),
-                            line: planLine,
-                          })
-                    }
-                    style={styles.slotPlan}
-                  >
-                    {/* One run: as siblings Arabic reorders the two parts. */}
-                    <Txt variant="caption" color="faint" tabular numberOfLines={1}>
-                      {planLine}
-                      {word ? (
-                        <Txt
-                          variant="caption"
-                          color={status === 'over' ? 'warning' : 'faint'}
-                        >
-                          {` · ${word}`}
-                        </Txt>
-                      ) : null}
-                    </Txt>
-                  </View>
-                ) : null}
-              </View>
-            );
-          })}
+          ))}
         </Section>
 
         {insights.length > 0 ? (
@@ -473,23 +337,36 @@ export default function TodayScreen() {
         ) : null}
       </Screen>
 
-      {/* Two pills resting on the page, not a toolbar bolted to the bottom. */}
+      {/* Two things resting on the page, not a toolbar bolted to the bottom.
+          Neither takes the accent: that belongs to the ring. */}
       <View style={styles.actionBar} pointerEvents="box-none">
         <View onLayout={handleActionBarLayout} style={styles.actionRow} pointerEvents="box-none">
-          <Button
-            label={t('today:scanMeal')}
-            icon="camera-outline"
-            variant="secondary"
-            onPress={openCamera}
-            accessibilityHint={t('today:scanMealHint')}
-            style={styles.actionShadow}
-          />
+          <View
+            style={[
+              styles.floatDisc,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+              FLOAT,
+            ]}
+          >
+            <IconButton
+              icon="camera-outline"
+              onPress={openCamera}
+              accessibilityLabel={t('today:scanMeal')}
+              size={20}
+            />
+          </View>
+
           <Button
             label={t('today:addFood')}
             icon="add"
+            variant="secondary"
             onPress={() => openAdd(currentSlot())}
             accessibilityHint={t('today:addFoodHint')}
-            style={styles.actionShadow}
+            style={[
+              styles.floatPill,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+              FLOAT,
+            ]}
           />
         </View>
       </View>
@@ -517,41 +394,16 @@ const styles = StyleSheet.create({
   hero: {
     marginTop: spacing.xl,
   },
-  plan: {
+  rows: {
     marginTop: layout.sectionGap,
+  },
+  // Air, not rules, is what tells four slots apart. The gap between them is
+  // well over the gap between a slot's header and its meals, which is none.
+  slots: {
+    rowGap: spacing.xl,
   },
   insights: {
     marginTop: layout.sectionGap,
-  },
-  pressed: {
-    borderRadius: radius.md,
-  },
-  slotBreak: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    marginTop: spacing.lg,
-    paddingTop: spacing.lg,
-  },
-  slotPlan: {
-    marginStart: SLOT_INDENT,
-    marginTop: spacing.xs,
-  },
-  trainingRow: {
-    alignItems: 'center',
-    columnGap: spacing.md,
-    flexDirection: 'row',
-    minHeight: 56,
-    paddingVertical: spacing.sm,
-  },
-  trainingGlyph: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 38,
-  },
-  trainingText: {
-    flex: 1,
-  },
-  trainingMeta: {
-    marginTop: 2,
   },
   actionBar: {
     bottom: spacing.lg,
@@ -560,17 +412,16 @@ const styles = StyleSheet.create({
     start: layout.gutter,
   },
   actionRow: {
+    alignItems: 'center',
     columnGap: spacing.md,
     flexDirection: 'row',
     justifyContent: 'center',
   },
-  actionShadow: Platform.select({
-    android: { elevation: 6 },
-    default: {
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 6 },
-      shadowOpacity: 0.2,
-      shadowRadius: 14,
-    },
-  }),
+  floatDisc: {
+    borderRadius: radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  floatPill: {
+    borderWidth: StyleSheet.hairlineWidth,
+  },
 });

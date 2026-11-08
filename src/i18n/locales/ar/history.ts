@@ -41,13 +41,10 @@ export const history = {
   /* السعرات */
   caloriesTitle: 'السعرات',
   avgCalories: 'متوسط السعرات',
-  avgCaloriesHint: 'في الأيام المسجلة',
   daysLogged: 'أيام مسجلة',
-  daysLoggedHint: 'ضمن هذه المدة',
+  ofTotal: 'من {{total}}',
   streak: 'السلسلة',
-  streakHint: 'أيام متتالية دون انقطاع',
   avgProtein: 'متوسط البروتين',
-  avgProteinHint: 'لكل يوم مسجل',
   dayUnit: 'أيام',
   dayUnitOne: 'يوم',
 
@@ -114,10 +111,10 @@ export const history = {
 
   /* تركيب الجسم */
   bodyTitle: 'تركيب الجسم',
-  bodyLatest: 'أحدث قراءة',
   bodyChange: 'التغير خلال {{days}} يوم، منذ {{date}}',
   bodyFirst: 'أول قراءة، ولا شيء نقارن به بعد',
   bodyOpen: 'فتح سجل تركيب الجسم',
+  bodyOpenAction: 'فتح',
   bodyEmptyTitle: 'لا توجد قراءة بعد',
   bodyEmptyMessage: 'أضف قراءة لتركيب الجسم لترى العضلات والدهون تتحرك مع وزنك.',
   bodyEmptyAction: 'إضافة قراءة',

@@ -9,7 +9,7 @@ export const profile = {
   emptyAction: 'إعداد ملفي',
 
   /* المدخلات */
-  aboutTitle: 'عنك',
+  aboutTitle: 'معلوماتك',
   aboutHint: 'كل رقم في الأسفل محسوب من هذه الحقول الأربعة.',
   units: 'الوحدات',
   unitMetric: 'متري',
@@ -19,8 +19,6 @@ export const profile = {
   female: 'أنثى',
   age: 'العمر',
   height: 'الطول',
-  heightFeet: 'الطول (قدم)',
-  heightInches: 'إنش',
   weight: 'الوزن',
   feetSuffix: 'قدم',
   inchesSuffix: 'إنش',
@@ -58,7 +56,6 @@ export const profile = {
   planSpokenCustom: '{{calories}} سعرة يومياً، هدف حددته بنفسك',
   updated: 'تم التحديث',
   custom: 'مخصص',
-  calculated: 'محسوب',
   macroSpoken: '{{label}}: {{grams}} جرام يومياً، {{percent}} من طاقتك',
   restingBurn: 'الحرق في الراحة',
   restingBurnHint: 'ما يستهلكه جسمك وهو ساكن تماماً',

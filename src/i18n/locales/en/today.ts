@@ -36,23 +36,14 @@ export const today = {
   timePm: 'PM',
   dayWithMeals: '{{day}}, meals logged',
 
-  /* --------------------------------------------------------- plan strip -- */
+  /* ----------------------------------------------------------- day rows -- */
   body: 'Body',
-  pillarSpoken: '{{label}}: {{value}}, {{detail}}',
-  planLogged: 'kcal logged',
-  planLeft: '{{value}} kcal left',
-  planOver: '{{value}} over',
-  planRest: 'Rest',
-  planSession: 'Session',
-  planSessionLogged: 'Logged',
-  planNoSession: 'No session planned',
-  planDone: 'Done',
-  planStarted: 'Started',
-  planNotLogged: 'Not logged',
+  rowSpoken: '{{label}}: {{value}}, {{detail}}',
+  rowSpokenEmpty: '{{label}}: {{detail}}',
   planNoReading: 'No reading yet',
   planLastReading: 'Last reading',
   planBodyFat: '{{value}}% fat',
-  hintCalories: 'Opens your history',
+  hintHistory: 'Opens your history',
   hintTraining: 'Opens the session for this day',
   hintBody: 'Opens your body readings',
 
@@ -74,10 +65,9 @@ export const today = {
   quickAddDone: 'Added',
   quickAddFailed: 'Try again',
 
-  /* ----------------------------------------------------- training card -- */
-  trainingTitle: 'Training',
+  /* ------------------------------------------------------ training row -- */
   restDay: 'Rest day',
-  restDayBody: 'No session planned. Recovery is part of the week.',
+  restDayBody: 'Recovery is part of the week',
   sessionDay: '{{label}} day',
   sessionCard: '{{title}}, {{state}}. Opens the session.',
   stateComplete: 'Complete',
@@ -94,10 +84,11 @@ export const today = {
 
   /* ------------------------------------------------------ meal sections -- */
   mealsTitle: 'Meals',
-  mealsTotal: '{{value}} kcal',
+  slotTotal: '{{value}} kcal',
   itemsOne: '1 item',
   itemsOther: '{{value}} items',
   logSlot: 'Log {{slot}}',
+  logSlotPlan: 'Log {{slot}}. {{line}}',
   logSlotHint: 'Opens food search for this meal',
   addToSlot: 'Add food to {{slot}}',
   slotTotalSpoken: '{{slot}} total, {{value}} kcal',
@@ -121,7 +112,6 @@ export const today = {
 
   /* ------------------------------------------------------------ actions -- */
   scanMeal: 'Scan meal',
-  scanMealHint: 'Opens the camera to log a meal from a photo',
   addFood: 'Add food',
   addFoodHint: 'Opens food search for the current meal',
 

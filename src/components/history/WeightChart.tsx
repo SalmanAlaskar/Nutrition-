@@ -15,7 +15,7 @@ import { daysBetween } from '@/domain/date';
 import { formatAmount } from '@/domain/format';
 import { kgToLb } from '@/domain/nutrition';
 import { useDirection } from '@/i18n';
-import { fontSize, layout, radius, spacing, useTheme } from '@/theme';
+import { fontSize, layout, spacing, useTheme } from '@/theme';
 import type { UnitSystem, WeightLog } from '@/types';
 
 import { useDayText } from './dayText';
@@ -389,6 +389,8 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
     width: '100%',
   },
+  // Physical padding on purpose: it lines the two dates up with a plot that
+  // does not mirror.
   axis: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -399,7 +401,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row-reverse',
   },
   readings: {
-    borderRadius: radius.md,
     marginTop: spacing.xl,
     rowGap: spacing.sm,
   },

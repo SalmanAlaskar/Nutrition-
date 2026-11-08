@@ -349,22 +349,28 @@ export default function BodyScansScreen() {
         <Txt variant="label" color="muted" numberOfLines={1}>
           {t('latest')}
         </Txt>
-        {/* The unit is nested in the same run: as a sibling, Arabic reorders it. */}
-        <Txt
-          variant="display"
-          tabular
-          numberOfLines={1}
-          style={styles.leadFigure}
-          accessibilityLabel={t('figureSpoken', {
-            label: t('fieldWeight'),
-            value: `${formatAmount(latest.weightKg, 1)} ${t('units:kg')}`,
-          })}
-        >
-          {formatAmount(latest.weightKg, 1)}
-          <Txt variant="label" color="faint" weight="medium">
-            {` ${t('units:kg')}`}
+        {/*
+          The unit is nested in the same run: as a sibling, Arabic reorders it.
+          The run sits in a row of its own because a figure carries no reading
+          direction of its own, and as a row child it is placed by the layout.
+        */}
+        <View style={styles.line}>
+          <Txt
+            variant="display"
+            tabular
+            numberOfLines={1}
+            style={styles.leadFigure}
+            accessibilityLabel={t('figureSpoken', {
+              label: t('fieldWeight'),
+              value: `${formatAmount(latest.weightKg, 1)} ${t('units:kg')}`,
+            })}
+          >
+            {formatAmount(latest.weightKg, 1)}
+            <Txt variant="label" color="faint" weight="medium">
+              {` ${t('units:kg')}`}
+            </Txt>
           </Txt>
-        </Txt>
+        </View>
         <Txt variant="label" color="muted" numberOfLines={1}>
           {latest.device ? `${dayLabel(latest.date)} · ${latest.device}` : dayLabel(latest.date)}
         </Txt>
@@ -384,21 +390,25 @@ export default function BodyScansScreen() {
                 <Txt variant="label" color="muted" numberOfLines={1}>
                   {item.label}
                 </Txt>
-                <Txt
-                  variant="metric"
-                  color={item.accent ? 'accent' : 'text'}
-                  tabular
-                  numberOfLines={1}
-                  style={styles.highlightValue}
-                >
-                  {item.value}
-                  <Txt variant="label" color="faint" weight="medium">
-                    {` ${item.unit}`}
+                <View style={styles.line}>
+                  <Txt
+                    variant="metric"
+                    color={item.accent ? 'accent' : 'text'}
+                    tabular
+                    numberOfLines={1}
+                    style={styles.highlightValue}
+                  >
+                    {item.value}
+                    <Txt variant="label" color="faint" weight="medium">
+                      {` ${item.unit}`}
+                    </Txt>
                   </Txt>
-                </Txt>
-                <Txt variant="caption" color="faint" tabular numberOfLines={1}>
-                  {item.delta}
-                </Txt>
+                </View>
+                <View style={styles.line}>
+                  <Txt variant="caption" color="faint" tabular numberOfLines={1}>
+                    {item.delta}
+                  </Txt>
+                </View>
               </View>
             ))}
           </View>
@@ -481,9 +491,13 @@ export default function BodyScansScreen() {
       </Section>
 
       <Section>
+        {/*
+          The accent on this screen belongs to the muscle figure at the top, so
+          the two ways in sit quietly underneath the readings they add to.
+        */}
         <View style={styles.actions}>
-          <Button label={t('emptyAction')} onPress={openImport} fullWidth />
-          <Button label={t('typeItIn')} variant="secondary" onPress={openAdd} fullWidth />
+          <Button label={t('emptyAction')} variant="secondary" onPress={openImport} fullWidth />
+          <Button label={t('typeItIn')} variant="ghost" onPress={openAdd} fullWidth />
         </View>
         <Txt variant="caption" color="faint" style={styles.foot}>
           {t('disclaimer')}
@@ -494,6 +508,11 @@ export default function BodyScansScreen() {
 }
 
 const styles = StyleSheet.create({
+  // A figure made only of digits has no reading direction of its own, so it is
+  // laid out as a row child rather than aligned as text.
+  line: {
+    flexDirection: 'row',
+  },
   leadFigure: {
     marginBottom: spacing.xs,
     marginTop: spacing.sm,

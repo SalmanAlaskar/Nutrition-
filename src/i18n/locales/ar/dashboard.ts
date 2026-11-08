@@ -1,7 +1,6 @@
 /** Arabic copy for the dashboard area. Keys must match en/dashboard.ts exactly. */
 export const dashboard = {
   title: 'لوحة المعلومات',
-  subtitle: 'أرقامك كلها في صفحة واحدة',
   loading: 'نقرأ أرقامك',
 
   rangeWeek: '7 أيام',
@@ -70,7 +69,7 @@ export const dashboard = {
   typeCardio: 'كارديو',
 
   nutritionTitle: 'التغذية',
-  adherenceCaption: 'يوم مسجل ضمن {{band}}% من هدف السعرات',
+  adherenceCaption: 'من أيامك المسجلة كانت ضمن {{band}}% من هدف السعرات',
   adherenceSpoken: '{{hit}} من {{logged}} يوم مسجل ضمن {{band}}% من هدف السعرات',
   avgCalories: 'متوسط السعرات',
   avgProtein: 'متوسط البروتين',
@@ -80,7 +79,7 @@ export const dashboard = {
   nutritionNoTarget: 'لا يوجد هدف بعد، فلا شيء نقيس عليه المتوسطات.',
   nutritionEmptyTitle: 'لا يوجد تسجيل هنا',
   nutritionEmptyMessage:
-    'سجّل يومًا من الوجبات وتظهر المتوسطات وحلقة الالتزام والمقارنة مع هدفك.',
+    'سجّل يومًا من الوجبات وتظهر هنا المتوسطات وأيامك ضمن الهدف والمقارنة الأخيرة.',
   nutritionEmptyAction: 'تسجيل وجبة',
 
   insightsTitle: 'ملاحظات',

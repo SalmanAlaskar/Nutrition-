@@ -754,14 +754,16 @@ export default function ProfileScreen() {
         </View>
 
         {/* A value scale: the bands and the marker both follow the reading
-            direction, so they can never drift apart in Arabic. */}
+            direction, so they can never drift apart in Arabic. The healthy
+            band is picked out in neutral ink, not in the accent — the plan
+            above is the one thing on this screen allowed to be green. */}
         <View style={styles.bmiScale} {...DECORATIVE}>
           <View style={styles.bmiTrack}>
             {BMI_BANDS.map((band) => (
               <View
                 key={band.key}
                 style={{
-                  backgroundColor: band.healthy ? colors.accentSoft : colors.track,
+                  backgroundColor: band.healthy ? colors.borderStrong : colors.track,
                   flex: band.to - band.from,
                 }}
               />
@@ -958,7 +960,7 @@ export default function ProfileScreen() {
             )}
             style={styles.deltaRow}
           >
-            <Txt color={weightDelta === 0 ? 'muted' : 'text'} tabular numberOfLines={1}>
+            <Txt color={deltaColor} tabular numberOfLines={1}>
               {formatDelta(weightDelta)}
               <Txt variant="label" color="faint">
                 {` ${weightUnit}`}

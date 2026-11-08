@@ -7,8 +7,9 @@ import { spacing, useTheme } from '@/theme';
 import { TrendSpark } from './TrendSpark';
 
 /**
- * How a change reads. 'good' is solid ink, 'poor' a muted warning, 'neutral'
- * fades back: a direction that depends on the goal is not a verdict.
+ * How a change reads. Every tone stays below the figure it belongs to: 'good'
+ * is quiet ink, 'poor' a muted warning, 'neutral' fades back, because a
+ * direction that depends on the goal is not a verdict.
  */
 export type MetricTone = 'neutral' | 'good' | 'poor';
 
@@ -58,8 +59,9 @@ export function MetricTable({ rows, style }: MetricTableProps) {
 
   const sparkColumn = rows.some((row) => hasShape(row.series));
 
+  // A delta never reaches full ink: the figure above it is the thing being read.
   const toneColor = (tone: MetricTone | undefined): TxtColor =>
-    tone === 'good' ? colors.text : tone === 'poor' ? colors.warning : colors.textFaint;
+    tone === 'good' ? colors.textMuted : tone === 'poor' ? colors.warning : colors.textFaint;
 
   return (
     <View style={style}>

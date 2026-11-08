@@ -304,17 +304,27 @@ export default function TrainingScreen() {
 
       {volumeRows.length > 0 ? (
         <Section title={t('volumeTitle')} subtitle={t('volumeCaption')}>
-          <View style={styles.volumeList}>
-            {volumeRows.map((row) => (
-              <VolumeBar key={row.type} row={row} max={maxVolume} />
-            ))}
-          </View>
-
-          {untrained.length > 0 ? (
-            <Txt variant="label" color="muted" style={styles.volumeNote}>
-              {t('volumeNote', { types: text.list(untrained) })}
+          {/* A week with nothing in it says so in one line. Seven empty tracks
+              under a list of every day type would be a drawing of nothing. */}
+          {maxVolume === 0 ? (
+            <Txt variant="label" color="muted">
+              {t('volumeEmpty')}
             </Txt>
-          ) : null}
+          ) : (
+            <>
+              <View style={styles.volumeList}>
+                {volumeRows.map((row) => (
+                  <VolumeBar key={row.type} row={row} max={maxVolume} />
+                ))}
+              </View>
+
+              {untrained.length > 0 ? (
+                <Txt variant="label" color="muted" style={styles.volumeNote}>
+                  {t('volumeNote', { types: text.list(untrained) })}
+                </Txt>
+              ) : null}
+            </>
+          )}
         </Section>
       ) : null}
 
@@ -335,8 +345,11 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   // The jump back sits with the strip it belongs to, not with the day below it.
+  // The negative start pulls the ghost button's own padding back so its label
+  // begins on the same line of type as everything else on the screen.
   jump: {
     alignItems: 'flex-start',
+    marginStart: -spacing.lg,
     marginTop: spacing.sm,
   },
   tiles: {

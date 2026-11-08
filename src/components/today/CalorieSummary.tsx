@@ -1,12 +1,18 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  Pressable,
+  StyleSheet,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 
 import { Button, MacroBar, ProgressRing, Txt } from '@/components/ui';
 import { formatCount } from '@/domain/format';
 import { progress } from '@/domain/nutrition';
 import { remainingBudget } from '@/domain/totals';
-import { layout, spacing, useTheme } from '@/theme';
+import { layout, radius, spacing, useTheme } from '@/theme';
 import type { DailyTotals, Targets } from '@/types';
 
 export interface CalorieSummaryProps {
@@ -14,20 +20,24 @@ export interface CalorieSummaryProps {
   /** Null until the profile exists; the summary then prompts for setup. */
   targets: Targets | null;
   onFinishProfile: () => void;
+  /** Tapping the ring opens the longer view of the same number. */
+  onOpenHistory: () => void;
   style?: StyleProp<ViewStyle>;
 }
 
 /**
- * The ring is the one thing on this screen allowed to be large, so it gets a
- * thin stroke and nothing drawn around it. No card: the page is its container.
+ * The ring is the one thing on this screen allowed to be large, and the one
+ * thing allowed to carry the accent. Thin stroke, nothing drawn around it: the
+ * page is its container.
  */
 const RING_SIZE = 212;
-const RING_STROKE = 12;
+const RING_STROKE = 10;
 
 export function CalorieSummary({
   totals,
   targets,
   onFinishProfile,
+  onOpenHistory,
   style,
 }: CalorieSummaryProps) {
   const { colors } = useTheme();
@@ -65,7 +75,7 @@ export function CalorieSummary({
 
   const budget = remainingBudget(totals.macros, targets);
   const over = budget.overTarget;
-  // Past the target the ring warns rather than alarms: this is an estimate of a
+  // Past the target the arc warns rather than alarms: this is an estimate of a
   // day's eating, not a fault.
   const stateColor = over ? colors.warning : colors.accent;
   const remainingText = over
@@ -74,14 +84,16 @@ export function CalorieSummary({
 
   return (
     <View style={style}>
-      <View
-        accessible
+      <Pressable
+        onPress={onOpenHistory}
+        accessibilityRole="button"
         accessibilityLabel={t('today:ringSpoken', {
           eaten: formatCount(consumed),
           target: formatCount(targets.calories),
           state: remainingText,
         })}
-        style={styles.hero}
+        accessibilityHint={t('today:hintHistory')}
+        style={({ pressed }) => [styles.hero, pressed ? styles.pressed : null]}
       >
         <ProgressRing
           size={RING_SIZE}
@@ -103,11 +115,14 @@ export function CalorieSummary({
           </Txt>
         </ProgressRing>
 
-        {/* One line of words, no pill and no dot: the ring already carries the state. */}
+        {/*
+          One line of words: no pill, no dot and no accent. The arc is already
+          the one accent on this screen, and a day past its target is told in a
+          muted amber rather than shouted in red.
+        */}
         <Txt
           variant="label"
-          weight="semibold"
-          color={over ? 'warning' : 'accent'}
+          color={over ? 'warning' : 'muted'}
           align="center"
           tabular
           numberOfLines={1}
@@ -115,7 +130,7 @@ export function CalorieSummary({
         >
           {remainingText}
         </Txt>
-      </View>
+      </Pressable>
 
       <View style={styles.macros}>
         <MacroBar
@@ -144,6 +159,11 @@ export function CalorieSummary({
 const styles = StyleSheet.create({
   hero: {
     alignItems: 'center',
+    borderRadius: radius.xl,
+    paddingVertical: spacing.sm,
+  },
+  pressed: {
+    opacity: 0.7,
   },
   ringTarget: {
     marginTop: spacing.sm,

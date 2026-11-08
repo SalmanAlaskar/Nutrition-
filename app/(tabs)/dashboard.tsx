@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Platform, StyleSheet, View, type AccessibilityProps } from 'react-native';
 
-import { AdherenceRing } from '@/components/dashboard/AdherenceRing';
+import { AdherenceBar } from '@/components/dashboard/AdherenceBar';
 import { HeroSummary } from '@/components/dashboard/HeroSummary';
 import {
   MetricTable,
@@ -20,6 +20,7 @@ import {
   Section,
   SegmentedControl,
   Txt,
+  type TxtAlign,
 } from '@/components/ui';
 import { latestScan, scanChange, type ScanMetricKey } from '@/domain/bodyScan';
 import { addDays, lastNDays, parseDateKey, todayKey } from '@/domain/date';
@@ -67,6 +68,12 @@ const MISSING = '—';
 
 /** Below this a change is noise rather than a direction. */
 const FLAT = 0.05;
+
+/**
+ * Sessions a day type has to fall short by before the figure is marked. One
+ * missed session is an ordinary week; the colour is saved for a real gap.
+ */
+const BEHIND_BY = 2;
 
 /** The InBody score is a whole number, so anything under half a point is level. */
 const FLAT_SCORE = 0.5;
@@ -170,8 +177,16 @@ function fraction(done: number, total: number): string {
 export default function DashboardScreen() {
   const { t } = useTranslation(['dashboard', 'units', 'macros']);
   const { colors } = useTheme();
-  const { language } = useDirection();
+  const { language, isRTL } = useDirection();
   const router = useRouter();
+
+  /**
+   * The end of a figure column, resolved from the page rather than from the
+   * text. The web gives every run `dir="auto"`, so a cell holding nothing but
+   * digits is read left to right and a logical 'end' would send it to the
+   * opposite edge from the Arabic heading above it.
+   */
+  const figureEnd: TxtAlign = isRTL ? 'left' : 'right';
 
   const { ready, profile, targets, loggedDates, workoutDates, bodyScans, program, refresh } =
     useApp();
@@ -545,7 +560,9 @@ export default function DashboardScreen() {
 
   return (
     <Screen scroll refreshing={refreshing} onRefresh={handleRefresh}>
-      <AppHeader title={t('title')} subtitle={t('subtitle')} large />
+      {/* No strapline under the title: the figure below it is the subject of
+          the screen, and a line of prose in front of it only delays the read. */}
+      <AppHeader title={t('title')} large />
 
       {busy ? (
         <LoadingView message={t('loading')} />
@@ -651,7 +668,9 @@ export default function DashboardScreen() {
 
                         <View style={styles.weekSlot} {...DECORATIVE}>
                           {day.scheduled === null && !day.trained ? (
-                            <View style={[styles.weekRest, { backgroundColor: colors.border }]} />
+                            <View
+                              style={[styles.weekRest, { backgroundColor: colors.borderStrong }]}
+                            />
                           ) : (
                             <View
                               style={[
@@ -684,7 +703,7 @@ export default function DashboardScreen() {
 
                 <View style={styles.splitList}>
                   {training.rows.map((row) => {
-                    const behind = row.scheduled > 0 && row.done < row.scheduled;
+                    const behind = row.scheduled > 0 && row.scheduled - row.done >= BEHIND_BY;
                     const share = training.peak > 0 ? Math.min(1, row.done / training.peak) : 0;
                     const typeLabel = t(TYPE_KEYS[row.type]);
 
@@ -767,7 +786,7 @@ export default function DashboardScreen() {
             ) : (
               <>
                 {targets ? (
-                  <AdherenceRing
+                  <AdherenceBar
                     hit={nutrition.onTarget}
                     logged={nutrition.logged}
                     band={ADHERENCE_BAND}
@@ -790,10 +809,20 @@ export default function DashboardScreen() {
                     {...DECORATIVE}
                   >
                     <View style={styles.compareLabel} />
-                    <Txt variant="caption" color="faint" align="end" style={styles.compareCell}>
+                    <Txt
+                      variant="caption"
+                      color="faint"
+                      align={figureEnd}
+                      style={styles.compareCell}
+                    >
                       {t('macros:calories')}
                     </Txt>
-                    <Txt variant="caption" color="faint" align="end" style={styles.compareCell}>
+                    <Txt
+                      variant="caption"
+                      color="faint"
+                      align={figureEnd}
+                      style={styles.compareCell}
+                    >
                       {t('macros:protein')}
                     </Txt>
                   </View>
@@ -819,7 +848,7 @@ export default function DashboardScreen() {
                       </Txt>
                       <Txt
                         variant="label"
-                        align="end"
+                        align={figureEnd}
                         tabular
                         numberOfLines={1}
                         style={styles.compareCell}
@@ -828,7 +857,7 @@ export default function DashboardScreen() {
                       </Txt>
                       <Txt
                         variant="label"
-                        align="end"
+                        align={figureEnd}
                         tabular
                         numberOfLines={1}
                         style={styles.compareCell}
@@ -856,16 +885,18 @@ export default function DashboardScreen() {
 }
 
 const styles = StyleSheet.create({
+  // The one figure that carries the screen gets the whole top of the page.
   hero: {
-    marginTop: spacing.lg,
+    marginTop: spacing.xl,
   },
-  // The range control belongs to the two sections under it, so it sits a
-  // section away from the body table and close to the training heading.
+  // The range control belongs to everything under it, so it sits a full
+  // section away from the body table and close enough to the training heading
+  // to read as its filter rather than as a floating control.
   range: {
     marginTop: layout.sectionGap,
   },
   afterRange: {
-    marginTop: spacing.xl,
+    marginTop: spacing.lg,
   },
   insights: {
     marginTop: layout.sectionGap,
@@ -887,6 +918,13 @@ const styles = StyleSheet.create({
   weekFigure: {
     // A figure never shrinks or wraps to fit.
     flexShrink: 0,
+    /*
+      Shrink-wrapped on purpose. A run of digits carries no strong direction,
+      so the web reads it left to right and a logical text alignment would pin
+      it to the wrong edge of the caption below it in Arabic. Sized to its own
+      content, the figure is placed by the column, which follows the page.
+    */
+    alignSelf: 'flex-start',
   },
   streak: {
     flexShrink: 1,
@@ -921,12 +959,14 @@ const styles = StyleSheet.create({
     height: 2,
     width: 10,
   },
+  // Nothing inside a section may open up as far as the gap between two
+  // sections, or the grouping stops reading.
   splitHead: {
     alignItems: 'baseline',
     columnGap: spacing.md,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: spacing.xxl,
+    marginTop: spacing.xl,
   },
   splitTitle: {
     flexShrink: 1,
@@ -962,7 +1002,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
   },
   compare: {
-    marginTop: spacing.xxl,
+    marginTop: spacing.xl,
   },
   compareHead: {
     borderBottomWidth: StyleSheet.hairlineWidth,

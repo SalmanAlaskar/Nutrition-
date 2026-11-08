@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { addDays, parseDateKey, todayKey } from '@/domain/date';
+import { formatCount } from '@/domain/format';
 
 /**
  * Calendar labels in the reader's language.
@@ -63,7 +64,7 @@ export function useDayText(): DayText {
   return useMemo<DayText>(() => {
     const shortDay = (date: string) => {
       const parsed = parseDateKey(date);
-      return `${parsed.getDate()} ${t(MONTH_KEYS[parsed.getMonth()] ?? 'monthJan')}`;
+      return `${formatCount(parsed.getDate())} ${t(MONTH_KEYS[parsed.getMonth()] ?? 'monthJan')}`;
     };
 
     return {

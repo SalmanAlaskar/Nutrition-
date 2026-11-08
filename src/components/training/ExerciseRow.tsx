@@ -143,9 +143,9 @@ export function ExerciseRow({
           style={({ pressed }) => [styles.main, pressed ? styles.pressed : null]}
         >
           <View style={styles.text}>
-            <Txt weight="medium" numberOfLines={2}>
-              {name}
-            </Txt>
+            {/* Size and colour already separate the two lines, so the name
+                takes no extra weight on top. */}
+            <Txt numberOfLines={2}>{name}</Txt>
             {detail ? (
               <Txt variant="label" color="muted" numberOfLines={1} tabular style={styles.line}>
                 {detail}
@@ -183,19 +183,8 @@ export function ExerciseRow({
             </Txt>
           ) : null}
 
-          {/* The fields are too narrow to carry their own unit, so the columns
-              are named once at the top instead. */}
-          <View style={styles.setHeader} {...DECORATIVE}>
-            <View style={styles.setLabel} />
-            <Txt variant="caption" color="faint" style={styles.field}>
-              {t('training:colReps')}
-            </Txt>
-            <Txt variant="caption" color="faint" style={styles.field}>
-              {t('training:colLoad')}
-            </Txt>
-            <View style={styles.headerSpacer} />
-          </View>
-
+          {/* No column headings: each field already says what it holds, and a
+              row of labels repeating "Reps" over a box reading "Reps" is noise. */}
           {sets.map((set, index) => (
             <View key={index} style={styles.setRow}>
               <Txt variant="label" color="muted" numberOfLines={1} style={styles.setLabel}>
@@ -310,15 +299,6 @@ const styles = StyleSheet.create({
   },
   cue: {
     marginBottom: spacing.lg,
-  },
-  setHeader: {
-    alignItems: 'center',
-    columnGap: spacing.sm,
-    flexDirection: 'row',
-    marginBottom: spacing.xs,
-  },
-  headerSpacer: {
-    width: 44,
   },
   setRow: {
     alignItems: 'center',

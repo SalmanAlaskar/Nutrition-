@@ -187,12 +187,14 @@ export function ScanTrendChart({ scans, style }: ScanTrendChartProps) {
             {label}
           </Txt>
           {/* The unit is nested, never a sibling: Arabic would reorder two runs. */}
-          <Txt variant="metric" tabular numberOfLines={1} style={styles.singleValue}>
-            {formatAmount(latest?.value ?? 0, def.decimals)}
-            <Txt variant="label" color="faint" weight="medium">
-              {` ${unit}`}
+          <View style={styles.line}>
+            <Txt variant="metric" tabular numberOfLines={1} style={styles.singleValue}>
+              {formatAmount(latest?.value ?? 0, def.decimals)}
+              <Txt variant="label" color="faint" weight="medium">
+                {` ${unit}`}
+              </Txt>
             </Txt>
-          </Txt>
+          </View>
           <Txt variant="caption" color="faint">
             {t('trendSingle', { day: shortDay(model.lastDate) })}
           </Txt>
@@ -283,6 +285,11 @@ const styles = StyleSheet.create({
   },
   single: {
     marginTop: spacing.lg,
+  },
+  // A figure of digits alone carries no reading direction; as a row child it is
+  // placed by the layout instead of by text alignment.
+  line: {
+    flexDirection: 'row',
   },
   singleValue: {
     marginBottom: 2,

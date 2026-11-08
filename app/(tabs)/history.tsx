@@ -20,17 +20,16 @@ import {
   AppHeader,
   Badge,
   Button,
-  Card,
   Divider,
   EmptyState,
   IconButton,
   LoadingView,
   NumberField,
   Screen,
+  Section,
   SegmentedControl,
   StatTile,
   Txt,
-  type TxtColor,
 } from '@/components/ui';
 import { latestScan, scanChange } from '@/domain/bodyScan';
 import { lastNDays, todayKey } from '@/domain/date';
@@ -38,10 +37,10 @@ import { formatAmount, formatCount, formatDelta } from '@/domain/format';
 import { LIMITS, kgToLb, lbToKg } from '@/domain/nutrition';
 import { averageCalories, loggingStreak, totalMacros } from '@/domain/totals';
 import { SESSION_ICONS, dayForDate, isSessionComplete } from '@/domain/training';
-import { mirrorIcon, useDirection } from '@/i18n';
+import { useDirection } from '@/i18n';
 import { useApp } from '@/state/AppStore';
 import { getMealsForDates, getWorkoutsForDates } from '@/storage/repository';
-import { radius, spacing, useTheme } from '@/theme';
+import { layout, radius, spacing, useTheme } from '@/theme';
 import type { Macros, Meal, Program, SessionType, WorkoutSession } from '@/types';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -57,8 +56,8 @@ const DECORATIVE: AccessibilityProps = Platform.select<AccessibilityProps>({
 
 type RangeKey = '7' | '14' | '30';
 
-/** Adherence at or above this share of the scheduled days reads as on plan. */
-const ON_PLAN_PERCENT = 80;
+/** Stands in for a figure that was never measured. */
+const MISSING = '—';
 
 /** Session types, mapped to the copy that names them in the reader's language. */
 const TYPE_KEYS = {
@@ -83,7 +82,7 @@ interface DayRow {
  * the session that was logged, or the scheduled one that was not.
  */
 type DayTraining =
-  | { kind: 'logged'; label: string; sets: number; icon: string }
+  | { kind: 'logged'; label: string; sets: number }
   | { kind: 'missed'; label: string };
 
 /** One session type in the range: how many were done against how many planned. */
@@ -93,30 +92,16 @@ interface TypeRowData {
   scheduled: number;
 }
 
-/** The three numbers a scan card leads with, in kilograms and percent. */
-const SCAN_CARD_METRICS = [
-  { key: 'weightKg', labelKey: 'metricWeight', unit: 'kg', decimals: 1, higherIsBetter: null },
-  {
-    key: 'skeletalMuscleKg',
-    labelKey: 'metricMuscle',
-    unit: 'kg',
-    decimals: 1,
-    higherIsBetter: true,
-  },
-  {
-    key: 'bodyFatPercent',
-    labelKey: 'metricFat',
-    unit: 'percent',
-    decimals: 1,
-    higherIsBetter: false,
-  },
+/** The three figures the body-composition summary leads with. */
+const SCAN_METRICS = [
+  { key: 'weightKg', labelKey: 'metricWeight', unit: 'kg', decimals: 1 },
+  { key: 'skeletalMuscleKg', labelKey: 'metricMuscle', unit: 'kg', decimals: 1 },
+  { key: 'bodyFatPercent', labelKey: 'metricFat', unit: 'percent', decimals: 1 },
 ] as const satisfies readonly {
   key: 'weightKg' | 'skeletalMuscleKg' | 'bodyFatPercent';
   labelKey: 'metricWeight' | 'metricMuscle' | 'metricFat';
   unit: 'kg' | 'percent';
   decimals: number;
-  /** Direction of a good change, null when it depends on the goal. */
-  higherIsBetter: boolean | null;
 }[];
 
 /** Sets ticked off across a set of sessions. */
@@ -130,48 +115,16 @@ function completedSets(sessions: WorkoutSession[]): number {
   return total;
 }
 
-/** Section title with an optional caption or action on the trailing edge. */
-function SectionHeader({
-  title,
-  hint,
-  right,
-}: {
-  title: string;
-  hint?: string;
-  right?: React.ReactNode;
-}) {
-  return (
-    <View style={styles.section}>
-      <Txt variant="heading" numberOfLines={1} style={styles.sectionTitle} accessibilityRole="header">
-        {title}
-      </Txt>
-      {right ??
-        (hint ? (
-          <Txt
-            variant="caption"
-            color="faint"
-            align="end"
-            numberOfLines={2}
-            style={styles.sectionHint}
-          >
-            {hint}
-          </Txt>
-        ) : null)}
-    </View>
-  );
-}
-
 /**
- * One session type inside the training card. The count turns amber when fewer
- * sessions were done than the program scheduled, so a neglected day type is
- * visible without reading the numbers.
+ * One session type, read as a line of text. The glyph is the fastest way to
+ * recognise a day type, so it stays; the bar that used to sit under it said
+ * nothing the two figures beside it do not already say.
  */
 function TypeRow({ data }: { data: TypeRowData }) {
   const { colors } = useTheme();
   const { t } = useTranslation('history');
   const { type, done, scheduled } = data;
   const behind = scheduled > 0 && done < scheduled;
-  const share = scheduled > 0 ? Math.min(1, done / scheduled) : done > 0 ? 1 : 0;
   const label = t(TYPE_KEYS[type]);
 
   return (
@@ -188,43 +141,25 @@ function TypeRow({ data }: { data: TypeRowData }) {
       }
       style={styles.typeRow}
     >
-      <View style={[styles.typeBubble, { backgroundColor: colors.surfaceAlt }]} {...DECORATIVE}>
-        <Ionicons name={SESSION_ICONS[type] as IconName} size={16} color={colors.textMuted} />
+      <View {...DECORATIVE}>
+        <Ionicons name={SESSION_ICONS[type] as IconName} size={16} color={colors.textFaint} />
       </View>
 
-      <View style={styles.typeBody}>
-        <View style={styles.typeHead}>
-          <Txt weight="medium" numberOfLines={1} style={styles.typeLabel}>
-            {label}
-          </Txt>
-          <Txt variant="label" color={behind ? 'warning' : 'muted'} tabular numberOfLines={1}>
-            {scheduled > 0
-              ? `${formatCount(done)} / ${formatCount(scheduled)}`
-              : formatCount(done)}
-          </Txt>
-        </View>
+      <Txt variant="label" numberOfLines={1} style={styles.typeLabel}>
+        {label}
+      </Txt>
 
-        <View style={[styles.bar, { backgroundColor: colors.track }]} {...DECORATIVE}>
-          <View
-            style={[
-              styles.barFill,
-              {
-                backgroundColor: behind ? colors.warning : colors.accent,
-                width: `${share * 100}%`,
-              },
-            ]}
-          />
-        </View>
-      </View>
+      {/* Done and scheduled in one run: as siblings Arabic reorders the pair. */}
+      <Txt variant="label" color={behind ? 'muted' : 'text'} tabular numberOfLines={1}>
+        {scheduled > 0 ? `${formatCount(done)}/${formatCount(scheduled)}` : formatCount(done)}
+      </Txt>
     </View>
   );
 }
 
 /** The training line under a day row: what was logged, or what was missed. */
 function DayTrainingNote({ data }: { data: DayTraining }) {
-  const { colors } = useTheme();
   const { t } = useTranslation('history');
-  const logged = data.kind === 'logged';
 
   const text =
     data.kind === 'logged'
@@ -237,21 +172,16 @@ function DayTrainingNote({ data }: { data: DayTraining }) {
       : t('dayMissed', { label: data.label });
 
   return (
-    <View
+    <Txt
       accessible
-      accessibilityLabel={logged ? t('daySpoken', { text }) : text}
+      accessibilityLabel={data.kind === 'logged' ? t('daySpoken', { text }) : text}
+      variant="caption"
+      color="faint"
+      numberOfLines={1}
       style={styles.dayNote}
     >
-      <Ionicons
-        name={(data.kind === 'logged' ? data.icon : 'remove-circle-outline') as IconName}
-        size={14}
-        color={logged ? colors.accent : colors.textFaint}
-        {...DECORATIVE}
-      />
-      <Txt variant="caption" color={logged ? 'accent' : 'faint'} numberOfLines={1}>
-        {text}
-      </Txt>
-    </View>
+      {text}
+    </Txt>
   );
 }
 
@@ -259,7 +189,7 @@ export default function HistoryScreen() {
   const { colors } = useTheme();
   const router = useRouter();
   const { t } = useTranslation(['history', 'units', 'common']);
-  const { language, isRTL } = useDirection();
+  const { language } = useDirection();
   const dayText = useDayText();
   const {
     ready,
@@ -438,15 +368,13 @@ export default function HistoryScreen() {
     const map: Record<string, DayTraining> = {};
     for (const date of dates) {
       const sessions = workoutsByDate[date] ?? [];
-      const first = sessions[0];
-      if (first) {
+      if (sessions.length > 0) {
         map[date] = {
           kind: 'logged',
           label: sessions
             .map((session) => labelForDay(session.dayId, session.type, session.dayLabel))
             .join(' + '),
           sets: completedSets(sessions),
-          icon: SESSION_ICONS[first.type],
         };
         continue;
       }
@@ -494,6 +422,8 @@ export default function HistoryScreen() {
     [setSelectedDate, router],
   );
 
+  const openBody = useCallback(() => router.push('/body'), [router]);
+
   const openWeightSheet = useCallback(() => {
     const seedKg = rangeWeights[rangeWeights.length - 1]?.weightKg ?? profile?.weightKg ?? null;
     setDraft(
@@ -527,6 +457,7 @@ export default function HistoryScreen() {
   }, [draftKg, draftValid, logWeight]);
 
   const busy = !ready || !loaded;
+  const trainingEmpty = training.count === 0 && training.scheduledDays === 0;
 
   return (
     <>
@@ -540,6 +471,7 @@ export default function HistoryScreen() {
           large
         />
 
+        {/* The range governs every section under it, so it sits with them. */}
         <SegmentedControl<RangeKey>
           options={rangeOptions}
           value={range}
@@ -551,51 +483,47 @@ export default function HistoryScreen() {
           <LoadingView message={t('loading')} />
         ) : (
           <>
-            <SectionHeader
+            <Section
+              first
               title={t('caloriesTitle')}
-              hint={t('span', {
+              subtitle={t('span', {
                 from: dayText.shortDay(startDate),
                 to: dayText.shortDay(today),
               })}
-            />
-            <Card style={styles.block}>
+              style={styles.afterRange}
+            >
               <CalorieChart days={summary.chart} target={targetCalories} />
-            </Card>
 
-            <View style={styles.tiles}>
-              <StatTile
-                label={t('avgCalories')}
-                value={formatCount(summary.avgCalories)}
-                unit={t('units:kcal')}
-                icon="flame-outline"
-                tone="accent"
-                hint={t('avgCaloriesHint')}
-              />
-              <StatTile
-                label={t('daysLogged')}
-                value={`${formatCount(summary.loggedCount)}/${formatCount(rangeDays)}`}
-                icon="calendar-outline"
-                hint={t('daysLoggedHint')}
-              />
-              <StatTile
-                label={t('streak')}
-                value={formatCount(streak)}
-                unit={streak === 1 ? t('dayUnitOne') : t('dayUnit')}
-                icon="flash-outline"
-                hint={t('streakHint')}
-              />
-              <StatTile
-                label={t('avgProtein')}
-                value={formatCount(summary.avgProtein)}
-                unit={t('units:gram')}
-                icon="barbell-outline"
-                hint={t('avgProteinHint')}
-              />
-            </View>
+              <View style={styles.figures}>
+                <StatTile
+                  label={t('avgCalories')}
+                  value={formatCount(summary.avgCalories)}
+                  unit={t('units:kcal')}
+                  style={styles.figure}
+                />
+                <StatTile
+                  label={t('avgProtein')}
+                  value={formatCount(summary.avgProtein)}
+                  unit={t('units:gram')}
+                  style={styles.figure}
+                />
+                <StatTile
+                  label={t('daysLogged')}
+                  value={formatCount(summary.loggedCount)}
+                  unit={t('ofTotal', { total: formatCount(rangeDays) })}
+                  style={styles.figure}
+                />
+                <StatTile
+                  label={t('streak')}
+                  value={formatCount(streak)}
+                  unit={streak === 1 ? t('dayUnitOne') : t('dayUnit')}
+                  style={styles.figure}
+                />
+              </View>
+            </Section>
 
-            <SectionHeader title={t('trainingTitle')} hint={programName(program, language)} />
-            <Card style={styles.block}>
-              {training.count === 0 && training.scheduledDays === 0 ? (
+            <Section title={t('trainingTitle')} subtitle={programName(program, language)}>
+              {trainingEmpty ? (
                 <EmptyState
                   icon="barbell-outline"
                   title={t('trainingEmptyTitle')}
@@ -606,92 +534,64 @@ export default function HistoryScreen() {
               ) : (
                 <>
                   <View style={styles.trainingHead}>
-                    <View
-                      accessible
+                    {/* The count and what it is made of share one run. */}
+                    <Txt
                       accessibilityLabel={t('trainingSpoken', {
                         sessions: formatCount(training.count),
                         days: formatCount(rangeDays),
                         sets: formatCount(training.sets),
                       })}
+                      variant="metric"
+                      tabular
+                      numberOfLines={1}
                       style={styles.trainingCount}
                     >
-                      <Txt variant="title" tabular>
-                        {formatCount(training.count)}
+                      {formatCount(training.count)}
+                      <Txt variant="label" color="faint" weight="medium">
+                        {` ${t('trainingUnit', { sets: formatCount(training.sets) })}`}
                       </Txt>
-                      <Txt
-                        variant="label"
-                        color="muted"
-                        numberOfLines={2}
-                        style={styles.trainingUnit}
-                      >
-                        {t('trainingUnit', { sets: formatCount(training.sets) })}
-                      </Txt>
-                    </View>
+                    </Txt>
 
-                    {training.adherence === null ? (
-                      <Badge label={t('noSchedule')} />
-                    ) : (
-                      <Badge
-                        label={t('adherence', { percent: formatCount(training.adherence) })}
-                        tone={training.adherence >= ON_PLAN_PERCENT ? 'accent' : 'default'}
-                      />
-                    )}
+                    <Badge
+                      variant="plain"
+                      label={
+                        training.adherence === null
+                          ? t('noSchedule')
+                          : t('adherence', { percent: formatCount(training.adherence) })
+                      }
+                      style={styles.trainingBadge}
+                    />
                   </View>
 
-                  {training.scheduledDays > 0 ? (
-                    <>
-                      <View
-                        style={[styles.bar, styles.trainingBar, { backgroundColor: colors.track }]}
-                        {...DECORATIVE}
-                      >
-                        <View
-                          style={[
-                            styles.barFill,
-                            {
-                              backgroundColor: colors.accent,
-                              width: `${
-                                Math.min(1, training.trainedDays / training.scheduledDays) * 100
-                              }%`,
-                            },
-                          ]}
-                        />
-                      </View>
-                      <Txt variant="label" color="muted" style={styles.trainingHint}>
-                        {t('trainedDays', {
+                  <Txt variant="label" color="muted" style={styles.trainingNote}>
+                    {training.scheduledDays > 0
+                      ? t('trainedDays', {
                           done: formatCount(training.trainedDays),
                           planned: formatCount(training.scheduledDays),
-                        })}
-                      </Txt>
-                    </>
-                  ) : (
-                    <Txt variant="label" color="muted" style={styles.trainingHint}>
-                      {t('scheduleHint')}
-                    </Txt>
-                  )}
+                        })
+                      : t('scheduleHint')}
+                  </Txt>
 
                   {training.unfinished > 0 ? (
-                    <Txt variant="caption" color="faint" style={styles.trainingNote}>
+                    <Txt variant="caption" color="faint" style={styles.trainingAside}>
                       {t('unfinished', { sessions: formatCount(training.unfinished) })}
                     </Txt>
                   ) : null}
 
                   {training.rows.length > 0 ? (
-                    <>
-                      <Divider style={styles.trainingDivider} />
-                      <View style={styles.typeList}>
-                        {training.rows.map((row) => (
-                          <TypeRow key={row.type} data={row} />
-                        ))}
-                      </View>
-                    </>
+                    <View style={styles.typeList}>
+                      {training.rows.map((row) => (
+                        <TypeRow key={row.type} data={row} />
+                      ))}
+                    </View>
                   ) : null}
                 </>
               )}
-            </Card>
+            </Section>
 
-            <SectionHeader
+            <Section
               title={t('weightTitle')}
-              right={
+              action={
                 <IconButton
                   icon="add"
                   onPress={openWeightSheet}
@@ -700,8 +600,7 @@ export default function HistoryScreen() {
                   size={20}
                 />
               }
-            />
-            <Card style={styles.block}>
+            >
               <WeightChart
                 logs={rangeWeights}
                 startDate={startDate}
@@ -709,14 +608,25 @@ export default function HistoryScreen() {
                 units={units}
                 onLogWeight={openWeightSheet}
               />
-            </Card>
+            </Section>
 
-            <SectionHeader
+            <Section
               title={t('bodyTitle')}
-              hint={body.latest ? dayText.shortDay(body.latest.date) : undefined}
-            />
-            {body.latest === null ? (
-              <Card style={styles.block}>
+              subtitle={
+                body.latest === null
+                  ? undefined
+                  : body.change
+                    ? t('bodyChange', {
+                        days: formatCount(body.change.days),
+                        date: dayText.shortDay(body.change.fromDate),
+                      })
+                    : t('bodyFirst')
+              }
+              actionLabel={body.latest === null ? undefined : t('bodyOpenAction')}
+              onAction={body.latest === null ? undefined : openBody}
+              actionHint={t('bodyOpen')}
+            >
+              {body.latest === null ? (
                 <EmptyState
                   icon="body-outline"
                   title={t('bodyEmptyTitle')}
@@ -724,46 +634,12 @@ export default function HistoryScreen() {
                   actionLabel={t('bodyEmptyAction')}
                   onAction={() => router.push('/body/import')}
                 />
-              </Card>
-            ) : (
-              <Card
-                style={styles.block}
-                onPress={() => router.push('/body')}
-                accessibilityLabel={t('bodyOpen')}
-              >
-                <View style={styles.bodyHead}>
-                  <View style={styles.bodyHeadText}>
-                    <Txt weight="semibold" numberOfLines={1}>
-                      {body.latest.device ?? t('bodyLatest')}
-                    </Txt>
-                    <Txt variant="label" color="muted" numberOfLines={2} style={styles.bodySub}>
-                      {body.change
-                        ? t('bodyChange', {
-                            days: formatCount(body.change.days),
-                            date: dayText.shortDay(body.change.fromDate),
-                          })
-                        : t('bodyFirst')}
-                    </Txt>
-                  </View>
-                  <Ionicons
-                    name={mirrorIcon('chevron-forward', isRTL) as IconName}
-                    size={16}
-                    color={colors.textFaint}
-                    {...DECORATIVE}
-                  />
-                </View>
-
+              ) : (
                 <View style={styles.bodyMetrics}>
-                  {SCAN_CARD_METRICS.map((metric) => {
+                  {SCAN_METRICS.map((metric) => {
                     const scan = body.latest;
                     const value = scan === null ? undefined : scan[metric.key];
                     const delta = body.change ? body.change[metric.key] : undefined;
-                    const better =
-                      delta === undefined || delta === 0 || metric.higherIsBetter === null
-                        ? null
-                        : delta > 0 === metric.higherIsBetter;
-                    const deltaColor: TxtColor =
-                      better === null ? 'faint' : better ? colors.accent : colors.warning;
                     const label = t(metric.labelKey);
                     const unit = metric.unit === 'kg' ? t('units:kg') : t('units:percent');
 
@@ -791,34 +667,52 @@ export default function HistoryScreen() {
                         }
                         style={styles.bodyMetric}
                       >
-                        <Txt variant="caption" color="faint" numberOfLines={1}>
-                          {label}
-                        </Txt>
-                        <View style={styles.bodyValue}>
-                          <Txt variant="heading" weight="bold" tabular numberOfLines={1}>
-                            {value === undefined ? '—' : formatAmount(value, metric.decimals)}
-                          </Txt>
-                          <Txt variant="caption" color="faint">
-                            {unit}
+                        {/*
+                          Each figure sits in a row of its own. A run of digits
+                          alone carries no reading direction, so left to itself
+                          it aligns to the left of the column even in Arabic;
+                          as a row child it is placed by the layout instead.
+                          The unit is nested in the run, never a sibling.
+                        */}
+                        <View style={styles.bodyLine}>
+                          <Txt variant="metric" tabular numberOfLines={1}>
+                            {value === undefined
+                              ? MISSING
+                              : formatAmount(value, metric.decimals)}
+                            {value === undefined ? null : (
+                              <Txt variant="label" color="faint" weight="medium">
+                                {` ${unit}`}
+                              </Txt>
+                            )}
                           </Txt>
                         </View>
-                        <Txt variant="label" color={deltaColor} tabular numberOfLines={1}>
-                          {delta === undefined ? '—' : formatDelta(delta, metric.decimals)}
-                        </Txt>
+
+                        <View style={styles.bodyLine}>
+                          <Txt variant="label" color="muted" numberOfLines={1}>
+                            {label}
+                          </Txt>
+                        </View>
+
+                        <View style={styles.bodyLine}>
+                          <Txt variant="caption" color="faint" tabular numberOfLines={1}>
+                            {delta === undefined
+                              ? MISSING
+                              : formatDelta(delta, metric.decimals)}
+                          </Txt>
+                        </View>
                       </View>
                     );
                   })}
                 </View>
-              </Card>
-            )}
+              )}
+            </Section>
 
-            <SectionHeader
+            <Section
               title={t('dayByDay')}
-              hint={summary.recent.length > 0 ? t('newestFirst') : undefined}
-            />
-
-            {summary.recent.length === 0 ? (
-              <Card style={styles.block}>
+              subtitle={summary.recent.length > 0 ? t('newestFirst') : undefined}
+              gap="tight"
+            >
+              {summary.recent.length === 0 ? (
                 <EmptyState
                   icon="restaurant-outline"
                   title={t('daysEmptyTitle')}
@@ -826,14 +720,12 @@ export default function HistoryScreen() {
                   actionLabel={t('daysEmptyAction')}
                   onAction={() => router.navigate('/(tabs)')}
                 />
-              </Card>
-            ) : (
-              <Card padded={false} style={styles.block}>
-                {summary.recent.map((row, index) => {
+              ) : (
+                summary.recent.map((row, index) => {
                   const note = dayTraining[row.date];
                   return (
                     <View key={row.date}>
-                      {index > 0 ? <Divider inset /> : null}
+                      {index > 0 ? <Divider /> : null}
                       <DaySummaryRow
                         date={row.date}
                         macros={row.macros}
@@ -845,9 +737,9 @@ export default function HistoryScreen() {
                       {note ? <DayTrainingNote data={note} /> : null}
                     </View>
                   );
-                })}
-              </Card>
-            )}
+                })
+              )}
+            </Section>
           </>
         )}
       </Screen>
@@ -871,12 +763,7 @@ export default function HistoryScreen() {
             style={styles.modalCenter}
             pointerEvents="box-none"
           >
-            <View
-              style={[
-                styles.sheet,
-                { backgroundColor: colors.surface, borderColor: colors.border },
-              ]}
-            >
+            <View style={[styles.sheet, { backgroundColor: colors.surface }]}>
               <Txt variant="heading">{t('logWeight')}</Txt>
               <Txt variant="label" color="muted" style={styles.sheetHint}>
                 {units === 'imperial' ? t('weightSheetHintLb') : t('weightSheetHintKg')}
@@ -927,128 +814,78 @@ function programName(program: Program | null, language: string): string | undefi
 
 const styles = StyleSheet.create({
   range: {
-    marginBottom: spacing.xl,
+    marginTop: spacing.sm,
   },
-  block: {
-    marginBottom: spacing.xl,
+  afterRange: {
+    marginTop: spacing.xl,
   },
-  tiles: {
-    columnGap: spacing.md,
+
+  /* calories */
+  figures: {
+    columnGap: spacing.lg,
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginBottom: spacing.xl,
-    rowGap: spacing.md,
+    marginTop: spacing.xl,
+    rowGap: spacing.xl,
   },
-  section: {
-    alignItems: 'center',
-    columnGap: spacing.md,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: spacing.md,
-    minHeight: 44,
-  },
-  sectionTitle: {
-    flexShrink: 1,
-  },
-  sectionHint: {
-    flexShrink: 1,
-    maxWidth: '55%',
+  // Two to a row at every width, so four figures read as one block.
+  // `flex-start` also keeps each line shrink-wrapped, so the figure and its
+  // label are placed by the layout and follow the reading direction together.
+  figure: {
+    alignItems: 'flex-start',
+    flexBasis: '40%',
   },
 
   /* training */
   trainingHead: {
-    alignItems: 'flex-start',
+    alignItems: 'baseline',
     columnGap: spacing.md,
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
   trainingCount: {
-    alignItems: 'baseline',
-    columnGap: spacing.sm,
-    flexDirection: 'row',
     flexShrink: 1,
   },
-  trainingUnit: {
-    flexShrink: 1,
-  },
-  trainingBar: {
-    marginTop: spacing.lg,
-  },
-  trainingHint: {
-    marginTop: spacing.sm,
+  trainingBadge: {
+    // A badge pins itself to the start of its line; on this row it has to sit
+    // on the same baseline as the figure beside it.
+    alignSelf: 'baseline',
+    flexShrink: 0,
   },
   trainingNote: {
+    marginTop: spacing.sm,
+    maxWidth: layout.maxTextWidth,
+  },
+  trainingAside: {
     marginTop: spacing.xs,
   },
-  trainingDivider: {
-    marginTop: spacing.lg,
-  },
   typeList: {
-    marginTop: spacing.lg,
+    marginTop: spacing.xl,
     rowGap: spacing.md,
   },
   typeRow: {
     alignItems: 'center',
     columnGap: spacing.md,
     flexDirection: 'row',
-    minHeight: 34,
-  },
-  typeBubble: {
-    alignItems: 'center',
-    borderRadius: radius.pill,
-    height: 28,
-    justifyContent: 'center',
-    width: 28,
-  },
-  typeBody: {
-    flex: 1,
-    rowGap: spacing.xs + 2,
-  },
-  typeHead: {
-    alignItems: 'baseline',
-    columnGap: spacing.md,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    minHeight: 24,
   },
   typeLabel: {
+    flexGrow: 1,
     flexShrink: 1,
-  },
-  bar: {
-    borderRadius: radius.pill,
-    flexDirection: 'row',
-    height: 6,
-    overflow: 'hidden',
-    width: '100%',
-  },
-  barFill: {
-    height: '100%',
   },
 
   /* body composition */
-  bodyHead: {
-    alignItems: 'center',
-    columnGap: spacing.md,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  bodyHeadText: {
-    flexShrink: 1,
-  },
-  bodySub: {
-    marginTop: 2,
-  },
   bodyMetrics: {
     columnGap: spacing.md,
     flexDirection: 'row',
-    marginTop: spacing.lg,
   },
   bodyMetric: {
-    flex: 1,
-    rowGap: 2,
+    flexBasis: 0,
+    flexGrow: 1,
+    flexShrink: 1,
+    rowGap: spacing.xs,
   },
-  bodyValue: {
-    alignItems: 'baseline',
-    columnGap: 3,
+  bodyLine: {
     flexDirection: 'row',
   },
 
@@ -1057,12 +894,10 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
   },
   dayNote: {
-    alignItems: 'center',
-    columnGap: spacing.xs + 2,
-    flexDirection: 'row',
     paddingBottom: spacing.md,
-    paddingHorizontal: spacing.lg,
   },
+
+  /* weight sheet */
   modalRoot: {
     flex: 1,
   },
@@ -1074,7 +909,6 @@ const styles = StyleSheet.create({
   sheet: {
     alignSelf: 'center',
     borderRadius: radius.xl,
-    borderWidth: StyleSheet.hairlineWidth,
     maxWidth: 420,
     padding: spacing.xl,
     width: '100%',

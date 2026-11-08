@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,6 +13,7 @@ import {
 
 import { Txt } from '@/components/ui';
 import { daysBetween, lastNDays, parseDateKey, todayKey } from '@/domain/date';
+import { useDirection } from '@/i18n';
 import { layout, radius, spacing, useTheme } from '@/theme';
 
 import { useDayLabels } from './useDayLabels';
@@ -35,9 +37,24 @@ const EDGE = layout.gutter;
 /** The filled disc behind the selected day's number. */
 const DISC = 34;
 
+/**
+ * Turns an offset measured from the reading-start edge into the number a
+ * scroller actually takes.
+ *
+ * Left to right the two are the same. In Arabic they are not: a browser counts
+ * an RTL scroller's offset negatively from the right edge, while a native RTL
+ * ScrollView still counts it positively from the left. Without this the strip
+ * clamps at zero and opens two weeks away from the day you picked.
+ */
+function scrollOffset(fromStart: number, maxOffset: number, isRTL: boolean): number {
+  if (!isRTL) return fromStart;
+  return Platform.OS === 'web' ? -fromStart : maxOffset - fromStart;
+}
+
 export function DayStrip({ selectedDate, loggedDates, onSelect, style }: DayStripProps) {
   const { colors } = useTheme();
   const { t } = useTranslation('today');
+  const { isRTL } = useDirection();
   const labels = useDayLabels();
   const scrollRef = useRef<ScrollView>(null);
   const viewportRef = useRef(0);
@@ -66,11 +83,16 @@ export function DayStrip({ selectedDate, loggedDates, onSelect, style }: DayStri
 
       const stride = ITEM_WIDTH + GAP;
       const content = keys.length * stride - GAP + EDGE * 2;
+      const maxOffset = Math.max(0, content - viewport);
       const target = EDGE + index * stride + ITEM_WIDTH / 2 - viewport / 2;
-      const x = Math.max(0, Math.min(target, Math.max(0, content - viewport)));
-      scrollRef.current?.scrollTo({ x, y: 0, animated });
+      const fromStart = Math.max(0, Math.min(target, maxOffset));
+      scrollRef.current?.scrollTo({
+        x: scrollOffset(fromStart, maxOffset, isRTL),
+        y: 0,
+        animated,
+      });
     },
-    [keys, selectedDate],
+    [isRTL, keys, selectedDate],
   );
 
   useEffect(() => {

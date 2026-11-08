@@ -117,6 +117,13 @@ const styles = StyleSheet.create({
   figure: {
     // A figure never shrinks or wraps to fit.
     flexShrink: 0,
+    /*
+      Shrink-wrapped on purpose. A run of digits carries no strong direction,
+      so the web reads it left to right and a logical text alignment would pin
+      it to the wrong edge in Arabic. Sized to its own content, the figure is
+      placed by the column instead, which does follow the page direction.
+    */
+    alignSelf: 'flex-start',
   },
   caption: {
     marginTop: spacing.xs,

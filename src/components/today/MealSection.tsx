@@ -14,11 +14,12 @@ import {
 } from 'react-native';
 
 import { useFoodLabels } from '@/components/meal/useFoodLabels';
-import { Divider, IconButton, Txt } from '@/components/ui';
+import { IconButton, Txt } from '@/components/ui';
 import { formatCount } from '@/domain/format';
+import { slotStatus, type SlotStatus } from '@/domain/mealPlan';
 import { mealMacros } from '@/domain/totals';
 import { radius, spacing, useTheme } from '@/theme';
-import type { Macros, Meal, MealSlot } from '@/types';
+import type { Macros, Meal, MealSlot, Targets } from '@/types';
 
 import { useDayLabels } from './useDayLabels';
 
@@ -29,6 +30,8 @@ export interface MealSectionProps {
   meals: Meal[];
   /** The slot's subtotal, straight from DailyTotals.bySlot. */
   macros: Macros;
+  /** This slot's share of the day, or null before the profile exists. */
+  target: Targets | null;
   onAdd: () => void;
   onOpen: (meal: Meal) => void;
   /** Called only after the user confirms. */
@@ -44,6 +47,13 @@ const SLOT_GLYPHS: Record<MealSlot, IconName> = {
   snack: 'ice-cream-outline',
 };
 
+/** Short word under a slot saying how it is tracking against its share. */
+const STATUS_KEYS = {
+  under: 'today:statusUnder',
+  'on-track': 'today:statusOnTrack',
+  over: 'today:statusOver',
+} as const satisfies Record<Exclude<SlotStatus, 'empty'>, string>;
+
 /** Decoration is hidden from assistive tech; the DOM only understands aria-hidden. */
 const DECORATIVE: AccessibilityProps = Platform.select<AccessibilityProps>({
   web: { 'aria-hidden': true },
@@ -55,7 +65,6 @@ const DECORATIVE: AccessibilityProps = Platform.select<AccessibilityProps>({
 
 /** Thumbnail size, and the indent everything under a slot header lines up to. */
 const THUMB = 38;
-const ROW_INDENT = THUMB + spacing.md;
 
 interface DeletePrompt {
   title: string;
@@ -79,13 +88,15 @@ function confirmDelete(prompt: DeletePrompt): void {
 }
 
 /**
- * One slot of the day as a run of list rows: a header line, then a meal per
- * row. No card — the four slots are a single list, not four boxes.
+ * One slot of the day as a run of list rows: a two-line header, then a meal
+ * per row. No card, no rules and no second figure at the end of the header —
+ * the four slots are a single list, not four boxes.
  */
 export function MealSection({
   slot,
   meals,
   macros,
+  target,
   onAdd,
   onOpen,
   onDelete,
@@ -99,6 +110,26 @@ export function MealSection({
   const label = foodLabels.slot(slot);
   const calories = Math.round(macros.calories);
   const empty = meals.length === 0;
+
+  const status: SlotStatus = target ? slotStatus(macros, target) : 'empty';
+  const word = status === 'empty' ? '' : t(STATUS_KEYS[status]);
+
+  // The header's second line carries the slot's whole arithmetic, which is why
+  // the header needs no trailing figure of its own.
+  const planLine = target
+    ? t('today:slotPlan', {
+        eaten: formatCount(calories),
+        target: formatCount(Math.round(target.calories)),
+      })
+    : empty
+      ? t('common:notLoggedYet')
+      : t('today:slotTotal', { value: formatCount(calories) });
+
+  const headerSpoken = target
+    ? word
+      ? t('today:slotPlanSpokenStatus', { slot: label, line: planLine, status: word })
+      : t('today:slotPlanSpoken', { slot: label, line: planLine })
+    : t('today:slotTotalSpoken', { slot: label, value: formatCount(calories) });
 
   // Meal names come from the entries the user logged, so they are shown as
   // they were saved rather than translated.
@@ -133,7 +164,25 @@ export function MealSection({
   // Flat and muted: four accent bubbles would be four accents on one screen.
   const glyph = (
     <View style={styles.glyph} {...DECORATIVE}>
-      <Ionicons name={SLOT_GLYPHS[slot]} size={19} color={colors.textMuted} />
+      <Ionicons name={SLOT_GLYPHS[slot]} size={18} color={colors.textMuted} />
+    </View>
+  );
+
+  const headerText = (
+    /*
+      Status and figures share one text run. Laid out as siblings Arabic
+      reorders them, and two adjacent numbers read as one longer number.
+    */
+    <View style={styles.headerText}>
+      <Txt numberOfLines={1}>{label}</Txt>
+      <Txt variant="caption" color="faint" tabular numberOfLines={1} style={styles.headerMeta}>
+        {planLine}
+        {word ? (
+          <Txt variant="caption" color={status === 'over' ? 'warning' : 'faint'}>
+            {` · ${word}`}
+          </Txt>
+        ) : null}
+      </Txt>
     </View>
   );
 
@@ -145,7 +194,11 @@ export function MealSection({
         <Pressable
           onPress={onAdd}
           accessibilityRole="button"
-          accessibilityLabel={t('today:logSlot', { slot: label })}
+          accessibilityLabel={
+            target
+              ? t('today:logSlotPlan', { slot: label, line: planLine })
+              : t('today:logSlot', { slot: label })
+          }
           accessibilityHint={t('today:logSlotHint')}
           style={({ pressed }) => [
             styles.header,
@@ -153,12 +206,7 @@ export function MealSection({
           ]}
         >
           {glyph}
-          <Txt weight="semibold" numberOfLines={1} style={styles.headerTitle}>
-            {label}
-          </Txt>
-          <Txt variant="label" color="faint" numberOfLines={1}>
-            {t('common:notLoggedYet')}
-          </Txt>
+          {headerText}
           <View style={styles.addGlyph} {...DECORATIVE}>
             <Ionicons name="add" size={20} color={colors.textFaint} />
           </View>
@@ -172,24 +220,8 @@ export function MealSection({
       <View style={styles.header}>
         {glyph}
 
-        <Txt weight="semibold" numberOfLines={1} style={styles.headerTitle}>
-          {label}
-        </Txt>
-
-        <View
-          accessible
-          accessibilityLabel={t('today:slotTotalSpoken', {
-            slot: label,
-            value: formatCount(calories),
-          })}
-        >
-          {/* Figure and unit in one run: as siblings Arabic reorders them. */}
-          <Txt variant="label" weight="semibold" tabular numberOfLines={1}>
-            {formatCount(calories)}
-            <Txt variant="caption" color="faint" weight="regular">
-              {` ${t('units:kcal')}`}
-            </Txt>
-          </Txt>
+        <View accessible accessibilityLabel={headerSpoken} style={styles.headerWrap}>
+          {headerText}
         </View>
 
         <IconButton
@@ -202,78 +234,73 @@ export function MealSection({
         />
       </View>
 
-      {meals.map((meal, index) => {
+      {meals.map((meal) => {
         const title = summarize(meal);
         const mealCalories = Math.round(mealMacros(meal).calories);
         const time = dayLabels.time(meal.loggedAt);
         const countText = foodLabels.items(meal.entries.length);
 
         return (
-          <View key={meal.id}>
-            {index > 0 ? <Divider style={styles.rowDivider} /> : null}
-            {/* The row and its delete action are siblings: a Pressable nested
-                inside a Pressable renders an invalid <button> in <button>. */}
-            <View style={styles.rowWrap}>
-              <Pressable
-                onPress={() => onOpen(meal)}
-                onLongPress={() => requestDelete(meal)}
-                delayLongPress={350}
-                accessibilityRole="button"
-                accessibilityLabel={
-                  time
-                    ? t('today:mealSpokenAt', {
-                        title,
-                        value: formatCount(mealCalories),
-                        time,
-                      })
-                    : t('today:mealSpoken', { title, value: formatCount(mealCalories) })
-                }
-                accessibilityHint={t('today:openMealHint')}
-                style={({ pressed }) => [
-                  styles.row,
-                  pressed ? [styles.pressed, { backgroundColor: colors.surfaceAlt }] : null,
-                ]}
-              >
-                {meal.photoUri ? (
-                  <Image
-                    source={{ uri: meal.photoUri }}
-                    style={[styles.thumb, { backgroundColor: colors.surfaceAlt }]}
-                    contentFit="cover"
-                    transition={120}
-                    accessibilityIgnoresInvertColors
-                  />
-                ) : (
-                  // A plain tone, not a repeat of the slot glyph above it: the
-                  // square is here to keep the list aligned, nothing more.
-                  <View
-                    style={[styles.thumb, { backgroundColor: colors.surfaceAlt }]}
-                    {...DECORATIVE}
-                  />
-                )}
+          /* The row and its delete action are siblings: a Pressable nested
+             inside a Pressable renders an invalid <button> in <button>. */
+          <View key={meal.id} style={styles.rowWrap}>
+            <Pressable
+              onPress={() => onOpen(meal)}
+              onLongPress={() => requestDelete(meal)}
+              delayLongPress={350}
+              accessibilityRole="button"
+              accessibilityLabel={
+                time
+                  ? t('today:mealSpokenAt', {
+                      title,
+                      value: formatCount(mealCalories),
+                      time,
+                    })
+                  : t('today:mealSpoken', { title, value: formatCount(mealCalories) })
+              }
+              accessibilityHint={t('today:openMealHint')}
+              style={({ pressed }) => [
+                styles.row,
+                pressed ? [styles.pressed, { backgroundColor: colors.surfaceAlt }] : null,
+              ]}
+            >
+              {meal.photoUri ? (
+                <Image
+                  source={{ uri: meal.photoUri }}
+                  style={[styles.thumb, { backgroundColor: colors.surfaceAlt }]}
+                  contentFit="cover"
+                  transition={120}
+                  accessibilityIgnoresInvertColors
+                />
+              ) : (
+                // Empty, not a tone: a column of grey squares would be four
+                // more objects on the page. The space only holds the indent.
+                <View style={styles.thumb} {...DECORATIVE} />
+              )}
 
-                <View style={styles.rowText}>
-                  <Txt numberOfLines={1}>{title}</Txt>
-                  <Txt variant="label" color="muted" numberOfLines={1} style={styles.rowMeta}>
-                    {time ? `${time} · ${countText}` : countText}
-                  </Txt>
-                </View>
-
-                <Txt variant="label" tabular numberOfLines={1}>
-                  {formatCount(mealCalories)}
-                  <Txt variant="caption" color="faint">
-                    {` ${t('units:kcal')}`}
-                  </Txt>
+              <View style={styles.rowText}>
+                <Txt numberOfLines={1}>{title}</Txt>
+                <Txt variant="label" color="faint" numberOfLines={1} style={styles.rowMeta}>
+                  {time ? `${time} · ${countText}` : countText}
                 </Txt>
-              </Pressable>
+              </View>
 
-              <IconButton
-                icon="trash-outline"
-                onPress={() => requestDelete(meal)}
-                accessibilityLabel={t('today:deleteLabel', { name: title })}
-                size={16}
-                color={colors.textFaint}
-              />
-            </View>
+              {/* Figure and unit in one run: as siblings Arabic reorders them. */}
+              <Txt variant="label" tabular numberOfLines={1} style={styles.rowFigure}>
+                {formatCount(mealCalories)}
+                <Txt variant="caption" color="faint">
+                  {` ${t('units:kcal')}`}
+                </Txt>
+              </Txt>
+            </Pressable>
+
+            <IconButton
+              icon="trash-outline"
+              onPress={() => requestDelete(meal)}
+              accessibilityLabel={t('today:deleteLabel', { name: title })}
+              size={16}
+              color={colors.textFaint}
+            />
           </View>
         );
       })}
@@ -288,8 +315,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     minHeight: 52,
   },
-  headerTitle: {
+  headerWrap: {
     flex: 1,
+  },
+  headerText: {
+    flex: 1,
+  },
+  headerMeta: {
+    marginTop: 3,
   },
   glyph: {
     alignItems: 'center',
@@ -317,12 +350,8 @@ const styles = StyleSheet.create({
     columnGap: spacing.md,
     flex: 1,
     flexDirection: 'row',
-    minHeight: 58,
+    minHeight: 56,
     paddingVertical: spacing.sm,
-  },
-  rowDivider: {
-    marginStart: ROW_INDENT,
-    width: 'auto',
   },
   thumb: {
     borderRadius: radius.md,
@@ -334,5 +363,9 @@ const styles = StyleSheet.create({
   },
   rowMeta: {
     marginTop: 2,
+  },
+  rowFigure: {
+    // A figure never shrinks or wraps to fit its column.
+    flexShrink: 0,
   },
 });

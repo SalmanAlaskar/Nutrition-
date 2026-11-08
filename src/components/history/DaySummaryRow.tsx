@@ -142,7 +142,7 @@ export function DaySummaryRow({
         {comparison ? (
           <Txt
             variant="label"
-            color={over ? 'warning' : 'faint'}
+            color={over ? 'muted' : 'faint'}
             tabular
             numberOfLines={1}
             style={styles.comparison}

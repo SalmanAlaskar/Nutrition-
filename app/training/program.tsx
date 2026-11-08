@@ -275,13 +275,15 @@ export default function ProgramScreen() {
 
       {program.days.map((day) => {
         const dayLabel = text.day(day);
+        const typeLabel = text.type(day.type);
+        // A day the user has not renamed is already called after its type, so
+        // naming the type again under it would print the same word twice.
+        const subtitle =
+          dayLabel === typeLabel
+            ? text.exercises(day.exercises.length)
+            : `${typeLabel} · ${text.exercises(day.exercises.length)}`;
         return (
-          <Section
-            key={day.id}
-            title={dayLabel}
-            subtitle={`${text.type(day.type)} · ${text.exercises(day.exercises.length)}`}
-            gap="tight"
-          >
+          <Section key={day.id} title={dayLabel} subtitle={subtitle} gap="tight">
             {day.exercises.map((planned, index) => {
               const key = `${day.id}:${index}`;
               const expanded = openKey === key;

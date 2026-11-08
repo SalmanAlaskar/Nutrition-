@@ -58,6 +58,10 @@ const DECORATIVE = Platform.select({
  * Daily calories as bars on a shared baseline. Days with no meals are drawn as
  * a hairline stub rather than a full-height track, so a sparse month reads as
  * mostly empty instead of mostly maxed out.
+ *
+ * Every bar is one colour: this chart is the accent of the History screen, and
+ * a day over target is told by the dashed target line it crosses rather than by
+ * a second, louder fill.
  */
 export function CalorieChart({ days, target, style }: CalorieChartProps) {
   const { colors } = useTheme();
@@ -76,7 +80,7 @@ export function CalorieChart({ days, target, style }: CalorieChartProps) {
 
   const geometry = useMemo(() => {
     const slot = count > 0 ? width / count : 0;
-    const barWidth = Math.max(3, Math.min(slot * 0.5, 14));
+    const barWidth = Math.max(3, Math.min(slot * 0.45, 10));
     const showValues = count <= 10 && slot >= MIN_VALUE_SLOT;
     const topInset = showValues ? TOP_INSET_WITH_VALUES : TOP_INSET;
     const plotHeight = PLOT_HEIGHT - topInset - BOTTOM_INSET;
@@ -99,7 +103,6 @@ export function CalorieChart({ days, target, style }: CalorieChartProps) {
         height: filled,
         y: baselineY - filled,
         value: Math.round(day.calories),
-        over: target > 0 && day.calories > target,
       };
     });
 
@@ -186,7 +189,7 @@ export function CalorieChart({ days, target, style }: CalorieChartProps) {
                   width={geometry.barWidth}
                   height={bar.height}
                   rx={Math.min(geometry.barWidth / 2, bar.height / 2)}
-                  fill={bar.over ? colors.warning : colors.accent}
+                  fill={colors.accent}
                 />
               ) : null,
             )}
@@ -198,7 +201,7 @@ export function CalorieChart({ days, target, style }: CalorieChartProps) {
                       key={`value-${bar.key}`}
                       x={bar.center}
                       y={bar.y - 7}
-                      fill={bar.over ? colors.warning : colors.textFaint}
+                      fill={colors.textFaint}
                       fontSize={fontSize.xs}
                       textAnchor="middle"
                     >
@@ -295,10 +298,10 @@ const styles = StyleSheet.create({
   blank: {
     alignItems: 'center',
     bottom: 0,
+    end: 0,
     justifyContent: 'center',
-    left: 0,
     position: 'absolute',
-    right: 0,
+    start: 0,
     top: 0,
   },
   labels: {

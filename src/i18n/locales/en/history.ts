@@ -41,13 +41,10 @@ export const history = {
   /* calories */
   caloriesTitle: 'Calories',
   avgCalories: 'Avg calories',
-  avgCaloriesHint: 'Across days you logged',
   daysLogged: 'Days logged',
-  daysLoggedHint: 'In this range',
+  ofTotal: 'of {{total}}',
   streak: 'Streak',
-  streakHint: 'Consecutive days',
   avgProtein: 'Avg protein',
-  avgProteinHint: 'Per logged day',
   dayUnit: 'days',
   dayUnitOne: 'day',
 
@@ -115,10 +112,10 @@ export const history = {
 
   /* body composition */
   bodyTitle: 'Body composition',
-  bodyLatest: 'Latest reading',
   bodyChange: 'Change over {{days}} days, since {{date}}',
   bodyFirst: 'First reading, nothing to compare yet',
   bodyOpen: 'Open body composition history',
+  bodyOpenAction: 'Open',
   bodyEmptyTitle: 'No reading yet',
   bodyEmptyMessage:
     'Add a body-composition reading and muscle and fat move here alongside your weight.',

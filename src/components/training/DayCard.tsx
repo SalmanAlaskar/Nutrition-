@@ -75,6 +75,10 @@ export function DayCard({
   const title = day ? text.day(day) : t('restTitle');
   const subtitle = day ? text.muscles(day.type) : t('restSubtitle');
   const icon = day ? SESSION_ICONS[day.type] : 'moon-outline';
+  // The tick column is only reserved once something has actually been ticked;
+  // on a day that has not started, an empty gutter would indent the list for
+  // no reason the reader can see.
+  const marked = exercises.some((exercise) => exercise.done);
   const badge =
     status === 'completed'
       ? t('statusDone')
@@ -138,11 +142,13 @@ export function DayCard({
                     })
               }
             >
-              <View style={styles.mark} {...DECORATIVE}>
-                {exercise.done ? (
-                  <Ionicons name="checkmark" size={15} color={colors.textMuted} />
-                ) : null}
-              </View>
+              {marked ? (
+                <View style={styles.mark} {...DECORATIVE}>
+                  {exercise.done ? (
+                    <Ionicons name="checkmark" size={15} color={colors.textMuted} />
+                  ) : null}
+                </View>
+              ) : null}
               <Txt
                 numberOfLines={1}
                 color={exercise.done ? 'muted' : 'text'}
@@ -158,10 +164,13 @@ export function DayCard({
         </View>
       ) : null}
 
+      {/* The accent is reserved for work still to be done. A rest day, or one
+          already finished and only being looked over, keeps the quiet button —
+          which also stops a filled accent sitting beside the green status. */}
       <Button
         label={primaryLabel}
         onPress={onPrimary}
-        variant={resting ? 'secondary' : 'primary'}
+        variant={resting || status === 'completed' ? 'secondary' : 'primary'}
         size="lg"
         fullWidth
         style={styles.action}
