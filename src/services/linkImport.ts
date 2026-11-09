@@ -53,3 +53,41 @@ function clearLinkImport(params: URLSearchParams): void {
 export function buildLinkImport(bundleJson: string): string {
   return `#${PARAM}=${encodeURIComponent(bundleJson)}`;
 }
+
+/** True while the address bar is carrying a payload. Does not consume it. */
+export function hasLinkImport(): boolean {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return false;
+  const hash = window.location.hash;
+  if (!hash || hash.length < 2) return false;
+  return new URLSearchParams(hash.slice(1)).get(PARAM) !== null;
+}
+
+/**
+ * Calls back when a payload appears in the fragment of a page that is already
+ * open, and returns the unsubscribe.
+ *
+ * Changing only the fragment of the current URL is a same-document navigation:
+ * the browser fires `hashchange`, nothing reloads, and React is never
+ * remounted. A link tapped while the app is already open therefore never
+ * reaches the read at mount, and its data is dropped in silence until the
+ * person happens to reload by hand - which looks exactly like the app showing
+ * stale numbers that correct themselves later. Listening here is what makes the
+ * link land on the first tap, open tab or not.
+ */
+export function subscribeLinkImport(onPayload: (payload: string) => void): () => void {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return () => undefined;
+
+  const handle = () => {
+    const payload = takeLinkImport();
+    if (payload !== null) onPayload(payload);
+  };
+
+  // `replaceState` inside the handler tidies the address bar without firing
+  // `hashchange` again, so taking the payload cannot loop.
+  window.addEventListener('hashchange', handle);
+  window.addEventListener('popstate', handle);
+  return () => {
+    window.removeEventListener('hashchange', handle);
+    window.removeEventListener('popstate', handle);
+  };
+}

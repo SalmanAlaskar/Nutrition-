@@ -15,7 +15,7 @@ import {
 } from '@/domain/phase';
 import { dailyTotals } from '@/domain/totals';
 import { DEFAULT_PROGRAM } from '@/domain/training';
-import { takeLinkImport } from '@/services/linkImport';
+import { subscribeLinkImport, takeLinkImport } from '@/services/linkImport';
 import * as repo from '@/storage/repository';
 import type {
   BodyScan,
@@ -33,8 +33,18 @@ import type {
 } from '@/types';
 
 interface AppContextValue {
-  /** False until the first load from storage finishes. */
+  /**
+   * False until the first load from storage finishes, and again while a link
+   * import is replacing what is stored. Screens show their loading state while
+   * it is false, which is what keeps figures that are about to change wholesale
+   * from sitting on screen looking current.
+   */
   ready: boolean;
+  /**
+   * Counts link imports that arrived at an already-open app. The app watches it
+   * to send the person to what the link set up, wherever they were standing.
+   */
+  linkImportCount: number;
   profile: Profile | null;
   settings: Settings;
   /** Day the dashboard and meal list are showing. */
@@ -89,7 +99,9 @@ interface AppContextValue {
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [ready, setReady] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [linkImportCount, setLinkImportCount] = useState(0);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [settings, setSettings] = useState<Settings>(repo.DEFAULT_SETTINGS);
   const [selectedDate, setSelectedDate] = useState<string>(todayKey());
@@ -150,6 +162,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setPhases(storedPhases);
   }, []);
 
+  /** Never throws: a bad payload must not keep the app from opening. */
+  const applyLinkImport = useCallback(async (payload: string) => {
+    try {
+      const outcome = await repo.importBundle(payload);
+      console.log('[store] imported from link', outcome.counts);
+    } catch (error) {
+      console.warn('[store] link import failed', error);
+    }
+  }, []);
+
   useEffect(() => {
     let active = true;
     (async () => {
@@ -158,26 +180,50 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // read means the app opens already showing them, with no second step
         // asked of the person who was handed the link.
         const payload = takeLinkImport();
-        if (payload) {
-          try {
-            const outcome = await repo.importBundle(payload);
-            console.log('[store] imported from link', outcome.counts);
-          } catch (error) {
-            console.warn('[store] link import failed', error);
-          }
-        }
+        if (payload) await applyLinkImport(payload);
         await refresh();
         if (active) await loadDay(todayKey());
       } catch (error) {
         console.warn('[store] initial load failed', error);
       } finally {
-        if (active) setReady(true);
+        if (active) setLoaded(true);
       }
     })();
     return () => {
       active = false;
     };
-  }, [refresh, loadDay]);
+  }, [refresh, loadDay, applyLinkImport]);
+
+  /**
+   * The same link, tapped while the app is already open. The fragment changes
+   * without a reload, so this is the only chance to read it; `importing` holds
+   * the screens on their loading state meanwhile, so the figures go straight
+   * from the spinner to the imported ones with no stale value in between.
+   */
+  useEffect(
+    () =>
+      subscribeLinkImport((payload) => {
+        void (async () => {
+          setImporting(true);
+          try {
+            await applyLinkImport(payload);
+            await refresh();
+            // The import is a fresh start; today is the day to land on.
+            const today = todayKey();
+            setSelectedDate(today);
+            await loadDay(today);
+          } catch (error) {
+            console.warn('[store] reload after link import failed', error);
+          } finally {
+            setImporting(false);
+            setLinkImportCount((count) => count + 1);
+          }
+        })();
+      }),
+    [applyLinkImport, refresh, loadDay],
+  );
+
+  const ready = loaded && !importing;
 
   useEffect(() => {
     if (!ready) return;
@@ -366,6 +412,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<AppContextValue>(
     () => ({
       ready,
+      linkImportCount,
       profile,
       settings,
       selectedDate,
@@ -405,7 +452,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       resetAll,
     }),
     [
-      ready, profile, settings, selectedDate, meals, loggedDates, weights,
+      ready, linkImportCount, profile, settings, selectedDate, meals, loggedDates, weights,
       customFoods, program, todaysWorkouts, workoutDates, bodyScans,
       customExercises, phases, activePhase, targets, totals,
       saveProfile, updateProfile, updateSettings,

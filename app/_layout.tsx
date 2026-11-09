@@ -1,12 +1,12 @@
-import { Stack } from 'expo-router';
+import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import i18n, { DirectionProvider, initI18n, type LanguageCode } from '@/i18n';
-import { AppProvider } from '@/state/AppStore';
+import { AppProvider, useApp } from '@/state/AppStore';
 import { ThemeProvider, useTheme } from '@/theme';
 
 function RootStack() {
@@ -45,6 +45,25 @@ function RootStack() {
       </Stack>
     </>
   );
+}
+
+/**
+ * A link carrying someone's readings can arrive while the app is already open,
+ * on any screen - including the welcome screen of someone who has no data yet.
+ * Once it has been read in, send them to the gate so they land on what the link
+ * set up for them instead of on whatever they happened to be looking at.
+ */
+function LinkImportRouter() {
+  const { linkImportCount } = useApp();
+  const seen = useRef(linkImportCount);
+
+  useEffect(() => {
+    if (linkImportCount === seen.current) return;
+    seen.current = linkImportCount;
+    router.replace('/');
+  }, [linkImportCount]);
+
+  return null;
 }
 
 /** Holds the first paint until the stored language is known, so nothing flips. */
@@ -99,6 +118,7 @@ export default function RootLayout() {
         <ThemeProvider>
           <Localized>
             <AppProvider>
+              <LinkImportRouter />
               <RootStack />
             </AppProvider>
           </Localized>
