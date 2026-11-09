@@ -12,6 +12,7 @@ import { makeId } from '@/domain/id';
 import { macroTargets } from '@/domain/nutrition';
 import { dailyTotals } from '@/domain/totals';
 import { DEFAULT_PROGRAM } from '@/domain/training';
+import { takeLinkImport } from '@/services/linkImport';
 import * as repo from '@/storage/repository';
 import type {
   BodyScan,
@@ -136,6 +137,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     let active = true;
     (async () => {
       try {
+        // A link can carry readings in its fragment. Importing before the first
+        // read means the app opens already showing them, with no second step
+        // asked of the person who was handed the link.
+        const payload = takeLinkImport();
+        if (payload) {
+          try {
+            const outcome = await repo.importBundle(payload);
+            console.log('[store] imported from link', outcome.counts);
+          } catch (error) {
+            console.warn('[store] link import failed', error);
+          }
+        }
         await refresh();
         if (active) await loadDay(todayKey());
       } catch (error) {
