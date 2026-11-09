@@ -282,6 +282,10 @@ export interface BodyScan {
   /** Machine the reading came from, e.g. 'InBody 270'. */
   device?: string;
   weightKg: number;
+  /** Printed on the sheet, so a reading can correct a stale profile. */
+  heightCm?: number;
+  /** Printed on the sheet alongside the height. */
+  age?: number;
   skeletalMuscleKg?: number;
   bodyFatKg?: number;
   bodyFatPercent?: number;
@@ -299,12 +303,36 @@ export interface BodyScan {
   targetWeightKg?: number;
   segmentalLeanKg?: SegmentalValues;
   segmentalFatKg?: SegmentalValues;
+  /** Percent of ideal the sheet prints under each segment's mass. */
+  segmentalLeanPercent?: SegmentalValues;
+  segmentalFatPercent?: SegmentalValues;
+  /** The sheet's own suggestions, signed: negative means lose. */
+  weightControlKg?: number;
+  fatControlKg?: number;
+  muscleControlKg?: number;
+  /** The normal bands printed beside the composition values. */
+  ranges?: ScanRanges;
   note?: string;
   /** Local URI of the imported sheet, when there was one. */
   sourceUri?: string;
 }
 
 /** Per-limb readings from a segmental analysis, in kilograms. */
+/** The normal band an InBody sheet prints beside a value. */
+export interface ScanRange {
+  min: number;
+  max: number;
+}
+
+/** Every normal band the sheet prints in its body-composition table. */
+export interface ScanRanges {
+  weightKg?: ScanRange;
+  totalBodyWaterL?: ScanRange;
+  proteinKg?: ScanRange;
+  mineralsKg?: ScanRange;
+  bodyFatKg?: ScanRange;
+}
+
 export interface SegmentalValues {
   rightArm?: number;
   leftArm?: number;

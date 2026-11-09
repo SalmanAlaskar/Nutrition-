@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { todayKey } from '@/domain/date';
+import { LIMITS } from '@/domain/nutrition';
 import type {
   ActivityLevel,
   BodyScan,
@@ -22,6 +23,7 @@ import type {
   ProgramDay,
   ScanSource,
   ServingOption,
+  ScanRanges,
   SegmentalValues,
   SessionType,
   SetLog,
@@ -382,11 +384,45 @@ export async function syncProfileWeightFromScans(): Promise<Profile | null> {
 
   const latestScan = scans[scans.length - 1];
   const latestLog = logs.length > 0 ? logs[logs.length - 1] : null;
-  if (latestLog && latestLog.date > latestScan.date) return profile;
-  if (!Number.isFinite(latestScan.weightKg) || latestScan.weightKg <= 0) return profile;
-  if (Math.abs(profile.weightKg - latestScan.weightKg) < 0.05) return profile;
+  const patch: Partial<Profile> = {};
 
-  return saveProfile({ ...profile, weightKg: latestScan.weightKg });
+  // A weight logged by hand after the scan is the better number.
+  const weightIsCurrent = !latestLog || latestLog.date <= latestScan.date;
+  if (
+    weightIsCurrent &&
+    Number.isFinite(latestScan.weightKg) &&
+    latestScan.weightKg > 0 &&
+    Math.abs(profile.weightKg - latestScan.weightKg) >= 0.05
+  ) {
+    patch.weightKg = latestScan.weightKg;
+  }
+
+  // Height and age are printed on the sheet and do not drift between scans, so
+  // a reading is the most trustworthy source the app has for them.
+  const height = latestScan.heightCm;
+  if (
+    height !== undefined &&
+    Number.isFinite(height) &&
+    height >= LIMITS.heightCm.min &&
+    height <= LIMITS.heightCm.max &&
+    Math.abs(profile.heightCm - height) >= 0.5
+  ) {
+    patch.heightCm = height;
+  }
+
+  const age = latestScan.age;
+  if (
+    age !== undefined &&
+    Number.isFinite(age) &&
+    age >= LIMITS.age.min &&
+    age <= LIMITS.age.max &&
+    profile.age !== age
+  ) {
+    patch.age = age;
+  }
+
+  if (Object.keys(patch).length === 0) return profile;
+  return saveProfile({ ...profile, ...patch });
 }
 
 export async function saveBodyScan(scan: BodyScan): Promise<BodyScan[]> {
@@ -606,6 +642,8 @@ const SEGMENT_PARTS: readonly (keyof SegmentalValues)[] = [
 
 /** Every optional measurement on a reading. All are masses, areas or indices. */
 const SCAN_NUMBER_KEYS = [
+  'heightCm',
+  'age',
   'skeletalMuscleKg',
   'bodyFatKg',
   'bodyFatPercent',
@@ -723,6 +761,31 @@ function segmentalFrom(value: unknown): SegmentalValues | undefined {
   return any ? parts : undefined;
 }
 
+const RANGE_KEYS: readonly (keyof ScanRanges)[] = [
+  'weightKg',
+  'totalBodyWaterL',
+  'proteinKg',
+  'mineralsKg',
+  'bodyFatKg',
+];
+
+/** A normal band is only kept when both ends are present and ordered. */
+function rangesFrom(value: unknown): ScanRanges | undefined {
+  if (!isRecord(value)) return undefined;
+  const ranges: ScanRanges = {};
+  let any = false;
+  for (const key of RANGE_KEYS) {
+    const band = value[key];
+    if (!isRecord(band)) continue;
+    const min = atLeastZero(band.min);
+    const max = atLeastZero(band.max);
+    if (min === undefined || max === undefined || max <= min) continue;
+    ranges[key] = { min, max };
+    any = true;
+  }
+  return any ? ranges : undefined;
+}
+
 function scanFrom(value: unknown): BodyScan | undefined {
   if (!isRecord(value)) return undefined;
   const id = text(value.id);
@@ -751,6 +814,19 @@ function scanFrom(value: unknown): BodyScan | undefined {
   if (lean !== undefined) scan.segmentalLeanKg = lean;
   const fat = segmentalFrom(value.segmentalFatKg);
   if (fat !== undefined) scan.segmentalFatKg = fat;
+  const leanPercent = segmentalFrom(value.segmentalLeanPercent);
+  if (leanPercent !== undefined) scan.segmentalLeanPercent = leanPercent;
+  const fatPercent = segmentalFrom(value.segmentalFatPercent);
+  if (fatPercent !== undefined) scan.segmentalFatPercent = fatPercent;
+
+  // The control figures are signed: the sheet asks for 5.9 kg of fat to go.
+  for (const key of ['weightControlKg', 'fatControlKg', 'muscleControlKg'] as const) {
+    const reading = value[key];
+    if (typeof reading === 'number' && Number.isFinite(reading)) scan[key] = reading;
+  }
+
+  const ranges = rangesFrom(value.ranges);
+  if (ranges !== undefined) scan.ranges = ranges;
   return scan;
 }
 

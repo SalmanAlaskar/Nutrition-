@@ -9,9 +9,72 @@ export const profile = {
     'Tell the app about your body and your goal, and it works out a daily calorie and macro plan.',
   emptyAction: 'Set up my profile',
 
+  /* the result sheet, in the order the machine prints it */
+  sheetTitle: 'Your latest reading',
+  sheetFactsSpoken: 'Reading taken {{day}}. {{facts}}',
+  sheetUnitsNote: 'A reading is shown in the units the machine printed: kilograms and litres.',
+
+  compositionTitle: 'Body composition analysis',
+  compositionHint: 'Each value against the normal band printed beside it.',
+  rowWater: 'Total body water',
+  rowProtein: 'Protein',
+  rowMinerals: 'Minerals',
+  rangeBand: 'Normal {{low}} to {{high}} {{unit}}',
+  rangeWithin: 'within the band',
+  rangeAbove: 'above the band',
+  rangeBelow: 'below the band',
+  rangeNone: 'No band printed for this one.',
+  rangeSpoken: '{{label}}: {{value}} {{unit}}. {{band}}, {{status}}',
+  rangeSpokenPlain: '{{label}}: {{value}} {{unit}}',
+
+  muscleFatTitle: 'Muscle-fat analysis',
+  muscleFatHint: 'Weight, the muscle in it and the fat in it, on one scale.',
+
+  obesityTitle: 'Obesity analysis',
+  obesityHint: 'The ratios the sheet prints, read together.',
+  obesityFatPercent: 'Percent body fat',
+  obesityNote: 'BMI compares weight with height alone, so it cannot tell muscle from fat.',
+  obesityNoteAbove:
+    'Yours reads {{value}}, while your protein and minerals both sit above the normal band.',
+  waistHipTitle: 'Waist-hip ratio',
+  visceralBand: 'The sheet marks under {{value}} as the band.',
+
+  segmentalLeanTitle: 'Segmental lean analysis',
+  segmentalFatTitle: 'Segmental fat analysis',
+  segmentalHint: 'Each part with its mass, and how that compares with the ideal for your height.',
+  segmentalIdeal: '% of ideal',
+  segmentalSpoken: '{{part}}: {{value}} {{unit}}, {{percent}} per cent of the ideal',
+  segmentalSpokenPlain: '{{part}}: {{value}} {{unit}}',
+
+  scoreTitle: 'InBody score',
+  scoreHint: "The machine's summary in one number, and what it suggests next.",
+  scoreUnit: 'out of 100',
+  scoreSpoken: 'InBody score {{value}} out of 100',
+  controlTitle: 'Weight control',
+  controlTarget: 'Target weight',
+  controlRowWeight: 'Weight',
+  controlRowFat: 'Fat',
+  controlRowMuscle: 'Muscle',
+  controlSpoken: '{{label}}: {{value}} {{unit}}',
+  controlNote:
+    "These three are the machine's own suggestion for reaching the target weight. An estimate printed on a sheet, not medical advice.",
+
+  progressTitle: 'Progress over time',
+  progressHint: 'What moved between readings, and how fast it moved.',
+  progressSincePrevious: 'Since the previous reading, {{day}}',
+  progressSinceFirst: 'Since the first reading, {{day}}',
+  progressDays: 'over {{days}} days',
+  progressDaysOne: 'over one day',
+  progressPerMonth: 'a month',
+  progressSpoken: '{{label}}: {{change}}, {{rate}}',
+  progressNone: 'One reading so far. A second one turns this into a trend.',
+  progressChartTitle: 'Every reading',
+
   /* inputs */
   aboutTitle: 'About you',
   aboutHint: 'Every number further down is worked out from these four fields.',
+  aboutFromScan:
+    'Age, height and weight come from your reading on {{day}}. Change any of them by hand and the plan follows.',
   units: 'Units',
   unitMetric: 'Metric',
   unitImperial: 'Imperial',

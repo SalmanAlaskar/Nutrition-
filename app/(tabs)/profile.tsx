@@ -1,9 +1,14 @@
 import { useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Animated, Platform, StyleSheet, View, type ViewProps } from 'react-native';
 
+import { ScanTrendChart } from '@/components/body/ScanTrendChart';
 import { useDayText } from '@/components/history/dayText';
+import { ControlSummary } from '@/components/profile/ControlSummary';
+import { ProgressRate, type ProgressRateMetric } from '@/components/profile/ProgressRate';
+import { RangeBar } from '@/components/profile/RangeBar';
+import { SheetHeader } from '@/components/profile/SheetHeader';
 import {
   AppHeader,
   Badge,
@@ -24,7 +29,7 @@ import {
   Txt,
   type TxtColor,
 } from '@/components/ui';
-import { latestScan, scanChange } from '@/domain/bodyScan';
+import { SCAN_METRICS, SEGMENT_LABEL_KEYS, latestScan, scanChange } from '@/domain/bodyScan';
 import { formatAmount, formatCount, formatDelta, formatPercent } from '@/domain/format';
 import {
   LIMITS,
@@ -44,7 +49,16 @@ import {
 } from '@/domain/nutrition';
 import { useApp } from '@/state/AppStore';
 import { layout, radius, spacing, useTheme } from '@/theme';
-import type { ActivityLevel, Goal, Profile, Sex, UnitSystem } from '@/types';
+import type {
+  ActivityLevel,
+  BodyScan,
+  Goal,
+  Profile,
+  ScanRange,
+  SegmentalValues,
+  Sex,
+  UnitSystem,
+} from '@/types';
 
 /**
  * Decorative nodes are hidden from assistive tech with the prop the platform
@@ -86,6 +100,11 @@ const FEET_RANGE = { min: 3, max: 8 };
 const INCH_RANGE = { min: 0, max: 11 };
 const CUSTOM_CALORIE_RANGE = { min: 800, max: 8000 };
 
+/** The band an InBody sheet prints beside the visceral fat level. */
+const VISCERAL_BAND = 10;
+/** Above this the sheet's own obesity line is worth qualifying. */
+const BMI_OVERWEIGHT = 25;
+
 /** The band is said in a word; the tone only tints that word. */
 const BMI_TONE: Record<BmiCategory, 'default' | 'warning' | 'danger'> = {
   Underweight: 'warning',
@@ -112,49 +131,53 @@ const BMI_BANDS: { key: string; from: number; to: number; healthy: boolean }[] =
 const BMI_TICKS = [18.5, 25, 30];
 
 /**
- * The scan metrics this screen lists, in reading order. Every one of them also
- * exists on a ScanChange, so the difference since the previous reading can be
- * printed beside the value.
+ * The composition table, in the order the machine prints it: what the body is
+ * made of, finishing with the weight those parts add up to.
  */
-const SCAN_ROWS = [
-  { key: 'weightKg', labelKey: 'rowWeight', unit: 'kg', decimals: 1, higherIsBetter: null },
-  {
-    key: 'skeletalMuscleKg',
-    labelKey: 'rowMuscle',
-    unit: 'kg',
-    decimals: 1,
-    higherIsBetter: true,
-  },
-  { key: 'bodyFatKg', labelKey: 'rowFatMass', unit: 'kg', decimals: 1, higherIsBetter: false },
-  {
-    key: 'bodyFatPercent',
-    labelKey: 'rowFatPercent',
-    unit: 'percent',
-    decimals: 1,
-    higherIsBetter: false,
-  },
-  {
-    key: 'visceralFatLevel',
-    labelKey: 'rowVisceral',
-    unit: 'none',
-    decimals: 0,
-    higherIsBetter: false,
-  },
-  { key: 'inBodyScore', labelKey: 'rowScore', unit: 'none', decimals: 0, higherIsBetter: true },
+const COMPOSITION_ROWS = [
+  { key: 'totalBodyWaterL', labelKey: 'rowWater', unit: 'litre', decimals: 1 },
+  { key: 'proteinKg', labelKey: 'rowProtein', unit: 'kg', decimals: 1 },
+  { key: 'mineralsKg', labelKey: 'rowMinerals', unit: 'kg', decimals: 2 },
+  { key: 'bodyFatKg', labelKey: 'rowFatMass', unit: 'kg', decimals: 1 },
+  { key: 'weightKg', labelKey: 'rowWeight', unit: 'kg', decimals: 1 },
 ] as const satisfies readonly {
-  key:
-    | 'weightKg'
-    | 'skeletalMuscleKg'
-    | 'bodyFatKg'
-    | 'bodyFatPercent'
-    | 'visceralFatLevel'
-    | 'inBodyScore';
+  key: 'totalBodyWaterL' | 'proteinKg' | 'mineralsKg' | 'bodyFatKg' | 'weightKg';
   labelKey: string;
-  unit: 'kg' | 'percent' | 'none';
+  unit: 'kg' | 'litre';
   decimals: number;
-  /** Direction of a good change, null when it depends on the goal. */
-  higherIsBetter: boolean | null;
 }[];
+
+/** Muscle-fat analysis: the same three figures the machine draws on one scale. */
+const MUSCLE_FAT_ROWS = [
+  { key: 'weightKg', labelKey: 'rowWeight', unit: 'kg', decimals: 1 },
+  { key: 'skeletalMuscleKg', labelKey: 'rowMuscle', unit: 'kg', decimals: 1 },
+  { key: 'bodyFatKg', labelKey: 'rowFatMass', unit: 'kg', decimals: 1 },
+] as const satisfies readonly {
+  key: 'weightKg' | 'skeletalMuscleKg' | 'bodyFatKg';
+  labelKey: string;
+  unit: 'kg';
+  decimals: number;
+}[];
+
+/** Segments in the order the sheet stacks them. */
+const SEGMENT_ORDER = ['rightArm', 'leftArm', 'trunk', 'rightLeg', 'leftLeg'] as const;
+
+/**
+ * What a rate over time is worth reading. Every one of these also exists on a
+ * ScanChange, so the span can be printed without a second lookup.
+ */
+const PROGRESS_KEYS = [
+  'weightKg',
+  'skeletalMuscleKg',
+  'bodyFatKg',
+  'bodyFatPercent',
+  'inBodyScore',
+] as const;
+
+type ProgressKey = (typeof PROGRESS_KEYS)[number];
+
+/** Which picker is unfolded. Only ever one, and never one on arrival. */
+type PickerId = 'age' | 'height' | 'weight';
 
 /** Editable copy of the numeric fields, held in whatever units are on screen. */
 interface Draft {
@@ -190,6 +213,10 @@ const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 const bmiOffset = (value: number) =>
   clamp01((value - BMI_SCALE.min) / (BMI_SCALE.max - BMI_SCALE.min));
 
+/** True when a value sits above the band the sheet printed for it. */
+const aboveBand = (value: number | undefined, range: ScanRange | undefined) =>
+  value !== undefined && range !== undefined && value > range.max;
+
 function draftFromProfile(profile: Profile | null): Draft {
   if (!profile) return EMPTY_DRAFT;
   const { feet, inches } = cmToFeetInches(profile.heightCm);
@@ -200,6 +227,21 @@ function draftFromProfile(profile: Profile | null): Draft {
     inches,
     weight: fromKg(profile.weightKg, profile.units),
   };
+}
+
+/** The oldest reading, by calendar day then by time taken. */
+function firstScan(scans: BodyScan[]): BodyScan | null {
+  let first: BodyScan | null = null;
+  for (const scan of scans) {
+    if (
+      first === null ||
+      scan.date < first.date ||
+      (scan.date === first.date && scan.takenAt < first.takenAt)
+    ) {
+      first = scan;
+    }
+  }
+  return first;
 }
 
 /**
@@ -254,11 +296,145 @@ function LabeledControl({
   );
 }
 
+/**
+ * One printed line of the sheet: a label and the figure beside it, with the
+ * band or caveat the machine prints underneath when there is one.
+ */
+function ReadingRow({
+  label,
+  value,
+  unit,
+  decimals,
+  note,
+}: {
+  label: string;
+  value: number;
+  /** Already translated; empty for a bare index such as a level or a ratio. */
+  unit?: string;
+  decimals: number;
+  note?: string;
+}) {
+  const { t } = useTranslation('profile');
+  const shown = formatAmount(value, decimals);
+
+  return (
+    <View
+      accessible
+      accessibilityLabel={t('rowSpoken', { label, value: shown, unit: unit ?? '' }).trim()}
+      style={styles.readingRow}
+    >
+      <View style={styles.readingHead}>
+        <Txt numberOfLines={2} style={styles.readingLabel}>
+          {label}
+        </Txt>
+        {/* The figure and its unit are one run: as siblings Arabic reorders them. */}
+        <Txt tabular numberOfLines={1} align="end" style={styles.readingValue}>
+          {shown}
+          {unit ? (
+            <Txt variant="label" color="faint">
+              {` ${unit}`}
+            </Txt>
+          ) : null}
+        </Txt>
+      </View>
+      {note ? (
+        <Txt variant="caption" color="faint" numberOfLines={2} style={styles.readingNote}>
+          {note}
+        </Txt>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * One group of the segmental table: five parts, each with its mass and how
+ * that compares with the ideal the machine works out for this height.
+ */
+function SegmentalTable({
+  mass,
+  percent,
+  unit,
+}: {
+  mass: SegmentalValues;
+  percent?: SegmentalValues;
+  unit: string;
+}) {
+  const { t } = useTranslation(['profile', 'body']);
+
+  const rows = SEGMENT_ORDER.flatMap((key) => {
+    const value = mass[key];
+    if (typeof value !== 'number' || !Number.isFinite(value)) return [];
+    return [{ key, part: t(SEGMENT_LABEL_KEYS[key]), value, share: percent?.[key] }];
+  });
+
+  if (rows.length === 0) return null;
+
+  const hasShare = rows.some((row) => row.share !== undefined);
+
+  return (
+    <View>
+      {hasShare ? (
+        <View style={styles.segHead} {...DECORATIVE}>
+          <Txt variant="caption" color="faint" align="end" numberOfLines={1}>
+            {t('segmentalIdeal')}
+          </Txt>
+        </View>
+      ) : null}
+
+      {rows.map((row, index) => (
+        <View key={row.key}>
+          {index > 0 ? <Divider /> : null}
+          <View
+            accessible
+            accessibilityLabel={
+              row.share === undefined
+                ? t('segmentalSpokenPlain', {
+                    part: row.part,
+                    value: formatAmount(row.value, 2),
+                    unit,
+                  })
+                : t('segmentalSpoken', {
+                    part: row.part,
+                    value: formatAmount(row.value, 2),
+                    unit,
+                    percent: formatAmount(row.share, 1),
+                  })
+            }
+            style={styles.segRow}
+          >
+            <Txt numberOfLines={1} style={styles.segLabel}>
+              {row.part}
+            </Txt>
+            {/* Mass and unit in one run, share and its sign in another: two
+                numbers as siblings collide into one in Arabic. */}
+            <Txt tabular numberOfLines={1} align="end" style={styles.segValue}>
+              {formatAmount(row.value, 2)}
+              <Txt variant="label" color="faint">
+                {` ${unit}`}
+              </Txt>
+            </Txt>
+            <Txt
+              variant="label"
+              color="muted"
+              tabular
+              numberOfLines={1}
+              align="end"
+              style={styles.segShare}
+            >
+              {row.share === undefined ? '—' : formatPercent(row.share / 100, 1)}
+            </Txt>
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 export default function ProfileScreen() {
   const { ready, profile, targets, weights, bodyScans, updateProfile, logWeight } = useApp();
   const { colors } = useTheme();
   const router = useRouter();
-  const { t } = useTranslation(['profile', 'units', 'macros']);
+  const { t } = useTranslation(['profile', 'units', 'macros', 'body']);
   const dayText = useDayText();
 
   const units: UnitSystem = profile?.units ?? 'metric';
@@ -272,11 +448,27 @@ export default function ProfileScreen() {
   const [customTarget, setCustomTarget] = useState<number | null>(profileCustomTarget);
   const [logValue, setLogValue] = useState<number | null>(null);
   const [logging, setLogging] = useState(false);
+  // Nothing is unfolded on arrival: an open wheel over the page is a scroll trap.
+  const [openPicker, setOpenPicker] = useState<PickerId | null>(null);
 
   const planSignature = targets
     ? `${targets.calories}/${targets.protein}/${targets.carbs}/${targets.fat}`
     : null;
   const recalc = useRecalcFlash(planSignature);
+
+  const sheet = useMemo(() => latestScan(bodyScans), [bodyScans]);
+  const previousSheet = useMemo(
+    () => (sheet ? latestScan(bodyScans.filter((scan) => scan.id !== sheet.id)) : null),
+    [bodyScans, sheet],
+  );
+  const oldestSheet = useMemo(() => firstScan(bodyScans), [bodyScans]);
+  const trendScans = useMemo(
+    () =>
+      [...bodyScans].sort((a, b) =>
+        a.date === b.date ? a.takenAt.localeCompare(b.takenAt) : a.date.localeCompare(b.date),
+      ),
+    [bodyScans],
+  );
 
   // Mirror the stored profile, but never overwrite a field whose typed value
   // still converts to exactly what is stored.
@@ -340,15 +532,19 @@ export default function ProfileScreen() {
   }
 
   const weightUnit = units === 'imperial' ? t('units:lb') : t('units:kg');
+  /* A reading is printed in the machine's units, whatever the screen is set to. */
+  const sheetMassUnit = t('units:kg');
+  const sheetWaterUnit = t('units:litre');
+  const percentUnit = t('units:percent');
+
   const plan = targets ?? macroTargets(profile);
   const split = macroEnergySplit(plan);
   const automaticTarget = calorieTarget({ ...profile, customCalorieTarget: undefined });
   const bmr = basalMetabolicRate(profile);
   const maintenance = totalDailyEnergyExpenditure(profile);
-  const bmi = bodyMassIndex(profile.heightCm, profile.weightKg);
+  const bmi = sheet?.bmi ?? bodyMassIndex(profile.heightCm, profile.weightKg);
   const category = bmiCategory(bmi);
   const categoryLabel = t(BMI_KEYS[category]);
-  const bmiPosition = bmiOffset(bmi);
   const [healthyLowKg, healthyHighKg] = healthyWeightRangeKg(profile.heightCm);
   const healthyLow = fromKg(healthyLowKg, units);
   const healthyHigh = fromKg(healthyHighKg, units);
@@ -361,6 +557,13 @@ export default function ProfileScreen() {
           inches: formatCount(cmToFeetInches(profile.heightCm).inches),
         })
       : t('heightMetric', { value: formatCount(profile.heightCm) });
+
+  const healthyRangeLine = t('bmiRange', {
+    height: heightLabel,
+    low: formatAmount(healthyLow),
+    high: formatAmount(healthyHigh),
+    unit: weightUnit,
+  });
 
   const unitOptions = [
     { value: 'metric' as const, label: t('unitMetric') },
@@ -428,6 +631,12 @@ export default function ProfileScreen() {
     void updateProfile({ customCalorieTarget: undefined });
   };
 
+  /** One picker unfolded at a time, and the page keeps its own scroll. */
+  const pickerOpen = (id: PickerId) => ({
+    open: openPicker === id,
+    onOpenChange: (next: boolean) => setOpenPicker(next ? id : null),
+  });
+
   const pendingLogKg = logValue === null ? null : toKg(logValue, units);
   const canLogWeight =
     pendingLogKg !== null && inRange(pendingLogKg, LIMITS.weightKg.min, LIMITS.weightKg.max);
@@ -441,16 +650,6 @@ export default function ProfileScreen() {
       setLogging(false);
     }
   };
-
-  const latestBodyScan = latestScan(bodyScans);
-  const previousBodyScan = latestBodyScan
-    ? latestScan(bodyScans.filter((scan) => scan.id !== latestBodyScan.id))
-    : null;
-  const bodyChange =
-    latestBodyScan && previousBodyScan ? scanChange(previousBodyScan, latestBodyScan) : null;
-  const scanRows = latestBodyScan
-    ? SCAN_ROWS.filter((row) => latestBodyScan[row.key] !== undefined)
-    : [];
 
   const recentWeights = weights.slice(-5).reverse();
   const firstWeight = weights.length > 0 ? weights[0] : null;
@@ -500,6 +699,166 @@ export default function ProfileScreen() {
         })
       : undefined;
 
+  /* ------------------------------------------------------- the sheet -- */
+
+  const sheetDay = sheet ? dayText.dayLabel(sheet.date) : '';
+
+  const sheetFacts = sheet
+    ? [
+        t(profile.sex === 'female' ? 'female' : 'male'),
+        `${formatCount(sheet.age ?? profile.age)} ${t('units:years')}`,
+        t('heightMetric', { value: formatCount(sheet.heightCm ?? profile.heightCm) }),
+      ]
+    : [];
+
+  /** True while the four fields still hold what the newest reading printed. */
+  const fieldsFromSheet =
+    sheet !== null &&
+    profile.weightKg === roundTenth(sheet.weightKg) &&
+    (sheet.heightCm === undefined || profile.heightCm === Math.round(sheet.heightCm)) &&
+    (sheet.age === undefined || profile.age === Math.round(sheet.age));
+
+  const compositionRows = sheet
+    ? COMPOSITION_ROWS.flatMap((row) => {
+        const value = sheet[row.key];
+        if (value === undefined) return [];
+        return [
+          {
+            key: row.key,
+            label: t(row.labelKey),
+            value,
+            decimals: row.decimals,
+            unit: row.unit === 'litre' ? sheetWaterUnit : sheetMassUnit,
+            range: sheet.ranges?.[row.key],
+          },
+        ];
+      })
+    : [];
+
+  const muscleFatRows = sheet
+    ? MUSCLE_FAT_ROWS.flatMap((row) => {
+        const value = sheet[row.key];
+        return value === undefined
+          ? []
+          : [{ key: row.key, label: t(row.labelKey), value, decimals: row.decimals }];
+      })
+    : [];
+
+  /* BMI alone cannot tell muscle from fat, and on this sheet that is not a
+     throwaway caveat: the protein and minerals above their bands are exactly
+     what the index is counting as excess weight. */
+  const buildAboveNormal =
+    sheet !== null &&
+    bmi >= BMI_OVERWEIGHT &&
+    aboveBand(sheet.proteinKg, sheet.ranges?.proteinKg) &&
+    aboveBand(sheet.mineralsKg, sheet.ranges?.mineralsKg);
+
+  const progressMetrics = (change: ReturnType<typeof scanChange>): ProgressRateMetric[] =>
+    PROGRESS_KEYS.flatMap((key: ProgressKey) => {
+      const delta = change[key];
+      if (delta === undefined) return [];
+      const def = SCAN_METRICS.find((metric) => metric.key === key);
+      if (!def) return [];
+      return [
+        {
+          key,
+          label: t(def.labelKey),
+          delta,
+          decimals: def.decimals,
+          unit: def.unitKey ? t(def.unitKey) : '',
+          higherIsBetter: def.higherIsBetter,
+        },
+      ];
+    });
+
+  const sincePrevious = sheet && previousSheet ? scanChange(previousSheet, sheet) : null;
+  const sinceFirst =
+    sheet && oldestSheet && previousSheet && oldestSheet.id !== previousSheet.id
+      ? scanChange(oldestSheet, sheet)
+      : null;
+
+  const bmiBlock = (
+    <>
+      <View style={styles.bmiHeader}>
+        <Txt
+          accessible
+          accessibilityLabel={t('bmiSpoken', {
+            value: formatAmount(bmi),
+            category: categoryLabel,
+          })}
+          variant="metric"
+          tabular
+          numberOfLines={1}
+        >
+          {formatAmount(bmi)}
+          {/* The unit ends in a digit, so it must never be a separate element. */}
+          <Txt variant="label" color="faint">
+            {` ${t('bmiUnit')}`}
+          </Txt>
+        </Txt>
+        <Badge label={categoryLabel} tone={BMI_TONE[category]} variant="plain" />
+      </View>
+
+      {/* A value scale: the bands and the marker both follow the reading
+          direction, so they can never drift apart in Arabic. The healthy
+          band is picked out in neutral ink, not in the accent — the plan
+          below is the one thing on this screen allowed to be green. */}
+      <View style={styles.bmiScale} {...DECORATIVE}>
+        <View style={styles.bmiTrack}>
+          {BMI_BANDS.map((band) => (
+            <View
+              key={band.key}
+              style={{
+                backgroundColor: band.healthy ? colors.borderStrong : colors.track,
+                flex: band.to - band.from,
+              }}
+            />
+          ))}
+        </View>
+        <View
+          style={[
+            styles.bmiMarker,
+            { backgroundColor: colors.text, start: `${bmiOffset(bmi) * 100}%` },
+          ]}
+        />
+      </View>
+
+      <View style={styles.bmiTicks} {...DECORATIVE}>
+        {BMI_TICKS.map((tick) => (
+          <Txt
+            key={tick}
+            variant="caption"
+            color="faint"
+            align="center"
+            tabular
+            style={[styles.bmiTick, { start: `${bmiOffset(tick) * 100}%` }]}
+          >
+            {formatAmount(tick)}
+          </Txt>
+        ))}
+      </View>
+    </>
+  );
+
+  const scanLinks = (
+    <View style={styles.linkList}>
+      <Divider />
+      <ListRow
+        title={t('scanHistory')}
+        subtitle={t('scanHistoryHint')}
+        chevron
+        onPress={() => router.push('/body')}
+      />
+      <Divider />
+      <ListRow
+        title={t('scanAdd')}
+        subtitle={t('scanAddHint')}
+        chevron
+        onPress={() => router.push('/body/import')}
+      />
+    </View>
+  );
+
   return (
     <Screen scroll>
       <AppHeader
@@ -514,11 +873,165 @@ export default function ProfileScreen() {
         }
       />
 
+      {/* ----------------------------------------------------- the sheet -- */}
+      {sheet ? (
+        <>
+          <Section first>
+            <SheetHeader
+              dayLabel={sheetDay}
+              device={sheet.device}
+              facts={sheetFacts}
+              note={t('sheetUnitsNote')}
+            />
+          </Section>
+
+          {compositionRows.length > 0 ? (
+            <Section title={t('compositionTitle')} subtitle={t('compositionHint')}>
+              {compositionRows.map((row) => (
+                <RangeBar
+                  key={row.key}
+                  label={row.label}
+                  value={row.value}
+                  decimals={row.decimals}
+                  unit={row.unit}
+                  range={row.range}
+                />
+              ))}
+            </Section>
+          ) : null}
+
+          {muscleFatRows.length > 0 ? (
+            <Section title={t('muscleFatTitle')} subtitle={t('muscleFatHint')}>
+              {muscleFatRows.map((row, index) => (
+                <View key={row.key}>
+                  {index > 0 ? <Divider /> : null}
+                  <ReadingRow
+                    label={row.label}
+                    value={row.value}
+                    unit={sheetMassUnit}
+                    decimals={row.decimals}
+                  />
+                </View>
+              ))}
+            </Section>
+          ) : null}
+
+          <Section title={t('obesityTitle')} subtitle={t('obesityHint')}>
+            {bmiBlock}
+
+            <Txt variant="label" color="muted" style={styles.bmiCopy}>
+              {buildAboveNormal
+                ? `${t('obesityNote')} ${t('obesityNoteAbove', { value: formatAmount(bmi) })}`
+                : t('obesityNote')}
+            </Txt>
+
+            <View style={styles.sheetRows}>
+              {sheet.bodyFatPercent === undefined ? null : (
+                <ReadingRow
+                  label={t('obesityFatPercent')}
+                  value={sheet.bodyFatPercent}
+                  unit={percentUnit}
+                  decimals={1}
+                />
+              )}
+              {sheet.waistHipRatio === undefined ? null : (
+                <>
+                  <Divider />
+                  <ReadingRow
+                    label={t('waistHipTitle')}
+                    value={sheet.waistHipRatio}
+                    decimals={2}
+                  />
+                </>
+              )}
+              {sheet.visceralFatLevel === undefined ? null : (
+                <>
+                  <Divider />
+                  <ReadingRow
+                    label={t('rowVisceral')}
+                    value={sheet.visceralFatLevel}
+                    decimals={0}
+                    note={t('visceralBand', { value: formatCount(VISCERAL_BAND) })}
+                  />
+                </>
+              )}
+            </View>
+          </Section>
+
+          {sheet.segmentalLeanKg ? (
+            <Section title={t('segmentalLeanTitle')} subtitle={t('segmentalHint')}>
+              <SegmentalTable
+                mass={sheet.segmentalLeanKg}
+                percent={sheet.segmentalLeanPercent}
+                unit={sheetMassUnit}
+              />
+            </Section>
+          ) : null}
+
+          {sheet.segmentalFatKg ? (
+            <Section title={t('segmentalFatTitle')}>
+              <SegmentalTable
+                mass={sheet.segmentalFatKg}
+                percent={sheet.segmentalFatPercent}
+                unit={sheetMassUnit}
+              />
+            </Section>
+          ) : null}
+
+          <Section title={t('scoreTitle')} subtitle={t('scoreHint')}>
+            <ControlSummary
+              score={sheet.inBodyScore}
+              targetWeightKg={sheet.targetWeightKg}
+              weightControlKg={sheet.weightControlKg}
+              fatControlKg={sheet.fatControlKg}
+              muscleControlKg={sheet.muscleControlKg}
+              unit={sheetMassUnit}
+            />
+          </Section>
+
+          <Section title={t('progressTitle')} subtitle={t('progressHint')}>
+            {sincePrevious === null ? (
+              <Txt color="muted" style={styles.paragraph}>
+                {t('progressNone')}
+              </Txt>
+            ) : (
+              <>
+                <ProgressRate
+                  title={t('progressSincePrevious', {
+                    day: dayText.shortDay(sincePrevious.fromDate),
+                  })}
+                  days={sincePrevious.days}
+                  metrics={progressMetrics(sincePrevious)}
+                />
+
+                {sinceFirst === null ? null : (
+                  <ProgressRate
+                    title={t('progressSinceFirst', { day: dayText.shortDay(sinceFirst.fromDate) })}
+                    days={sinceFirst.days}
+                    metrics={progressMetrics(sinceFirst)}
+                    style={styles.secondSpan}
+                  />
+                )}
+
+                <Txt variant="label" weight="semibold" style={styles.chartTitle}>
+                  {t('progressChartTitle')}
+                </Txt>
+                <ScanTrendChart scans={trendScans} />
+              </>
+            )}
+
+            {scanLinks}
+          </Section>
+        </>
+      ) : null}
+
       {/* --------------------------------------------------------- inputs -- */}
       <Section
-        first
+        first={sheet === null}
         title={t('aboutTitle')}
-        subtitle={t('aboutHint')}
+        subtitle={
+          fieldsFromSheet ? t('aboutFromScan', { day: sheetDay }) : t('aboutHint')
+        }
         contentStyle={styles.fields}
       >
         <LabeledControl label={t('units')}>
@@ -545,6 +1058,7 @@ export default function ProfileScreen() {
           min={LIMITS.age.min}
           max={LIMITS.age.max}
           hint={ageError}
+          {...pickerOpen('age')}
         />
 
         {units === 'imperial' ? (
@@ -562,6 +1076,7 @@ export default function ProfileScreen() {
               max: INCH_RANGE.max,
               unit: t('inchesSuffix'),
             }}
+            {...pickerOpen('height')}
           />
         ) : (
           <MeasurePicker
@@ -572,6 +1087,7 @@ export default function ProfileScreen() {
             min={LIMITS.heightCm.min}
             max={LIMITS.heightCm.max}
             hint={heightError}
+            {...pickerOpen('height')}
           />
         )}
 
@@ -584,6 +1100,7 @@ export default function ProfileScreen() {
           min={fromKg(LIMITS.weightKg.min, units)}
           max={fromKg(LIMITS.weightKg.max, units)}
           hint={weightError}
+          {...pickerOpen('weight')}
         />
       </Section>
 
@@ -617,9 +1134,9 @@ export default function ProfileScreen() {
 
       {/* --------------------------------------------------------- output -- */}
       {/*
-        Everything above is something you set; everything below is what those
-        settings produce. The hairline marks that turn, and the plan is the one
-        thing on this screen drawn on a surface of its own.
+        Everything above is either measured or something you set; everything
+        below is what those produce. The hairline marks that turn, and the plan
+        is the one thing on this screen drawn on a surface of its own.
       */}
       <Section divider title={t('planTitle')} subtitle={t('planHint')}>
         <Card style={styles.planCard}>
@@ -702,6 +1219,12 @@ export default function ProfileScreen() {
             hint={t('maintenanceHint')}
           />
         </View>
+
+        {sheet ? (
+          <Txt variant="label" color="muted" tabular style={styles.bmiCopy}>
+            {healthyRangeLine}
+          </Txt>
+        ) : null}
       </Section>
 
       <Section title={t('customTitle')} gap="tight">
@@ -731,194 +1254,29 @@ export default function ProfileScreen() {
         ) : null}
       </Section>
 
-      {/* ------------------------------------------------------------ bmi -- */}
-      <Section title={t('bmiTitle')} subtitle={t('bmiHint')}>
-        <View style={styles.bmiHeader}>
-          <Txt
-            accessible
-            accessibilityLabel={t('bmiSpoken', {
-              value: formatAmount(bmi),
-              category: categoryLabel,
-            })}
-            variant="metric"
-            tabular
-            numberOfLines={1}
-          >
-            {formatAmount(bmi)}
-            {/* The unit ends in a digit, so it must never be a separate element. */}
-            <Txt variant="label" color="faint">
-              {` ${t('bmiUnit')}`}
+      {/* ------------------------------------------- no reading: as before -- */}
+      {sheet === null ? (
+        <>
+          <Section title={t('bmiTitle')} subtitle={t('bmiHint')}>
+            {bmiBlock}
+            <Txt variant="label" color="muted" style={styles.bmiCopy}>
+              {`${healthyRangeLine} ${t('bmiCaveat')}`}
             </Txt>
-          </Txt>
-          <Badge label={categoryLabel} tone={BMI_TONE[category]} variant="plain" />
-        </View>
+          </Section>
 
-        {/* A value scale: the bands and the marker both follow the reading
-            direction, so they can never drift apart in Arabic. The healthy
-            band is picked out in neutral ink, not in the accent — the plan
-            above is the one thing on this screen allowed to be green. */}
-        <View style={styles.bmiScale} {...DECORATIVE}>
-          <View style={styles.bmiTrack}>
-            {BMI_BANDS.map((band) => (
-              <View
-                key={band.key}
-                style={{
-                  backgroundColor: band.healthy ? colors.borderStrong : colors.track,
-                  flex: band.to - band.from,
-                }}
-              />
-            ))}
-          </View>
-          <View
-            style={[
-              styles.bmiMarker,
-              { backgroundColor: colors.text, start: `${bmiPosition * 100}%` },
-            ]}
-          />
-        </View>
-
-        <View style={styles.bmiTicks} {...DECORATIVE}>
-          {BMI_TICKS.map((tick) => (
-            <Txt
-              key={tick}
-              variant="caption"
-              color="faint"
-              align="center"
-              tabular
-              style={[styles.bmiTick, { start: `${bmiOffset(tick) * 100}%` }]}
-            >
-              {formatAmount(tick)}
-            </Txt>
-          ))}
-        </View>
-
-        <Txt variant="label" color="muted" style={styles.bmiCopy}>
-          {`${t('bmiRange', {
-            height: heightLabel,
-            low: formatAmount(healthyLow),
-            high: formatAmount(healthyHigh),
-            unit: weightUnit,
-          })} ${t('bmiCaveat')}`}
-        </Txt>
-      </Section>
-
-      {/* ------------------------------------------------- body composition -- */}
-      <Section
-        title={t('scanTitle')}
-        subtitle={
-          latestBodyScan
-            ? latestBodyScan.device
-              ? t('scanHintLastDevice', {
-                  day: dayText.dayLabel(latestBodyScan.date),
-                  device: latestBodyScan.device,
-                })
-              : t('scanHintLast', { day: dayText.dayLabel(latestBodyScan.date) })
-            : t('scanHintNone')
-        }
-      >
-        {latestBodyScan === null ? (
-          <EmptyState
-            icon="body-outline"
-            title={t('scanEmptyTitle')}
-            message={t('scanEmptyMessage')}
-            actionLabel={t('scanEmptyAction')}
-            onAction={() => router.push('/body/import')}
-            compact
-          />
-        ) : (
-          <View>
-            <Txt variant="label" color="muted">
-              {bodyChange
-                ? t(bodyChange.days === 1 ? 'scanChangeOneDay' : 'scanChange', {
-                    date: dayText.shortDay(bodyChange.fromDate),
-                    days: formatCount(bodyChange.days),
-                  })
-                : t('scanFirst')}
-            </Txt>
-
-            {scanRows.map((row, index) => {
-              const value = latestBodyScan[row.key];
-              const delta = bodyChange ? bodyChange[row.key] : undefined;
-              const better =
-                delta === undefined || delta === 0 || row.higherIsBetter === null
-                  ? null
-                  : delta > 0 === row.higherIsBetter;
-              const rowDeltaColor: TxtColor =
-                better === null ? 'faint' : better ? 'success' : 'warning';
-              const shown = value === undefined ? '—' : formatAmount(value, row.decimals);
-              const label = t(row.labelKey);
-              const unit =
-                row.unit === 'kg'
-                  ? t('units:kg')
-                  : row.unit === 'percent'
-                    ? t('units:percent')
-                    : '';
-              const spokenChange =
-                delta === undefined
-                  ? ''
-                  : delta === 0
-                    ? `. ${t('deltaFlat')}`
-                    : `. ${t(delta > 0 ? 'deltaUp' : 'deltaDown', {
-                        amount: formatAmount(Math.abs(delta), row.decimals),
-                      })}`;
-
-              return (
-                <View key={row.key}>
-                  {index > 0 ? <Divider /> : null}
-                  <View
-                    accessible
-                    accessibilityLabel={`${t('rowSpoken', {
-                      label,
-                      value: shown,
-                      unit,
-                    })}${spokenChange}`}
-                    style={styles.scanRow}
-                  >
-                    <Txt numberOfLines={1} style={styles.scanLabel}>
-                      {label}
-                    </Txt>
-                    <Txt tabular numberOfLines={1} align="end" style={styles.scanValue}>
-                      {shown}
-                      {unit ? (
-                        <Txt variant="label" color="faint">
-                          {` ${unit}`}
-                        </Txt>
-                      ) : null}
-                    </Txt>
-                    <Txt
-                      variant="label"
-                      color={rowDeltaColor}
-                      align="end"
-                      tabular
-                      numberOfLines={1}
-                      style={styles.scanDelta}
-                    >
-                      {delta === undefined ? '—' : formatDelta(delta, row.decimals)}
-                    </Txt>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        )}
-
-        <View style={styles.linkList}>
-          <Divider />
-          <ListRow
-            title={t('scanHistory')}
-            subtitle={t('scanHistoryHint')}
-            chevron
-            onPress={() => router.push('/body')}
-          />
-          <Divider />
-          <ListRow
-            title={t('scanAdd')}
-            subtitle={t('scanAddHint')}
-            chevron
-            onPress={() => router.push('/body/import')}
-          />
-        </View>
-      </Section>
+          <Section title={t('scanTitle')} subtitle={t('scanHintNone')}>
+            <EmptyState
+              icon="body-outline"
+              title={t('scanEmptyTitle')}
+              message={t('scanEmptyMessage')}
+              actionLabel={t('scanEmptyAction')}
+              onAction={() => router.push('/body/import')}
+              compact
+            />
+            {scanLinks}
+          </Section>
+        </>
+      ) : null}
 
       {/* --------------------------------------------------------- weight -- */}
       <Section title={t('weightTitle')} subtitle={t('weightHint')}>
@@ -1039,6 +1397,59 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
 
+  /* the sheet */
+  readingRow: {
+    minHeight: 34,
+    paddingVertical: spacing.sm,
+  },
+  readingHead: {
+    alignItems: 'baseline',
+    columnGap: spacing.md,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  readingLabel: {
+    flexShrink: 1,
+  },
+  readingValue: {
+    flexShrink: 0,
+  },
+  readingNote: {
+    marginTop: spacing.xs,
+    maxWidth: layout.maxTextWidth,
+  },
+  sheetRows: {
+    marginTop: spacing.lg,
+  },
+  segHead: {
+    alignItems: 'flex-end',
+    marginBottom: spacing.xs,
+  },
+  segRow: {
+    alignItems: 'baseline',
+    columnGap: spacing.md,
+    flexDirection: 'row',
+    minHeight: 34,
+    paddingVertical: spacing.sm,
+  },
+  segLabel: {
+    flex: 1,
+  },
+  segValue: {
+    flexShrink: 0,
+  },
+  segShare: {
+    flexShrink: 0,
+    minWidth: 62,
+  },
+  secondSpan: {
+    marginTop: spacing.xl,
+  },
+  chartTitle: {
+    marginBottom: spacing.sm,
+    marginTop: spacing.xl,
+  },
+
   /* plan */
   planCard: {
     paddingBottom: spacing.md,
@@ -1126,24 +1537,6 @@ const styles = StyleSheet.create({
   bmiCopy: {
     marginTop: spacing.lg,
     maxWidth: layout.maxTextWidth,
-  },
-
-  /* body composition */
-  scanRow: {
-    alignItems: 'baseline',
-    columnGap: spacing.md,
-    flexDirection: 'row',
-    minHeight: 34,
-    paddingVertical: spacing.sm,
-  },
-  scanLabel: {
-    flex: 1,
-  },
-  scanValue: {
-    flexShrink: 0,
-  },
-  scanDelta: {
-    minWidth: 52,
   },
 
   /* weight */
