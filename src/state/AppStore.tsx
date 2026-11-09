@@ -9,7 +9,10 @@ import React, {
 
 import { todayKey } from '@/domain/date';
 import { makeId } from '@/domain/id';
-import { macroTargets } from '@/domain/nutrition';
+import {
+  activePhase as phaseCovering,
+  targetsForDate,
+} from '@/domain/phase';
 import { dailyTotals } from '@/domain/totals';
 import { DEFAULT_PROGRAM } from '@/domain/training';
 import { takeLinkImport } from '@/services/linkImport';
@@ -20,6 +23,7 @@ import type {
   Exercise,
   FoodItem,
   Meal,
+  Phase,
   Profile,
   Program,
   Settings,
@@ -48,7 +52,14 @@ interface AppContextValue {
   /** Body-composition readings, oldest first. */
   bodyScans: BodyScan[];
   customExercises: Exercise[];
-  /** Null until a profile exists. */
+  /** Dated phases, earliest start first. */
+  phases: Phase[];
+  /** The phase covering today, or null when none does. Never `selectedDate`. */
+  activePhase: Phase | null;
+  /**
+   * Target for `selectedDate`: the phase that covered that day owns it, so a
+   * past day shows the target that applied then. Null until a profile exists.
+   */
   targets: Targets | null;
   totals: DailyTotals;
 
@@ -67,6 +78,8 @@ interface AppContextValue {
   deleteWorkout: (date: string, sessionId: string) => Promise<void>;
   saveBodyScan: (scan: BodyScan) => Promise<void>;
   deleteBodyScan: (id: string) => Promise<void>;
+  savePhase: (phase: Phase) => Promise<void>;
+  deletePhase: (id: string) => Promise<void>;
   saveCustomExercise: (exercise: Exercise) => Promise<void>;
   deleteCustomExercise: (id: string) => Promise<void>;
   refresh: () => Promise<void>;
@@ -89,6 +102,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [workoutDates, setWorkoutDates] = useState<string[]>([]);
   const [bodyScans, setBodyScans] = useState<BodyScan[]>([]);
   const [customExercises, setCustomExercises] = useState<Exercise[]>([]);
+  const [phases, setPhases] = useState<Phase[]>([]);
 
   const loadDay = useCallback(async (date: string) => {
     const [dayMeals, daySessions] = await Promise.all([
@@ -110,6 +124,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       trainedDates,
       scans,
       exercises,
+      storedPhases,
     ] = await Promise.all([
       repo.getProfile(),
       repo.getSettings(),
@@ -120,6 +135,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       repo.getWorkoutDates(),
       repo.getBodyScans(),
       repo.getCustomExercises(),
+      repo.getPhases(),
     ]);
     setProfile(loadedProfile);
     setSettings(loadedSettings);
@@ -131,6 +147,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setWorkoutDates(trainedDates);
     setBodyScans(scans);
     setCustomExercises(exercises);
+    setPhases(storedPhases);
   }, []);
 
   useEffect(() => {
@@ -304,6 +321,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setCustomExercises(await repo.deleteCustomExercise(id));
   }, []);
 
+  const savePhase = useCallback(async (phase: Phase) => {
+    setPhases(await repo.savePhase(phase));
+  }, []);
+
+  const deletePhase = useCallback(async (id: string) => {
+    setPhases(await repo.deletePhase(id));
+  }, []);
+
   const resetAll = useCallback(async () => {
     await repo.clearAll();
     setProfile(null);
@@ -316,13 +341,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setWorkoutDates([]);
     setBodyScans([]);
     setCustomExercises([]);
+    setPhases([]);
     setProgram(await repo.saveProgram(DEFAULT_PROGRAM));
     setSelectedDate(todayKey());
   }, []);
 
+  const activePhase = useMemo(
+    () => phaseCovering(phases, todayKey()),
+    [phases],
+  );
+
+  // Resolved for the day on screen, not for today: scrolling back to a day
+  // inside a finished cut should show the target that was in force then.
   const targets = useMemo(
-    () => (profile ? macroTargets(profile) : null),
-    [profile],
+    () => (profile ? targetsForDate(profile, phases, selectedDate) : null),
+    [profile, phases, selectedDate],
   );
 
   const totals = useMemo(
@@ -345,6 +378,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       workoutDates,
       bodyScans,
       customExercises,
+      phases,
+      activePhase,
       targets,
       totals,
       setSelectedDate,
@@ -362,6 +397,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       deleteWorkout,
       saveBodyScan,
       deleteBodyScan,
+      savePhase,
+      deletePhase,
       saveCustomExercise,
       deleteCustomExercise,
       refresh,
@@ -370,10 +407,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [
       ready, profile, settings, selectedDate, meals, loggedDates, weights,
       customFoods, program, todaysWorkouts, workoutDates, bodyScans,
-      customExercises, targets, totals, saveProfile, updateProfile, updateSettings,
+      customExercises, phases, activePhase, targets, totals,
+      saveProfile, updateProfile, updateSettings,
       addMeal, updateMeal, deleteMeal, logWeight, addCustomFood, saveProgram,
       addWorkout, updateWorkout, deleteWorkout, saveBodyScan, deleteBodyScan,
-      saveCustomExercise, deleteCustomExercise, refresh, resetAll,
+      savePhase, deletePhase, saveCustomExercise, deleteCustomExercise,
+      refresh, resetAll,
     ],
   );
 

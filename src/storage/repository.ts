@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { todayKey } from '@/domain/date';
 import { LIMITS } from '@/domain/nutrition';
+import { PHASE_KINDS } from '@/domain/phase';
 import type {
   ActivityLevel,
   BodyScan,
@@ -16,6 +17,8 @@ import type {
   Meal,
   MealEntry,
   MealSlot,
+  Phase,
+  PhaseKind,
   PhotoAnalysisMode,
   PlannedExercise,
   Profile,
@@ -442,6 +445,40 @@ export async function deleteBodyScan(id: string): Promise<BodyScan[]> {
   return next;
 }
 
+/* --------------------------------------------------------------- phases -- */
+
+/** Every dated phase, earliest start first. */
+export async function getPhases(): Promise<Phase[]> {
+  const phases = await readJson<Phase[]>(KEYS.phases, []);
+  return phases.sort((a, b) => a.startDate.localeCompare(b.startDate));
+}
+
+/**
+ * Stores a phase, replacing the one carrying the same id so re-saving an edit
+ * is safe. `updatedAt` is stamped here and `createdAt` is taken from the stored
+ * record when there is one, so an edit cannot lose the day it was first set.
+ */
+export async function savePhase(phase: Phase): Promise<Phase[]> {
+  const phases = await getPhases();
+  const existing = phases.find((item) => item.id === phase.id);
+  const next = phases.filter((item) => item.id !== phase.id);
+  next.push({
+    ...phase,
+    createdAt: existing?.createdAt ?? phase.createdAt,
+    updatedAt: new Date().toISOString(),
+  });
+  next.sort((a, b) => a.startDate.localeCompare(b.startDate));
+  await writeJson(KEYS.phases, next);
+  return next;
+}
+
+export async function deletePhase(id: string): Promise<Phase[]> {
+  const phases = await getPhases();
+  const next = phases.filter((phase) => phase.id !== id);
+  await writeJson(KEYS.phases, next);
+  return next;
+}
+
 /* ----------------------------------------------------------- whole store -- */
 
 export interface ExportBundle {
@@ -455,6 +492,7 @@ export interface ExportBundle {
   workouts: Record<string, WorkoutSession[]>;
   customExercises: Exercise[];
   scans: BodyScan[];
+  phases: Phase[];
 }
 
 export async function exportAll(): Promise<ExportBundle> {
@@ -471,6 +509,7 @@ export async function exportAll(): Promise<ExportBundle> {
     workouts: await getWorkoutsForDates(workoutDates),
     customExercises: await getCustomExercises(),
     scans: await getBodyScans(),
+    phases: await getPhases(),
   };
 }
 
@@ -501,11 +540,13 @@ export type ImportKind =
   | 'program'
   | 'workouts'
   | 'customExercises'
-  | 'scans';
+  | 'scans'
+  | 'phases';
 
 export const IMPORT_KINDS: readonly ImportKind[] = [
   'scans',
   'weights',
+  'phases',
   'meals',
   'workouts',
   'program',
@@ -837,6 +878,47 @@ function weightLogFrom(value: unknown): WeightLog | undefined {
   const weightKg = positive(value.weightKg);
   if (id === undefined || date === undefined || weightKg === undefined) return undefined;
   return { id, date, weightKg };
+}
+
+/**
+ * A phase is only stored when both bounds are real days in the right order.
+ * Every target figure is optional: a phase with none of them derives all four
+ * from the profile, which is the whole point of the `kind`.
+ */
+function phaseFrom(value: unknown): Phase | undefined {
+  if (!isRecord(value)) return undefined;
+  const id = text(value.id);
+  const kind = oneOf<PhaseKind>(value.kind, PHASE_KINDS);
+  const startDate = dateKey(value.startDate);
+  const endDate = dateKey(value.endDate);
+  if (
+    id === undefined ||
+    kind === undefined ||
+    startDate === undefined ||
+    endDate === undefined ||
+    endDate < startDate
+  ) {
+    return undefined;
+  }
+
+  const phase: Phase = {
+    id,
+    kind,
+    startDate,
+    endDate,
+    createdAt: timestamp(value.createdAt) ?? startOfDay(startDate),
+    updatedAt: timestamp(value.updatedAt) ?? startOfDay(startDate),
+  };
+
+  const calories = positive(value.calories);
+  if (calories !== undefined) phase.calories = calories;
+  for (const key of ['proteinG', 'carbsG', 'fatG'] as const) {
+    const grams = atLeastZero(value[key]);
+    if (grams !== undefined) phase[key] = grams;
+  }
+  const note = text(value.note);
+  if (note !== undefined) phase.note = note;
+  return phase;
 }
 
 function mealEntryFrom(value: unknown): MealEntry | undefined {
@@ -1240,6 +1322,14 @@ function rejection(
       return problem;
     }
   }
+  if (kind === 'phases') {
+    const start = dateKey(value.startDate);
+    const end = dateKey(value.endDate);
+    if (start === undefined || end === undefined) {
+      problem.code = 'badDate';
+      return problem;
+    }
+  }
   problem.code = 'badFields';
   return problem;
 }
@@ -1369,6 +1459,44 @@ export async function importBundle(
           .concat([...staged.values()]);
         merged.sort((a, b) => a.date.localeCompare(b.date));
         await writeJson(KEYS.weights, merged);
+      }
+    }
+  }
+
+  /* ------------------------------------------------------------- phases -- */
+  if (parsed.phases !== undefined) {
+    recognised += 1;
+    if (!Array.isArray(parsed.phases)) {
+      result.problems.push({ code: 'wrongShape', kind: 'phases' });
+    } else {
+      const existing = await getPhases();
+      const existingIds = new Set(existing.map((phase) => phase.id));
+      const staged = new Map<string, Phase>();
+      parsed.phases.forEach((value, index) => {
+        const phase = phaseFrom(value);
+        if (phase === undefined) {
+          reject(result, 'phases', rejection('phases', value, index + 1));
+          return;
+        }
+        if (staged.has(phase.id)) {
+          reject(result, 'phases', {
+            code: 'duplicate',
+            kind: 'phases',
+            position: index + 1,
+            id: phase.id,
+          });
+          return;
+        }
+        staged.set(phase.id, phase);
+        if (existingIds.has(phase.id)) result.counts.phases.replaced += 1;
+        else result.counts.phases.added += 1;
+      });
+      if (!dryRun && staged.size > 0) {
+        const merged = existing
+          .filter((phase) => !staged.has(phase.id))
+          .concat([...staged.values()]);
+        merged.sort((a, b) => a.startDate.localeCompare(b.startDate));
+        await writeJson(KEYS.phases, merged);
       }
     }
   }
@@ -1638,6 +1766,7 @@ export async function clearAll(): Promise<void> {
     KEYS.workoutIndex,
     ...workoutDates.map((date) => KEYS.workoutsFor(date)),
     KEYS.scans,
+    KEYS.phases,
   ];
   await AsyncStorage.multiRemove(keys);
 }

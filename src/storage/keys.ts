@@ -17,6 +17,8 @@ export const KEYS = {
   workoutsFor: (date: string) => `${STORAGE_PREFIX}/workouts/${date}`,
   /** Every body-composition reading, in one list. */
   scans: `${STORAGE_PREFIX}/scans`,
+  /** Every dated phase, in one list sorted by start date. */
+  phases: `${STORAGE_PREFIX}/phases`,
 } as const;
 
 export const MEALS_KEY_PREFIX = `${STORAGE_PREFIX}/meals/`;

@@ -12,6 +12,7 @@ import {
   type MetricTone,
 } from '@/components/dashboard/MetricTable';
 import { InsightList } from '@/components/insights/InsightList';
+import { PhaseBar } from '@/components/phase/PhaseBar';
 import {
   AppHeader,
   EmptyState,
@@ -26,6 +27,7 @@ import { latestScan, scanChange, type ScanMetricKey } from '@/domain/bodyScan';
 import { addDays, lastNDays, parseDateKey, todayKey } from '@/domain/date';
 import { formatAmount, formatCount, formatDelta } from '@/domain/format';
 import { buildInsights } from '@/domain/insights';
+import { targetsForPhase } from '@/domain/phase';
 import { totalMacros } from '@/domain/totals';
 import {
   SESSION_ICONS,
@@ -38,7 +40,7 @@ import { useDirection } from '@/i18n';
 import { useApp } from '@/state/AppStore';
 import { getMealsForDates, getWorkoutsForDates } from '@/storage/repository';
 import { layout, radius, spacing, useTheme } from '@/theme';
-import type { BodyScan, Meal, SessionType, WorkoutSession } from '@/types';
+import type { BodyScan, Meal, PhaseKind, SessionType, WorkoutSession } from '@/types';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -100,6 +102,13 @@ const TYPE_KEYS = {
   full: 'typeFull',
   cardio: 'typeCardio',
 } as const satisfies Record<SessionType, string>;
+
+/** The noun each kind of phase is called inside a sentence. */
+const PHASE_KIND_KEYS = {
+  cut: 'phaseKindCut',
+  maintain: 'phaseKindMaintain',
+  build: 'phaseKindBuild',
+} as const satisfies Record<PhaseKind, string>;
 
 type BodyMetricKey = 'weightKg' | 'skeletalMuscleKg' | 'bodyFatKg' | 'bodyFatPercent';
 
@@ -188,8 +197,17 @@ export default function DashboardScreen() {
    */
   const figureEnd: TxtAlign = isRTL ? 'left' : 'right';
 
-  const { ready, profile, targets, loggedDates, workoutDates, bodyScans, program, refresh } =
-    useApp();
+  const {
+    ready,
+    profile,
+    targets,
+    activePhase,
+    loggedDates,
+    workoutDates,
+    bodyScans,
+    program,
+    refresh,
+  } = useApp();
 
   const [range, setRange] = useState<RangeKey>('30');
   const [mealsByDate, setMealsByDate] = useState<Record<string, Meal[]>>({});
@@ -305,6 +323,42 @@ export default function DashboardScreen() {
   const nutrition = useMemo(() => summarise(nutritionDates), [summarise, nutritionDates]);
   const lastWeek = useMemo(() => summarise(lastNDays(7, addDays(today, -1))), [summarise, today]);
   const lastMonth = useMemo(() => summarise(lastNDays(30, addDays(today, -1))), [summarise, today]);
+
+  /* ----------------------------------------------------------- the phase -- */
+
+  /**
+   * The days of the range that the running phase covers. A phase that began
+   * part-way through the range leaves the rest of it under the old target,
+   * which is exactly what the note under the table says out loud.
+   */
+  const phaseDates = useMemo(() => {
+    if (activePhase === null) return [];
+    const { startDate, endDate } = activePhase;
+    return nutritionDates.filter((date) => date >= startDate && date <= endDate);
+  }, [activePhase, nutritionDates]);
+
+  /** Averages over the phase's own days, so the figure is read against its target. */
+  const phaseNutrition = useMemo(() => summarise(phaseDates), [summarise, phaseDates]);
+
+  const phaseTargets = useMemo(
+    () => (profile && activePhase ? targetsForPhase(profile, activePhase) : null),
+    [profile, activePhase],
+  );
+
+  /**
+   * How much of the range the phase owns: all of it, part of it, or none. It
+   * decides which of two honest readings the nutrition section gives, because
+   * one average measured against two different targets is not a reading.
+   */
+  const phaseCoverage: 'none' | 'some' | 'all' =
+    phaseTargets === null || phaseDates.length === 0
+      ? 'none'
+      : phaseDates.length >= nutritionDates.length
+        ? 'all'
+        : 'some';
+
+  /** The noun the running phase is called, e.g. "cut". */
+  const phaseKind = activePhase ? t(PHASE_KIND_KEYS[activePhase.kind]) : '';
 
   /* ------------------------------------------------------------- training -- */
 
@@ -467,31 +521,147 @@ export default function DashboardScreen() {
     return rows;
   }, [bodyData.metrics, score, scoreDelta, t]);
 
-  /** The three range figures, read as the same kind of table as the body. */
-  const nutritionRows = useMemo<MetricRow[]>(
-    () => [
+  /**
+   * The three range figures, read as the same kind of table as the body.
+   *
+   * With the whole range inside the phase the target beside each average is
+   * the phase's, so the row says whose target it is and how far the average
+   * sits from it. Nothing is mixed in that case and a second table would only
+   * print the same two numbers again.
+   */
+  const nutritionRows = useMemo<MetricRow[]>(() => {
+    /** The phase's figures, but only while it owns every day of the range. */
+    const whole = phaseCoverage === 'all' ? phaseTargets : null;
+
+    const against = (
+      field: 'calories' | 'protein',
+      average: number,
+    ): Pick<MetricRow, 'hint' | 'delta'> => {
+      if (whole !== null) {
+        return {
+          hint: t('phaseTargetHint', { kind: phaseKind, value: formatCount(whole[field]) }),
+          delta: nutrition.logged > 0 ? formatDelta(average - whole[field], 0) : undefined,
+        };
+      }
+      if (targets === null) return {};
+      return { hint: t('targetValue', { value: formatCount(targets[field]) }) };
+    };
+
+    return [
       {
         key: 'calories',
         label: t('avgCalories'),
         value: formatCount(nutrition.avgCalories),
         unit: t('units:kcal'),
-        hint: targets ? t('targetValue', { value: formatCount(targets.calories) }) : undefined,
+        ...against('calories', nutrition.avgCalories),
       },
       {
         key: 'protein',
         label: t('avgProtein'),
         value: formatCount(nutrition.avgProtein),
         unit: t('units:gram'),
-        hint: targets ? t('targetValue', { value: formatCount(targets.protein) }) : undefined,
+        ...against('protein', nutrition.avgProtein),
       },
       {
         key: 'daysLogged',
         label: t('daysLogged'),
         value: fraction(nutrition.logged, rangeDays),
       },
-    ],
-    [t, nutrition.avgCalories, nutrition.avgProtein, nutrition.logged, targets, rangeDays],
-  );
+    ];
+  }, [
+    t,
+    nutrition.avgCalories,
+    nutrition.avgProtein,
+    nutrition.logged,
+    targets,
+    rangeDays,
+    phaseCoverage,
+    phaseTargets,
+    phaseKind,
+  ]);
+
+  /**
+   * The same two averages over the phase's days alone, for a range that only
+   * partly sits inside it. Mixing days under two targets into one mean and
+   * printing a single target beside it would be the quiet lie this avoids.
+   */
+  const phaseRows = useMemo<MetricRow[]>(() => {
+    if (phaseCoverage !== 'some' || phaseTargets === null) return [];
+
+    const row = (
+      key: string,
+      label: string,
+      unit: string,
+      average: number,
+      target: number,
+    ): MetricRow => {
+      if (phaseNutrition.logged === 0) {
+        return {
+          key,
+          label,
+          value: MISSING,
+          unit,
+          hint: t('targetValue', { value: formatCount(target) }),
+          tone: 'neutral',
+          spoken: `${label}. ${t('phaseNoDays', { kind: phaseKind })}`,
+        };
+      }
+
+      const diff = average - target;
+      const amount = `${formatCount(Math.abs(diff))} ${unit}`.trim();
+      const state =
+        Math.round(diff) === 0
+          ? t('phaseOnTarget')
+          : t(diff > 0 ? 'phaseOver' : 'phaseUnder', { amount });
+
+      return {
+        key,
+        label,
+        value: formatCount(average),
+        unit,
+        hint: t('targetValue', { value: formatCount(target) }),
+        delta: formatDelta(diff, 0),
+        // The direction of a gap is a fact about a plan the user set, not a
+        // verdict on it, so it stays the quietest ink on the row.
+        tone: 'neutral',
+        spoken: t('phaseRowSpoken', {
+          label,
+          value: formatCount(average),
+          unit,
+          target: formatCount(target),
+          state,
+        }),
+      };
+    };
+
+    return [
+      row(
+        'phaseCalories',
+        t('macros:calories'),
+        t('units:kcal'),
+        phaseNutrition.avgCalories,
+        phaseTargets.calories,
+      ),
+      row(
+        'phaseProtein',
+        t('macros:protein'),
+        t('units:gram'),
+        phaseNutrition.avgProtein,
+        phaseTargets.protein,
+      ),
+    ];
+  }, [t, phaseCoverage, phaseTargets, phaseNutrition, phaseKind]);
+
+  /** Said out loud rather than left for the reader to work out from the dates. */
+  const phaseNote = useMemo(() => {
+    if (phaseCoverage !== 'some') return null;
+    if (phaseNutrition.logged === 0) return t('phaseNoDays', { kind: phaseKind });
+    return t('phasePartial', {
+      inside: formatCount(phaseDates.length),
+      days: formatCount(rangeDays),
+      kind: phaseKind,
+    });
+  }, [t, phaseCoverage, phaseNutrition.logged, phaseDates.length, rangeDays, phaseKind]);
 
   /* ------------------------------------------------------------- insights -- */
 
@@ -555,6 +725,10 @@ export default function DashboardScreen() {
     router.push('/onboarding');
   }, [router]);
 
+  const openPhases = useCallback(() => {
+    router.push('/phases');
+  }, [router]);
+
   const hasReading = bodyData.latest !== null;
   const busy = !ready || !loaded;
 
@@ -574,6 +748,17 @@ export default function DashboardScreen() {
             onSetUpProfile={openOnboarding}
             style={styles.hero}
           />
+
+          {/* Directly under the figure it explains: the target above comes from
+              a phase the user set, and the bar says which one and until when. */}
+          {activePhase && phaseTargets ? (
+            <PhaseBar
+              phase={activePhase}
+              targets={phaseTargets}
+              onPress={openPhases}
+              style={styles.phaseBar}
+            />
+          ) : null}
 
           <Section
             title={t('bodyTitle')}
@@ -799,6 +984,29 @@ export default function DashboardScreen() {
 
                 <MetricTable rows={nutritionRows} style={styles.nutritionTable} />
 
+                {phaseRows.length > 0 ? (
+                  <View style={styles.phase}>
+                    <Txt variant="label" weight="semibold" numberOfLines={2}>
+                      {t('phaseCompare', { kind: phaseKind })}
+                    </Txt>
+
+                    {/* Which days these figures came from, before the figures,
+                        so nobody reads them as the whole range. */}
+                    {phaseNote ? (
+                      <Txt
+                        variant="caption"
+                        color="muted"
+                        numberOfLines={3}
+                        style={styles.phaseNote}
+                      >
+                        {phaseNote}
+                      </Txt>
+                    ) : null}
+
+                    <MetricTable rows={phaseRows} style={styles.phaseTable} />
+                  </View>
+                ) : null}
+
                 <View style={styles.compare}>
                   <Txt variant="label" weight="semibold" numberOfLines={1}>
                     {t('compare')}
@@ -888,6 +1096,11 @@ const styles = StyleSheet.create({
   // The one figure that carries the screen gets the whole top of the page.
   hero: {
     marginTop: spacing.xl,
+  },
+  // Close enough to the hero to read as a caption on it rather than as a
+  // section of its own.
+  phaseBar: {
+    marginTop: spacing.lg,
   },
   // The range control belongs to everything under it, so it sits a full
   // section away from the body table and close enough to the training heading
@@ -1000,6 +1213,17 @@ const styles = StyleSheet.create({
   /* nutrition */
   nutritionTable: {
     marginTop: spacing.xl,
+  },
+  phase: {
+    marginTop: spacing.xl,
+  },
+  phaseTable: {
+    marginTop: spacing.lg,
+  },
+  // Sits under its heading the way a section subtitle does.
+  phaseNote: {
+    marginTop: spacing.xs,
+    maxWidth: layout.maxTextWidth,
   },
   compare: {
     marginTop: spacing.xl,

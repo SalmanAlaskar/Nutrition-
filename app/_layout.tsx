@@ -39,6 +39,8 @@ function RootStack() {
         <Stack.Screen name="body/index" />
         <Stack.Screen name="body/add" options={{ animation: 'slide_from_bottom' }} />
         <Stack.Screen name="body/import" options={{ animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="phases/index" />
+        <Stack.Screen name="phases/edit" options={{ animation: 'slide_from_bottom' }} />
         <Stack.Screen name="settings" options={{ animation: 'slide_from_bottom' }} />
       </Stack>
     </>

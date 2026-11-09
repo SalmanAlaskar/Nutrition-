@@ -30,6 +30,7 @@ import {
   type TxtColor,
 } from '@/components/ui';
 import { SCAN_METRICS, SEGMENT_LABEL_KEYS, latestScan, scanChange } from '@/domain/bodyScan';
+import { todayKey } from '@/domain/date';
 import { formatAmount, formatCount, formatDelta, formatPercent } from '@/domain/format';
 import {
   LIMITS,
@@ -47,12 +48,14 @@ import {
   totalDailyEnergyExpenditure,
   type BmiCategory,
 } from '@/domain/nutrition';
+import { phaseProgress, targetsForPhase } from '@/domain/phase';
 import { useApp } from '@/state/AppStore';
 import { layout, radius, spacing, useTheme } from '@/theme';
 import type {
   ActivityLevel,
   BodyScan,
   Goal,
+  PhaseKind,
   Profile,
   ScanRange,
   SegmentalValues,
@@ -95,6 +98,13 @@ const GOAL_KEYS = {
   maintain: { title: 'goalMaintain', hint: 'goalMaintainHint' },
   gain: { title: 'goalGain', hint: 'goalGainHint' },
 } as const satisfies Record<Goal, { title: string; hint: string }>;
+
+/** A phase is named by what it is for, in the same words the phases screen uses. */
+const PHASE_KIND_KEYS = {
+  cut: 'phaseKindCut',
+  maintain: 'phaseKindMaintain',
+  build: 'phaseKindBuild',
+} as const satisfies Record<PhaseKind, string>;
 
 const FEET_RANGE = { min: 3, max: 8 };
 const INCH_RANGE = { min: 0, max: 11 };
@@ -431,7 +441,7 @@ function SegmentalTable({
 }
 
 export default function ProfileScreen() {
-  const { ready, profile, targets, weights, bodyScans, updateProfile, logWeight } = useApp();
+  const { ready, profile, activePhase, weights, bodyScans, updateProfile, logWeight } = useApp();
   const { colors } = useTheme();
   const router = useRouter();
   const { t } = useTranslation(['profile', 'units', 'macros', 'body']);
@@ -451,8 +461,17 @@ export default function ProfileScreen() {
   // Nothing is unfolded on arrival: an open wheel over the page is a scroll trap.
   const [openPicker, setOpenPicker] = useState<PickerId | null>(null);
 
-  const planSignature = targets
-    ? `${targets.calories}/${targets.protein}/${targets.carbs}/${targets.fat}`
+  // The plan shown here is today's, never `selectedDate`'s: this screen explains
+  // what you are eating now. A phase covering today owns it; without one it
+  // falls through to the figure the profile derives on its own.
+  const planTargets = profile
+    ? activePhase
+      ? targetsForPhase(profile, activePhase)
+      : macroTargets(profile)
+    : null;
+
+  const planSignature = planTargets
+    ? `${planTargets.calories}/${planTargets.protein}/${planTargets.carbs}/${planTargets.fat}`
     : null;
   const recalc = useRecalcFlash(planSignature);
 
@@ -537,9 +556,12 @@ export default function ProfileScreen() {
   const sheetWaterUnit = t('units:litre');
   const percentUnit = t('units:percent');
 
-  const plan = targets ?? macroTargets(profile);
+  const plan = planTargets ?? macroTargets(profile);
   const split = macroEnergySplit(plan);
   const automaticTarget = calorieTarget({ ...profile, customCalorieTarget: undefined });
+  /* What the profile alone says, override included: the figure this screen
+     showed before a phase took the target over. */
+  const profileTarget = calorieTarget(profile);
   const bmr = basalMetabolicRate(profile);
   const maintenance = totalDailyEnergyExpenditure(profile);
   const bmi = sheet?.bmi ?? bodyMassIndex(profile.heightCm, profile.weightKg);
@@ -549,6 +571,33 @@ export default function ProfileScreen() {
   const healthyLow = fromKg(healthyLowKg, units);
   const healthyHigh = fromKg(healthyHighKg, units);
   const usingOverride = profileCustomTarget !== null;
+
+  /* ------------------------------------------------------------- phase -- */
+
+  const phaseKindLabel = activePhase ? t(PHASE_KIND_KEYS[activePhase.kind]) : '';
+  const phaseToday = activePhase ? phaseProgress(activePhase, todayKey()) : null;
+
+  /* The spine gives a running phase precedence over the typed override, so the
+     override is on hold rather than gone and the screen has to say which of the
+     two is actually feeding the number above. */
+  const customNote =
+    activePhase !== null && profileCustomTarget !== null
+      ? t('customOnHold', {
+          end: dayText.shortDay(activePhase.endDate),
+          value: formatCount(profileCustomTarget),
+        })
+      : t(usingOverride ? 'customActive' : 'customIdle', {
+          value: formatCount(automaticTarget),
+        });
+
+  const planSpoken = activePhase
+    ? t('planSpokenPhase', {
+        calories: formatCount(plan.calories),
+        kind: phaseKindLabel,
+      })
+    : t(usingOverride ? 'planSpokenCustom' : 'planSpokenCalculated', {
+        calories: formatCount(plan.calories),
+      });
 
   const heightLabel =
     units === 'imperial'
@@ -1138,17 +1187,14 @@ export default function ProfileScreen() {
         below is what those produce. The hairline marks that turn, and the plan
         is the one thing on this screen drawn on a surface of its own.
       */}
-      <Section divider title={t('planTitle')} subtitle={t('planHint')}>
+      <Section
+        divider
+        title={t('planTitle')}
+        subtitle={t(activePhase ? 'planHintPhase' : 'planHint')}
+      >
         <Card style={styles.planCard}>
           <View style={styles.planHeader}>
-            <View
-              accessible
-              accessibilityLabel={t(
-                usingOverride ? 'planSpokenCustom' : 'planSpokenCalculated',
-                { calories: formatCount(plan.calories) },
-              )}
-              style={styles.planNumber}
-            >
+            <View accessible accessibilityLabel={planSpoken} style={styles.planNumber}>
               <Txt variant="display" color="accent" tabular numberOfLines={1}>
                 {formatCount(plan.calories)}
               </Txt>
@@ -1164,11 +1210,35 @@ export default function ProfileScreen() {
                   <Badge label={t('updated')} tone="accent" variant="plain" />
                 </Animated.View>
               ) : null}
+              {activePhase ? (
+                <Badge label={phaseKindLabel} tone="accent" variant="plain" />
+              ) : null}
               {usingOverride ? (
-                <Badge label={t('custom')} tone="warning" variant="plain" />
+                <Badge
+                  label={t(activePhase ? 'customHeld' : 'custom')}
+                  tone={activePhase ? 'default' : 'warning'}
+                  variant="plain"
+                />
               ) : null}
             </View>
           </View>
+
+          {/* Where the number came from, and the figure it replaced. Both are
+              plain sentences: a number this size has to say whose it is. */}
+          {activePhase ? (
+            <View style={styles.planSource}>
+              <Txt variant="label" color="muted">
+                {t('planFromPhase', {
+                  kind: phaseKindLabel,
+                  start: dayText.shortDay(activePhase.startDate),
+                  end: dayText.shortDay(activePhase.endDate),
+                })}
+              </Txt>
+              <Txt variant="caption" color="faint" tabular style={styles.planSourceSecond}>
+                {t('planFromProfile', { value: formatCount(profileTarget) })}
+              </Txt>
+            </View>
+          ) : null}
 
           <View style={styles.splitBar} {...DECORATIVE}>
             {macroRows.map((row) => (
@@ -1225,13 +1295,29 @@ export default function ProfileScreen() {
             {healthyRangeLine}
           </Txt>
         ) : null}
+
+        <View style={styles.linkList}>
+          <Divider />
+          <ListRow
+            title={t('phaseRow')}
+            subtitle={
+              activePhase && phaseToday
+                ? t('phaseRowActive', {
+                    kind: phaseKindLabel,
+                    day: formatCount(phaseToday.dayNumber),
+                    total: formatCount(phaseToday.totalDays),
+                  })
+                : t('phaseRowHint')
+            }
+            chevron
+            onPress={() => router.push('/phases')}
+          />
+        </View>
       </Section>
 
       <Section title={t('customTitle')} gap="tight">
         <Txt variant="label" color="muted" style={styles.paragraph}>
-          {t(usingOverride ? 'customActive' : 'customIdle', {
-            value: formatCount(automaticTarget),
-          })}
+          {customNote}
         </Txt>
         <NumberField
           value={customTarget}
@@ -1467,6 +1553,13 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     marginTop: spacing.sm,
     rowGap: spacing.xs,
+  },
+  planSource: {
+    marginTop: spacing.md,
+    maxWidth: layout.maxTextWidth,
+  },
+  planSourceSecond: {
+    marginTop: spacing.xs,
   },
   splitBar: {
     borderRadius: radius.pill,

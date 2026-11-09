@@ -139,6 +139,36 @@ export interface Targets {
   fat: number;
 }
 
+/* --------------------------------------------------------------- phases -- */
+
+export type PhaseKind = 'cut' | 'maintain' | 'build';
+
+/**
+ * A dated stretch of time that owns the daily target while it runs.
+ *
+ * The profile derives one target from `goal` and would keep showing it for
+ * ever. A phase is the user saying what they are doing between two dates, and
+ * for those days it replaces that target. It is a plan they set, never a
+ * prescription the app issues.
+ */
+export interface Phase {
+  id: string;
+  kind: PhaseKind;
+  /** Inclusive DateKey bounds, 'YYYY-MM-DD'. */
+  startDate: string;
+  endDate: string;
+  /** Explicit daily calorie target. Derived from the profile when absent. */
+  calories?: number;
+  /** Explicit macro grams. Each is derived when absent. */
+  proteinG?: number;
+  carbsG?: number;
+  fatG?: number;
+  /** What the user is going for, in their own words. */
+  note?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** How a photo of a meal is turned into entries. */
 export type PhotoAnalysisMode = 'ai' | 'manual';
 

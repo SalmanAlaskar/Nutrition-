@@ -126,6 +126,7 @@ export const settings = {
 
   importKindScans: 'قياسات الجسم',
   importKindWeights: 'سجل الوزن',
+  importKindPhases: 'المراحل',
   importKindMeals: 'الوجبات',
   importKindWorkouts: 'حصص التمرين',
   importKindProgram: 'برنامج التمرين',

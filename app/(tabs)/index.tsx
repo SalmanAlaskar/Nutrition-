@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 
 import { InsightList } from '@/components/insights/InsightList';
+import { PhaseBar } from '@/components/phase/PhaseBar';
 import { CalorieSummary } from '@/components/today/CalorieSummary';
 import { DayRows } from '@/components/today/DayRows';
 import { DayStrip } from '@/components/today/DayStrip';
@@ -32,6 +33,7 @@ import { currentSlot, lastNDays, todayKey } from '@/domain/date';
 import { formatCount } from '@/domain/format';
 import { buildInsights } from '@/domain/insights';
 import { slotTargets } from '@/domain/mealPlan';
+import { phaseFor } from '@/domain/phase';
 import { MEAL_SLOTS, loggingStreak, mealsBySlot } from '@/domain/totals';
 import { dayForDate } from '@/domain/training';
 import { getMealsForDates, getWorkoutsForDates } from '@/storage/repository';
@@ -100,6 +102,7 @@ export default function TodayScreen() {
     workoutDates,
     bodyScans,
     profile,
+    phases,
     setSelectedDate,
     deleteMeal,
     refresh,
@@ -120,6 +123,14 @@ export default function TodayScreen() {
     [program, selectedDate],
   );
   const scan = useMemo(() => latestScan(bodyScans), [bodyScans]);
+
+  /**
+   * The phase that owns the day on screen, which is the day the target above
+   * belongs to. On today this is the store's `activePhase`; on a day picked
+   * from the strip it is whichever phase covered that day, so the bar never
+   * explains a figure the screen is not showing.
+   */
+  const dayPhase = useMemo(() => phaseFor(phases, selectedDate), [phases, selectedDate]);
 
   const title = dayLabels.day(selectedDate);
   const shortDate = dayLabels.shortDay(selectedDate);
@@ -223,6 +234,7 @@ export default function TodayScreen() {
   }, [router, selectedDate]);
 
   const openBody = useCallback(() => router.push('/body'), [router]);
+  const openPhases = useCallback(() => router.push('/phases'), [router]);
   const openHistory = useCallback(() => router.push('/(tabs)/history'), [router]);
 
   const handleDelete = useCallback(
@@ -300,6 +312,20 @@ export default function TodayScreen() {
           onOpenHistory={openHistory}
           style={styles.hero}
         />
+
+        {/* Only when a phase owns this day. With none running the target comes
+            from the profile and needs no footnote, so nothing is drawn here. */}
+        {dayPhase && targets ? (
+          <PhaseBar
+            phase={dayPhase}
+            // Exactly the figure the ring above is counting against: with a
+            // phase covering the day, the store's target is the phase's.
+            targets={targets}
+            today={selectedDate}
+            onPress={openPhases}
+            style={styles.phase}
+          />
+        ) : null}
 
         <DayRows
           programDay={scheduledDay}
@@ -393,6 +419,11 @@ const styles = StyleSheet.create({
   },
   hero: {
     marginTop: spacing.xl,
+  },
+  // Attached to the ring rather than floating between two groups: the bar is
+  // a caption on the figure above it.
+  phase: {
+    marginTop: spacing.lg,
   },
   rows: {
     marginTop: layout.sectionGap,

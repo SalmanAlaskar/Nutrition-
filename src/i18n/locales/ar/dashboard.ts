@@ -76,6 +76,18 @@ export const dashboard = {
   targetValue: 'الهدف {{value}}',
   daysLogged: 'أيام مسجلة',
   compare: 'المتوسطات الأخيرة',
+  phaseKindCut: 'التنشيف',
+  phaseKindMaintain: 'الثبات',
+  phaseKindBuild: 'التضخيم',
+  phaseCompare: 'مقارنة بهدف {{kind}}',
+  phaseTargetHint: 'الهدف {{value}} من {{kind}}',
+  phaseUnder: 'أقل من الهدف بـ {{amount}}',
+  phaseOver: 'أعلى من الهدف بـ {{amount}}',
+  phaseOnTarget: 'على الهدف تماماً',
+  phaseRowSpoken: '{{label}}: {{value}} {{unit}} مقابل هدف {{target}} {{unit}}. {{state}}',
+  phasePartial:
+    'يغطي {{kind}} {{inside}} يوم من أصل {{days}} في هذه المدة، وهذه المعدلات تحسب تلك الأيام وحدها.',
+  phaseNoDays: 'ما سُجّل أي يوم داخل فترة {{kind}} حتى الآن.',
   nutritionNoTarget: 'لا يوجد هدف بعد، فلا شيء نقيس عليه المتوسطات.',
   nutritionEmptyTitle: 'لا يوجد تسجيل هنا',
   nutritionEmptyMessage:

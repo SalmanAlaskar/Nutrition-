@@ -78,6 +78,18 @@ export const dashboard = {
   targetValue: 'Target {{value}}',
   daysLogged: 'Days logged',
   compare: 'Recent averages',
+  phaseKindCut: 'cut',
+  phaseKindMaintain: 'maintenance',
+  phaseKindBuild: 'build',
+  phaseCompare: 'Against your {{kind}} target',
+  phaseTargetHint: 'Target {{value}} from the {{kind}}',
+  phaseUnder: '{{amount}} under the target',
+  phaseOver: '{{amount}} over the target',
+  phaseOnTarget: 'On the target',
+  phaseRowSpoken: '{{label}}: {{value}} {{unit}} against a target of {{target}} {{unit}}. {{state}}',
+  phasePartial:
+    'The {{kind}} covers {{inside}} of these {{days}} days, so these averages leave the rest of the range out.',
+  phaseNoDays: 'No day inside the {{kind}} has been logged yet.',
   nutritionNoTarget: 'No target yet, so there is nothing to measure the averages against.',
   nutritionEmptyTitle: 'Nothing logged here yet',
   nutritionEmptyMessage:

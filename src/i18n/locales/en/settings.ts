@@ -129,6 +129,7 @@ export const settings = {
 
   importKindScans: 'Body readings',
   importKindWeights: 'Weight logs',
+  importKindPhases: 'Phases',
   importKindMeals: 'Meals',
   importKindWorkouts: 'Training sessions',
   importKindProgram: 'Training program',

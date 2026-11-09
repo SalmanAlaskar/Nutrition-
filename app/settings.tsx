@@ -133,6 +133,7 @@ type ImportKindLabelKey =
   | 'importKindProfile'
   | 'importKindSettings'
   | 'importKindWeights'
+  | 'importKindPhases'
   | 'importKindCustomFoods'
   | 'importKindMeals'
   | 'importKindProgram'
@@ -144,6 +145,7 @@ const KIND_LABEL_KEYS: Record<ImportKind, ImportKindLabelKey> = {
   profile: 'importKindProfile',
   settings: 'importKindSettings',
   weights: 'importKindWeights',
+  phases: 'importKindPhases',
   customFoods: 'importKindCustomFoods',
   meals: 'importKindMeals',
   program: 'importKindProgram',
