@@ -168,7 +168,7 @@ const ROUTES = {
   addMeal: '/meal/add',
   history: '/(tabs)/history',
   training: '/training',
-  body: '/body',
+  body: '/(tabs)/inbody',
   onboarding: '/onboarding',
 } as const;
 

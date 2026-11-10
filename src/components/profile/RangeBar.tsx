@@ -119,6 +119,10 @@ export function RangeBar({ label, value, decimals = 1, unit, range, style }: Ran
       </View>
 
       {geometry ? (
+        /* Pinned left to right in both languages, like every other scale in
+           the app: the band, its two edges and the marker are placed from the
+           same edge, and a value axis that mirrors on one platform and not on
+           another is a scale that lies. */
         <View style={styles.scale} {...DECORATIVE}>
           <View style={[styles.track, { backgroundColor: colors.track }]}>
             <View
@@ -186,6 +190,7 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   scale: {
+    direction: 'ltr',
     height: MARKER_HEIGHT,
     justifyContent: 'center',
     marginTop: spacing.sm,

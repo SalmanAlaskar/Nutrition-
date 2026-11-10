@@ -422,7 +422,7 @@ export default function HistoryScreen() {
     [setSelectedDate, router],
   );
 
-  const openBody = useCallback(() => router.push('/body'), [router]);
+  const openBody = useCallback(() => router.push('/(tabs)/inbody'), [router]);
 
   const openWeightSheet = useCallback(() => {
     const seedKg = rangeWeights[rangeWeights.length - 1]?.weightKg ?? profile?.weightKg ?? null;

@@ -620,7 +620,7 @@ export default function SettingsScreen() {
       router.back();
       return;
     }
-    router.replace('/(tabs)/profile');
+    router.replace('/(tabs)/inbody');
   };
 
   const [language, setLanguage] = useState<LanguageCode>(() => currentLanguage());
@@ -723,8 +723,23 @@ export default function SettingsScreen() {
       <Screen scroll keyboardAvoiding edges={['top', 'bottom']}>
         <AppHeader title={t('title')} subtitle={t('subtitle')} onBack={goBack} />
 
+        {/* --------------------------------------------------------- you -- */}
+        {/* The body and goal fields left the tab bar when it became InBody, so
+            this is the way back to them. First on the page because it is the
+            only thing here that changes what the app works out for you. */}
+        <SectionTitle first title={t('detailsTitle')} hint={t('detailsHint')} />
+        <Card padded={false} style={styles.firstCard}>
+          <ListRow
+            title={t('detailsRow')}
+            subtitle={t('detailsRowHint')}
+            inset
+            chevron
+            onPress={() => router.push('/profile/edit')}
+          />
+        </Card>
+
         {/* ---------------------------------------------------- language -- */}
-        <SectionTitle first title={t('languageTitle')} hint={t('languageHint')} />
+        <SectionTitle title={t('languageTitle')} hint={t('languageHint')} />
         <Card style={styles.firstCard}>
           <SegmentedControl<LanguageCode>
             options={LANGUAGE_OPTIONS}

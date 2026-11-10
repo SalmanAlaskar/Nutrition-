@@ -9,10 +9,14 @@ import { spacing } from '@/theme';
 const DOT = ' · ';
 
 export interface SheetHeaderProps {
-  /** The day the reading was taken, already in the reader's language. */
-  dayLabel: string;
-  /** Machine the sheet came off, e.g. 'InBody 270'. */
-  device?: string;
+  /** The quiet line above the heading: what this block is, and the machine. */
+  eyebrow: string;
+  /**
+   * The heading. On a page that can show any reading, this is the day it was
+   * taken: the one thing that tells you which reading you are looking at, so
+   * it gets the size rather than a fixed phrase that is true of all of them.
+   */
+  title: string;
   /** Sex, age and height, each already carrying its own unit. */
   facts: string[];
   /** One quiet line under the facts, e.g. which units the sheet is printed in. */
@@ -26,20 +30,19 @@ export interface SheetHeaderProps {
  * formatted, so the header stays a piece of layout rather than a second place
  * numbers are turned into text.
  */
-export function SheetHeader({ dayLabel, device, facts, note, style }: SheetHeaderProps) {
+export function SheetHeader({ eyebrow, title, facts, note, style }: SheetHeaderProps) {
   const { t } = useTranslation('profile');
 
-  const taken = device ? `${device}${DOT}${dayLabel}` : dayLabel;
   const factLine = facts.join(DOT);
 
   return (
     <View style={style}>
       <Txt variant="label" color="muted" numberOfLines={1}>
-        {taken}
+        {eyebrow}
       </Txt>
 
       <Txt variant="title" numberOfLines={2} style={styles.title} accessibilityRole="header">
-        {t('sheetTitle')}
+        {title}
       </Txt>
 
       {facts.length > 0 ? (
@@ -47,7 +50,7 @@ export function SheetHeader({ dayLabel, device, facts, note, style }: SheetHeade
           color="muted"
           numberOfLines={2}
           style={styles.facts}
-          accessibilityLabel={t('sheetFactsSpoken', { day: dayLabel, facts: factLine })}
+          accessibilityLabel={t('sheetFactsSpoken', { day: title, facts: factLine })}
         >
           {factLine}
         </Txt>

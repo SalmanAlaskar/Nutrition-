@@ -4,5 +4,5 @@ export const nav = {
   training: 'التمرين',
   dashboard: 'اللوحة',
   history: 'السجل',
-  profile: 'الملف'
+  inbody: 'إن بودي'
 } as const;

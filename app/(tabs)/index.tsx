@@ -233,7 +233,7 @@ export default function TodayScreen() {
     router.push({ pathname: '/training/session', params: { date: selectedDate } });
   }, [router, selectedDate]);
 
-  const openBody = useCallback(() => router.push('/body'), [router]);
+  const openBody = useCallback(() => router.push('/(tabs)/inbody'), [router]);
   const openPhases = useCallback(() => router.push('/phases'), [router]);
   const openHistory = useCallback(() => router.push('/(tabs)/history'), [router]);
 

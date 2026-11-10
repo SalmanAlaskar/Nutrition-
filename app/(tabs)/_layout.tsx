@@ -92,11 +92,11 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="profile"
+        name="inbody"
         options={{
-          title: t('profile'),
+          title: t('inbody'),
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'person' : 'person-outline'} color={color} size={20} />
+            <Ionicons name={focused ? 'body' : 'body-outline'} color={color} size={20} />
           ),
         }}
       />

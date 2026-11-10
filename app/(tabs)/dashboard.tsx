@@ -718,7 +718,7 @@ export default function DashboardScreen() {
         : program.name;
 
   const openBody = useCallback(() => {
-    router.push(bodyScans.length > 0 ? '/body' : '/body/import');
+    router.push(bodyScans.length > 0 ? '/(tabs)/inbody' : '/body/import');
   }, [router, bodyScans.length]);
 
   const openOnboarding = useCallback(() => {

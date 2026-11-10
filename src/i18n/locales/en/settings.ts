@@ -3,6 +3,12 @@ export const settings = {
   title: 'Settings',
   subtitle: 'Photo analysis, language, units, your data',
 
+  /* the row that opens the details screen */
+  detailsTitle: 'You',
+  detailsHint: 'The numbers your daily plan is built from',
+  detailsRow: 'Your details and plan',
+  detailsRowHint: 'Body, activity, goal and the daily target',
+
   /* photo analysis */
   photoTitle: 'Photo analysis',
   photoHint: 'What happens to a meal photo after you take it.',

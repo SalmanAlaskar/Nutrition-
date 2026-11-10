@@ -1,8 +1,8 @@
 /** English copy for the profile area. Keys are shared with ar/profile.ts. */
 export const profile = {
-  title: 'Profile',
-  subtitle: 'Your body, your goal, and the plan they produce',
-  loading: 'Loading your profile',
+  title: 'InBody',
+  subtitle: 'Every reading, and what moved between them',
+  loading: 'Loading your readings',
   openSettings: 'Open settings',
   emptyTitle: 'No profile yet',
   emptyMessage:
@@ -10,9 +10,31 @@ export const profile = {
   emptyAction: 'Set up my profile',
 
   /* the result sheet, in the order the machine prints it */
-  sheetTitle: 'Your latest reading',
+  sheetTitle: 'This reading',
   sheetFactsSpoken: 'Reading taken {{day}}. {{facts}}',
   sheetUnitsNote: 'A reading is shown in the units the machine printed: kilograms and litres.',
+
+  /* the timeline, the reading it opens, and where the input form went */
+  timelineTitle: 'Timeline',
+  timelineHint: 'Tap a reading to open it.',
+  timelineOne: 'One reading so far. The line fills in as you add more.',
+  timelineSpoken: '{{day}}, {{value}}',
+  readingsOne: 'One reading',
+  readingsTwo: 'Two readings',
+  readingsFew: '{{n}} readings',
+  readingsMany: '{{n}} readings',
+  readingsSpan: '{{from}} to {{to}}',
+  latestBadge: 'Latest',
+  heroSince: 'since {{day}}',
+  heroFirst: 'First reading',
+  sheetSelectedHint: 'Showing the reading from {{day}}.',
+  detailsTitle: 'Your details',
+  detailsSubtitle: 'Body, activity and the plan they produce',
+  detailsRow: 'Your details and plan',
+  detailsRowHint: 'Body, activity, goal and the daily target',
+  emptyLead:
+    'An InBody sheet gives you the muscle, fat and water behind the weight, and every reading stays on this device.',
+  emptyTypeAction: 'Type it in instead',
 
   compositionTitle: 'Body composition analysis',
   compositionHint: 'Each value against the normal band printed beside it.',
@@ -27,12 +49,9 @@ export const profile = {
   rangeSpoken: '{{label}}: {{value}} {{unit}}. {{band}}, {{status}}',
   rangeSpokenPlain: '{{label}}: {{value}} {{unit}}',
 
-  muscleFatTitle: 'Muscle-fat analysis',
-  muscleFatHint: 'Weight, the muscle in it and the fat in it, on one scale.',
 
   obesityTitle: 'Obesity analysis',
   obesityHint: 'The ratios the sheet prints, read together.',
-  obesityFatPercent: 'Percent body fat',
   obesityNote: 'BMI compares weight with height alone, so it cannot tell muscle from fat.',
   obesityNoteAbove:
     'Yours reads {{value}}, while your protein and minerals both sit above the normal band.',
@@ -68,13 +87,13 @@ export const profile = {
   progressPerMonth: 'a month',
   progressSpoken: '{{label}}: {{change}}, {{rate}}',
   progressNone: 'One reading so far. A second one turns this into a trend.',
+  progressEarliest: 'This is your earliest reading. Everything is measured forward from it.',
   progressChartTitle: 'Every reading',
 
   /* inputs */
   aboutTitle: 'About you',
   aboutHint: 'Every number further down is worked out from these four fields.',
-  aboutFromScan:
-    'Age, height and weight come from your reading on {{day}}. Change any of them by hand and the plan follows.',
+  aboutFromScan: 'From your reading on {{day}}. Change any of it by hand and the plan follows.',
   units: 'Units',
   unitMetric: 'Metric',
   unitImperial: 'Imperial',
@@ -147,7 +166,7 @@ export const profile = {
 
   /* body over time */
   bmiTitle: 'Body mass index',
-  bmiHint: 'One rough marker, read beside everything else.',
+  bmiFromProfile: 'Worked out from the height and weight above, not from a reading.',
   bmiUnit: 'kg/m2',
   bmiSpoken: 'Body mass index {{value}}, in the {{category}} band',
   bmiUnderweight: 'Underweight',
@@ -160,29 +179,18 @@ export const profile = {
   heightImperial: '{{feet}} ft {{inches}} in',
 
   scanTitle: 'Body composition',
-  scanHintLast: 'Last reading {{day}}.',
-  scanHintLastDevice: 'Last reading {{day}}, {{device}}.',
-  scanHintNone: 'Readings from a body-composition scan, once you have one.',
   scanEmptyTitle: 'No reading yet',
   scanEmptyMessage: 'Add a scan to follow muscle and fat separately, instead of weight alone.',
   scanEmptyAction: 'Add a reading',
-  scanChange: 'Change since {{date}}, {{days}} days earlier.',
-  scanChangeOneDay: 'Change since {{date}}, one day earlier.',
-  scanFirst: 'First reading. Add another to see what moved.',
   rowWeight: 'Weight',
-  rowMuscle: 'Skeletal muscle',
   rowFatMass: 'Body fat mass',
-  rowFatPercent: 'Body fat',
   rowVisceral: 'Visceral fat level',
-  rowScore: 'Scan score',
   rowSpoken: '{{label}}: {{value}} {{unit}}',
   deltaUp: 'up {{amount}} since the previous reading',
   deltaDown: 'down {{amount}} since the previous reading',
   deltaFlat: 'level with the previous reading',
-  scanHistory: 'Scan history',
-  scanHistoryHint: 'Every reading, with what changed between them',
-  scanAdd: 'Add a reading',
-  scanAddHint: 'Type the numbers in or import a sheet',
+  scanHistory: 'All readings',
+  scanHistoryHint: 'The full list, to edit or delete one',
 
   weightTitle: 'Weight log',
   weightHint: "Logging today's weight also updates your plan.",
